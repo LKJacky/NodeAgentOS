@@ -119,13 +119,20 @@ function phraseText(seconds: number): string {
   return rest === 0 ? `in ${hours}h` : `in ${hours}h ${rest}m`;
 }
 
+// Calendar alarms keep local wall-clock time across DST; countdowns use elapsed seconds.
+function addCalendarDays(moment: number, days: number): number {
+  const at = new Date(moment);
+  at.setDate(at.getDate() + days);
+  return at.getTime();
+}
+
 function alarmTime(value: string, now: number): number {
   const clock = CLOCK_TIME.exec(value);
   if (clock !== null) {
     const at = new Date(now);
     at.setHours(Number(clock[1]), Number(clock[2]), 0, 0);
     let moment = at.getTime();
-    if (moment <= now) moment += DAY;
+    if (moment <= now) moment = addCalendarDays(moment, 1);
     return moment;
   }
   const moment = Date.parse(value);
@@ -134,11 +141,11 @@ function alarmTime(value: string, now: number): number {
 }
 
 function nextFireAt(rule: RepeatRule, from: number): number {
-  if (rule === 'daily') return from + DAY;
-  if (rule === 'weekly') return from + 7 * DAY;
+  if (rule === 'daily') return addCalendarDays(from, 1);
+  if (rule === 'weekly') return addCalendarDays(from, 7);
   if (rule.startsWith('every:')) return from + Number(rule.slice(6)) * 1000;
-  let next = from + DAY;
-  while ([0, 6].includes(new Date(next).getDay())) next += DAY;
+  let next = addCalendarDays(from, 1);
+  while ([0, 6].includes(new Date(next).getDay())) next = addCalendarDays(next, 1);
   return next;
 }
 
