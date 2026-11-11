@@ -1,25 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <!-- The shell's own picture, as a file: the bus with three nodes on it, the same drawing the page
-       carries as its favicon. A home screen needs a file to fetch, so the page's inline glyph is
-       written out once here — and it is written in the pages' 24-unit box like every other drawing in
-       the repository.
-
-       The field is full bleed and the drawing sits inside the middle 60%, because a `maskable` icon is
-       cropped to whatever shape the platform uses (a circle, a squircle, a teardrop). A tile cropped
-       anywhere inside that circle still shows the whole drawing.
-
-       Three nodes in three colours, on the shell's indigo: the one picture in the repository that is
-       a tile rather than a tab, so it is the one that has to read as a picture at 60px. -->
-  <rect width="24" height="24" fill="#4f46e5" />
-  <g
-    fill="none"
-    stroke-width="1.6"
-    stroke-linecap="round"
-    transform="translate(12 12) scale(0.72) translate(-12 -12)"
-  >
-    <path stroke="#ffffff" d="M11.2 7.7 6.4 15.3M12.8 7.7l4.8 7.6" />
-    <circle cx="12" cy="5.5" r="2.5" stroke="#fbbf24" />
-    <circle cx="5.5" cy="17.5" r="2.5" stroke="#2dd4bf" />
-    <circle cx="18.5" cy="17.5" r="2.5" stroke="#f472b6" />
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 256 256" role="img" aria-labelledby="t d">
+  <title id="t">node-agent colour mark</title>
+  <desc id="d">The node-agent dandelion in a ten-colour spectrum.</desc>
+  <g>
+    <path d="M128.00 128.00 Q153.97 129.17 210.00 128.00" stroke="#F43F5E" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="210.00" cy="128.00" r="10.00" fill="#F43F5E"/>
+    <path d="M128.00 128.00 Q147.65 145.02 211.92 194.32" stroke="#FB923C" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="211.92" cy="194.32" r="8.00" fill="#FB923C"/>
+    <path d="M128.00 128.00 Q134.39 153.20 151.34 205.28" stroke="#FBBF24" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="151.34" cy="205.28" r="10.00" fill="#FBBF24"/>
+    <path d="M128.00 128.00 Q119.59 152.60 100.67 221.46" stroke="#34D399" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="100.67" cy="221.46" r="8.00" fill="#34D399"/>
+    <path d="M128.00 128.00 Q106.83 143.10 61.50 180.09" stroke="#22D3EE" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="61.50" cy="180.09" r="10.00" fill="#22D3EE"/>
+    <path d="M128.00 128.00 Q102.04 126.54 22.01 126.83" stroke="#38BDF8" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="22.01" cy="126.83" r="8.00" fill="#38BDF8"/>
+    <path d="M128.00 128.00 Q108.37 110.95 66.48 79.24" stroke="#6366F1" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="66.48" cy="79.24" r="10.00" fill="#6366F1"/>
+    <path d="M128.00 128.00 Q121.35 102.86 98.43 33.61" stroke="#8B5CF6" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="98.43" cy="33.61" r="8.00" fill="#8B5CF6"/>
+    <path d="M128.00 128.00 Q136.25 103.34 151.66 45.01" stroke="#D946EF" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="151.66" cy="45.01" r="10.00" fill="#D946EF"/>
+    <path d="M128.00 128.00 Q149.27 113.05 210.29 64.44" stroke="#EC4899" stroke-width="7.50" stroke-linecap="round"/>
+    <circle cx="210.29" cy="64.44" r="8.00" fill="#EC4899"/>
+    <circle cx="128" cy="128" r="17.00" fill="#7C5CFF"/>
   </g>
 </svg>
