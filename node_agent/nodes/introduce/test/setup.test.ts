@@ -441,7 +441,7 @@ test('it offers the runtime setup entry and the introduction/connect page', () =
     assert.match(html, new RegExp(section));
   }
   assert.doesNotMatch(html, /第一次使用|常用配置|npm install|npm run build/);
-  assert.match(html, /node_agent\/nodes\/shell\/dist\/serve\.js/);
+  assert.match(html, /npx @node-agent\/shell --name computer/);
   assert.match(html, /NODE_AGENT_BUS_URL/);
   // The guide is its own page now; the first-visit gate is not mixed into it.
   assert.doesNotMatch(html, /id="onboarding"|id="onboarding-language"/);

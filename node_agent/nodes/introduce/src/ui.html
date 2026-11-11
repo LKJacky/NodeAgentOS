@@ -327,7 +327,7 @@ $env:NODE_AGENT_TOKEN="{{token}}"</pre>
 
         <p class="label" data-text-key="connect.step2">2. 启动 shell 节点</p>
         <p class="note" data-text-key="connect.noteRoot">在已部署的 node-agent 根目录运行。</p>
-        <pre id="start">node node_agent/nodes/shell/dist/serve.js --name computer</pre>
+        <pre id="start">npx @node-agent/shell --name computer</pre>
         <button class="copy" data-copy="start" type="button" data-text-key="copy.start">复制启动命令</button>
         <p class="note"><code>--name computer</code><span data-text-key="connect.name">是它在总线上的名字；接入多台电脑时给每台一个不同的名字。启动后 agent 会看到这些能力：</span><code>computer.read</code> <code>computer.exec</code></p>
         <p class="note"><span data-text-key="connect.verify1">验证：回到 Web UI，节点列表里应出现</span><code>computer</code><span data-text-key="connect.verify2">；再让 agent 调用</span><code>list_nodes</code> <code>computer.exec</code> <code>computer.read</code><span data-text-key="connect.verify3">，能拿到结果就说明接好了。</span></p>
