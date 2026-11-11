@@ -19,7 +19,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { Worker } from 'node:worker_threads';
-import { Bus, SERVICE_TENANT } from 'node-agent-bus';
+import { Bus, SERVICE_TENANT } from './bus/index.js';
 import {
   RuntimeError,
   nodeName,

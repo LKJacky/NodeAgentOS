@@ -23,7 +23,7 @@ import { createRequire } from 'node:module';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { SERVICE_TENANT, privateNodeToken } from 'node-agent-bus';
+import { SERVICE_TENANT, privateNodeToken } from './bus/index.js';
 import { busArgsOrExit } from './index.js';
 import { LocalRuntime } from './local.js';
 import { startProxy, type ProxyHandle, type ProxyOptions } from './proxy.js';
@@ -90,7 +90,7 @@ function rootOf(moduleName: string): string {
     const short = moduleName.startsWith('@')
       ? (moduleName.split('/')[1] ?? moduleName)
       : moduleName.replace(/^node-agent-/, '');
-    const local = fileURLToPath(new URL(`../../nodes/${short}`, import.meta.url));
+    const local = fileURLToPath(new URL(`./nodes/${short}`, import.meta.url));
     if (existsSync(join(local, 'package.json'))) return local;
     throw new Error(`cannot resolve Node package ${moduleName}`);
   }

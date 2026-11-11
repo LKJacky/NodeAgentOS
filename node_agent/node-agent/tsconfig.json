@@ -16,7 +16,21 @@
       "node"
     ],
     "rootDir": "src",
-    "outDir": "dist"
+    "outDir": "dist",
+    "paths": {
+      "@node-agent/runtime": [
+        "../runtime/dist/index.d.ts"
+      ],
+      "node-agent-agent": [
+        "../nodes/agent/dist/index.d.ts"
+      ],
+      "node-agent-bus": [
+        "../bus/dist/index.d.ts"
+      ],
+      "node-agent-history": [
+        "../nodes/history/dist/index.d.ts"
+      ]
+    }
   },
   "include": [
     "src"

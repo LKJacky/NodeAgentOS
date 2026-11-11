@@ -28,8 +28,9 @@ onboarding page and stores the setup locally.
 - the persistent agent and history
 - the optional core nodes: provider, webui, notes, todo, timer, search, introduce
 
-The runtime is bundled into the launcher, so `@node-agent/runtime` does not need a separate registry
-install. Nodes stay independent packages and can be replaced or extended. See the repository README for the architecture and Node contract.
+The runtime, the bus and the core nodes are bundled into the launcher, so none of them needs a
+separate registry install. Only `@node-agent/sdk` and third-party model/search libraries are ordinary
+dependencies. See the repository README for the architecture and Node contract.
 
 ## License
 
