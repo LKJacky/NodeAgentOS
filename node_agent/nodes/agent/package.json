@@ -1,0 +1,233 @@
+{
+  "name": "node-agent-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "publisher": "node-agent",
+  "description": "The agent node: the only node that holds a model, plus its own page",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node-agent-sdk .",
+    "pretest": "npm run build",
+    "test": "node --import ./tests/ts-resolve.mjs --test tests/*.test.ts tests/*.test.mjs",
+    "serve": "node dist/serve.js"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1",
+    "markdown-it": "^14.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "node": {
+    "id": "agent",
+    "i18n": "dist/i18n",
+    "desc": "Hand a turn to the model: one that waits, one that just queues, chat history, what it is doing and what it has spent",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "chat": {
+        "type": "object",
+        "required": [
+          "msg"
+        ],
+        "properties": {
+          "msg": {
+            "$ref": "#/definitions/message"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "queue",
+              "interpret"
+            ],
+            "description": "queue: wait for the turn in progress to finish, then take one of your own (default); interpret: put this line into the turn in progress"
+          },
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "hand this agent one message; answers with the lines its turn added",
+        "expose": true
+      },
+      "chat_no_wait": {
+        "type": "object",
+        "required": [
+          "msg"
+        ],
+        "properties": {
+          "msg": {
+            "$ref": "#/definitions/message"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "queue",
+              "interpret"
+            ],
+            "description": "queue: wait for the turn in progress to finish, then take one of your own (default); interpret: put this line into the turn in progress"
+          },
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "hand this agent one message and do not wait for a turn: it is answered by a turn of its own (queue) or by the turn already running (interpret)",
+        "expose": true
+      },
+      "history": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "description": "first message index; defaults to the newest window"
+          },
+          "count": {
+            "type": "integer",
+            "description": "maximum messages to return, capped at 200"
+          },
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "read a bounded window of this agent's transcript",
+        "callers": [],
+        "expose": false
+      },
+      "status": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "read this agent's state (idle / generating / calling a tool / stopping), the messages waiting behind it, and cumulative token usage",
+        "expose": true
+      },
+      "stop": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "stop the turn currently running",
+        "callers": [],
+        "expose": false
+      },
+      "provider": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "select"
+            ],
+            "description": "provider selection operation; defaults to list"
+          },
+          "name": {
+            "type": "string",
+            "description": "provider name to select"
+          },
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "read or change this agent's active provider",
+        "callers": [],
+        "expose": false
+      },
+      "agents": {
+        "type": "object",
+        "properties": {},
+        "description": "list every agent of this family: the main agent and the sub-agents it started, each with the topic and the state a page follows it by",
+        "expose": true
+      },
+      "destroy_agent": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "the sub-agent to destroy"
+          }
+        },
+        "description": "destroy a sub-agent: stop it, delete the transcript it persisted and take its name out of the agents list",
+        "callers": [],
+        "expose": false
+      },
+      "answer": {
+        "type": "object",
+        "required": [
+          "id",
+          "answer"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "id of the waiting question"
+          },
+          "answer": {
+            "type": "string",
+            "description": "the user's answer"
+          },
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "answer a question this agent asked",
+        "callers": [],
+        "expose": false
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "Talk to the agent: the whole history + one input box",
+        "slot": "left",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- The conversation, with the writing that opens it: a bubble in indigo, a plus in violet. -->\n  <path stroke=\"#4f46e5\" d=\"M20 14.5a2.5 2.5 0 0 1-2.5 2.5H9.5L5 20.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z\" />\n  <path stroke=\"#8b5cf6\" d=\"M12.5 8.4v5.2M9.9 11h5.2\" />\n</svg>",
+        "callers": [],
+        "allow_edit_permission": false,
+        "expose": false
+      }
+    },
+    "bindings": [
+      "agent-runtime"
+    ]
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/agent"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "title": "系统 · node_agent",
+  "heading": "系统",
+  "sub": "用户语言、时区，以及当前等待中的计时器。",
+  "settings": {
+    "heading": "用户设置",
+    "language": "语言",
+    "languageZh": "中文",
+    "languageEn": "English",
+    "timezone": "时区",
+    "save": "保存设置",
+    "saving": "保存中……",
+    "saved": "已保存",
+    "failed": "保存失败：{error}"
+  },
+  "timers": {
+    "heading": "计时器",
+    "refresh": "刷新",
+    "count": {
+      "none": "暂无",
+      "waiting": "{count}个等待中"
+    },
+    "empty": "当前没有计时器。",
+    "retried": "重试 {count}次"
+  },
+  "permissions": {
+    "heading": "节点权限",
+    "refresh": "刷新",
+    "hint": "按目标节点分组。每个能力可以选择全部允许（*）、全部不允许，或指定具体的 caller 节点。",
+    "reset": "恢复默认",
+    "resetDone": "已恢复默认",
+    "allowAll": "全部允许（*）",
+    "allowNone": "全部不允许",
+    "save": "保存本节点",
+    "unchanged": "没有修改",
+    "saved": "已保存 {count}个能力",
+    "summary": "{nodes}个节点 · {caps}个能力",
+    "caps": "{count}个能力",
+    "args": "参数：{args}",
+    "argsSeparator": "、"
+  },
+  "label": {
+    "node": "系统",
+    "caps": {
+      "settings": "设置",
+      "timers": "计时器列表",
+      "language": "语言",
+      "timezone": "时区",
+      "add_timer": "新增计时器",
+      "cancel_timer": "取消计时器",
+      "ui": "设置页面",
+      "locale": "区域设置",
+      "ensure_language": "确保语言",
+      "authorize": "授权一次调用",
+      "permissions": "节点权限",
+      "set_permission": "设置权限",
+      "clear_permission": "清除权限",
+      "set_own_permission": "设置本节点权限",
+      "clear_own_permission": "清除本节点权限"
+    },
+    "args": {
+      "settings": {
+        "language": "语言",
+        "timezone": "时区"
+      },
+      "add_timer": {
+        "id": "计时器 id",
+        "at": "触发时间",
+        "callpayload": "回调内容"
+      },
+      "cancel_timer": {
+        "id": "计时器 id"
+      },
+      "ensure_language": {
+        "browser": "浏览器语言"
+      },
+      "authorize": {
+        "caller": "调用方",
+        "target": "目标节点",
+        "cap": "能力",
+        "tenant": "租户",
+        "defaultCallers": "默认调用方"
+      },
+      "set_permission": {
+        "target": "目标节点",
+        "cap": "能力",
+        "callers": "调用方"
+      },
+      "clear_permission": {
+        "target": "目标节点",
+        "cap": "能力"
+      },
+      "set_own_permission": {
+        "cap": "能力",
+        "callers": "调用方"
+      },
+      "clear_own_permission": {
+        "cap": "能力"
+      }
+    }
+  }
+}

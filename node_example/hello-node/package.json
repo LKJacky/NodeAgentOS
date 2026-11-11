@@ -1,0 +1,73 @@
+{
+  "name": "node-agent-example",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A minimal node that uses @node-agent/sdk and calls another node",
+  "publisher": "node-agent",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prestart": "npm run build",
+    "start": "node-agent-sdk .",
+    "pretest": "npm run build",
+    "test": "node test/demo.mjs"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "node": {
+    "id": "example",
+    "desc": "Example node: echo, and call another node",
+    "entry": "dist/index.js",
+    "caps": {
+      "echo": {
+        "type": "object",
+        "properties": {
+          "value": {}
+        },
+        "callers": [
+          "agent"
+        ]
+      },
+      "call": {
+        "type": "object",
+        "required": [
+          "node",
+          "cap"
+        ],
+        "properties": {
+          "node": {
+            "type": "string"
+          },
+          "cap": {
+            "type": "string"
+          },
+          "args": {
+            "type": "object"
+          }
+        },
+        "callers": [
+          "agent"
+        ]
+      }
+    },
+    "icon": "icon.svg"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_example/hello-node"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

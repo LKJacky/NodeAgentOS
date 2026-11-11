@@ -1,0 +1,85 @@
+{
+  // Four ways in, in the order you usually want them: the whole stack, the same stack on the branch
+  // under worktrees/, one node against a stack already running, and the example node.
+  //
+  // Every one of them builds first (see tasks.json): "build: latest" for this tree, "build: worktree"
+  // for the branch. preLaunchTask runs on every launch, and a failed build aborts the launch instead
+  // of starting a dist from an hour ago.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      // The one-command entry: bus + history + agent + system, then NODE_AGENT_NODES.
+      "name": "node-agent: whole stack",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_agent/node-agent/dist/serve.js",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: latest",
+      "env": {
+        // Not a secret: it only authorizes a node on the loopback bus. Set a real one anywhere else.
+        "NODE_AGENT_BUS_BIND": "127.0.0.1",
+        "NODE_AGENT_BUS_PORT": "8788",
+        "NODE_AGENT_WEBUI_BIND": "127.0.0.1",
+        "NODE_AGENT_WEBUI_PORT": "8790",
+        "NODE_AGENT_WEBUI_SECRET": "",
+        "SERVE_PLATFORM_SECRET": "",
+        "NODE_AGENT_NODES": "node-agent-provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // The branch under worktrees/: its own dist, its own SDK, its own workspaces. Launching this
+      // while the stack above runs fails on the port — stop one first. They share ~/.node_agent,
+      // which is useful: the language you chose in one is the language the other starts with.
+      "name": "node-agent: whole stack (worktree i18n-infra)",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/worktrees/i18n-infra/node_agent/node-agent/dist/serve.js",
+      "cwd": "${workspaceFolder}/worktrees/i18n-infra",
+      "preLaunchTask": "build: worktree",
+      "env": {
+        "NODE_AGENT_BUS_BIND": "127.0.0.1",
+        "NODE_AGENT_BUS_PORT": "8788",
+        "NODE_AGENT_WEBUI_BIND": "127.0.0.1",
+        "NODE_AGENT_WEBUI_PORT": "8790",
+        "NODE_AGENT_WEBUI_SECRET": "",
+        "SERVE_PLATFORM_SECRET": "",
+        "NODE_AGENT_NODES": "node-agent-provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // A node on its own, against a bus someone else started (the stack above, or docker compose).
+      "name": "node: one package on an existing bus",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_agent/nodes/webui/dist/serve.js",
+      "cwd": "${workspaceFolder}",
+      "preLaunchTask": "build: latest",
+      "env": {
+        "NODE_AGENT_BUS_URL": "ws://127.0.0.1:8788",
+        "NODE_AGENT_WEBUI_SECRET": "",
+        "SERVE_PLATFORM_SECRET": ""
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    },
+    {
+      // The example node: the SDK runner loads the package in this folder and dials the bus.
+      "name": "hello-node",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/node_agent/sdk/dist/serve.js",
+      "args": ["${workspaceFolder}/node_example/hello-node"],
+      "cwd": "${workspaceFolder}/node_example/hello-node",
+      "preLaunchTask": "build: latest",
+      "env": {
+        "NODE_AGENT_BUS_URL": "ws://127.0.0.1:8788",
+      },
+      "console": "integratedTerminal",
+      "skipFiles": ["<node_internals>/**"]
+    }
+  ]
+}

@@ -1,0 +1,146 @@
+{
+  "title": "笔记 · node_agent",
+  "tabs": {
+    "label": "显示哪个面板",
+    "memos": "笔记",
+    "editor": "编辑器"
+  },
+  "search": {
+    "placeholder": "搜索你的笔记…",
+    "label": "搜索笔记",
+    "clear": "清空搜索",
+    "tagFilter": "只看这个标签"
+  },
+  "tag": {
+    "all": "全部标签",
+    "none": "无标签",
+    "count": "{tag}（{count}）"
+  },
+  "button": {
+    "new": "+ 新建",
+    "newMemo": "新建笔记",
+    "reset": "重置",
+    "delete": "删除",
+    "save": "立即保存",
+    "reload": "重新载入",
+    "keepMine": "保留我的",
+    "discard": "丢弃",
+    "saveAsNew": "另存为新笔记"
+  },
+  "sync": {
+    "label": "实时更新",
+    "connecting": "连接中",
+    "live": "实时同步",
+    "reconnecting": "重新连接中"
+  },
+  "editor": {
+    "label": "笔记编辑器",
+    "createTitle": "新建笔记",
+    "editTitle": "编辑笔记",
+    "newMeta": "记下值得记住的事",
+    "updated": "最后更新 {when} · 笔记 #{id}",
+    "live": "实时 · 笔记 #{id}",
+    "untitled": "无标题",
+    "count": "{count} 个字符",
+    "countEmpty": "0 个字符"
+  },
+  "field": {
+    "title": "标题",
+    "titlePlaceholder": "给这条笔记起个名字",
+    "tag": "标签",
+    "tagPlaceholder": "例如：工作",
+    "note": "正文",
+    "notePlaceholder": "记下一个想法、偏好、决定，或任何有用的东西…"
+  },
+  "preview": {
+    "show": "预览",
+    "edit": "编辑",
+    "hint": "把这条笔记按 Markdown 显示"
+  },
+  "back": {
+    "text": "← 笔记",
+    "label": "返回笔记列表"
+  },
+  "library": {
+    "label": "笔记列表"
+  },
+  "state": {
+    "editing": "有未保存的修改…",
+    "saving": "保存中…",
+    "saved": "已保存",
+    "savedAt": "已保存 · {when}",
+    "failed": "未保存 — 正在重试",
+    "held": "别处已修改",
+    "conflict": "别处已修改 — 未保存",
+    "gone": "别处已删除 — 未保存"
+  },
+  "list": {
+    "open": "打开 {title}",
+    "line": "{count} 行",
+    "lines": "{count} 行",
+    "morePlaces": "显示 {total} 处中的 {shown} 处",
+    "moreDocs": "显示 {total} 篇中的 {shown} 篇"
+  },
+  "empty": {
+    "searchTitle": "没有找到结果",
+    "searchText": "换个词试试，或者清空搜索。",
+    "libraryTitle": "笔记列表还是空的",
+    "libraryText": "写下第一条笔记，把有用的上下文留在手边。"
+  },
+  "toast": {
+    "notSaved": "未保存：{reason}",
+    "deleted": "笔记已删除",
+    "conflict": "别处已修改 — 未保存",
+    "gone": "别处已删除 — 未保存"
+  },
+  "notice": {
+    "conflict": "这条笔记在别处被修改了 — 你的文字还在，尚未保存。",
+    "held": "这条笔记在别处更新了 — 你未保存的文字已保留。",
+    "gone": "这条笔记在别处被删除了 — 你的文字还在。"
+  },
+  "confirm": {
+    "delete": "删除这条笔记？此操作无法撤销。"
+  },
+  "error": {
+    "unreachable": "无法连接节点",
+    "noId": "回复里没有说明新建的是哪条笔记"
+  },
+  "label": {
+    "node": "笔记",
+    "caps": {
+      "list": "列表",
+      "get": "读取",
+      "read": "阅读",
+      "search": "搜索",
+      "tags": "标签列表",
+      "add": "新增",
+      "update": "修改",
+      "edit": "编辑文本",
+      "append": "追加",
+      "delete": "删除",
+      "ui": "笔记页面"
+    },
+    "args": {
+      "list": { "tag": "标签" },
+      "get": { "id": "笔记 id" },
+      "read": { "id": "笔记 id", "offset": "偏移", "limit": "条数" },
+      "search": { "query": "查询", "tag": "标签" },
+      "add": { "title": "标题", "text": "正文", "tag": "标签" },
+      "update": {
+        "id": "笔记 id",
+        "title": "标题",
+        "text": "正文",
+        "tag": "标签",
+        "expectedRevision": "期望版本"
+      },
+      "edit": {
+        "id": "笔记 id",
+        "old": "原文本",
+        "new": "新文本",
+        "replaceAll": "全部替换"
+      },
+      "append": { "id": "笔记 id", "text": "正文" },
+      "delete": { "id": "笔记 id" }
+    }
+  }
+}

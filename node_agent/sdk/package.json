@@ -1,0 +1,45 @@
+{
+  "name": "@node-agent/sdk",
+  "version": "0.1.1",
+  "type": "module",
+  "description": "Node, NodeHost and envelope contracts for node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "pretest": "npm run build",
+    "test": "node test-chunks.mjs && node test-node.mjs && node test-host.mjs && node test-bind.mjs && node test-package.mjs && node test-legacy.mjs && node test-reconnect.mjs && node test-bus-session.mjs && node test-i18n.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "bin": {
+    "node-agent-sdk": "dist/serve.js"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/sdk"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

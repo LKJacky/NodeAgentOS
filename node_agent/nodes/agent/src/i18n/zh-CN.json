@@ -1,0 +1,162 @@
+{
+  "title": "智能体 · node_agent",
+  "usage": {
+    "label": "本次会话的 token 用量和当前模型服务",
+    "input": "输入 ≈",
+    "output": "输出",
+    "total": "合计 ≈",
+    "provider": "模型服务",
+    "loading": "正在加载模型服务…",
+    "activeProvider": "当前模型服务",
+    "noProviders": "没有可用的模型服务",
+    "providersFailed": "无法读取模型服务",
+    "switchFailed": "切换模型服务失败：{error}",
+    "noCallYet": "还没有调用过模型",
+    "noCountsOne": "已调用模型 1 次；模型服务没有报告 token 数",
+    "noCounts": "已调用模型 {calls} 次；模型服务没有报告 token 数",
+    "none": "这个节点不报告 token 用量"
+  },
+  "composer": {
+    "placeholder": "输入消息…",
+    "label": "消息",
+    "send": "发送消息",
+    "stop": "停止正在生成的回答",
+    "failed": "出错了：{error}"
+  },
+  "queue": {
+    "queued": "排队中"
+  },
+  "tabs": {
+    "label": "本页正在显示哪个智能体",
+    "main": "主智能体",
+    "sub": "{parent} 的子智能体"
+  },
+  "menu": {
+    "label": "智能体操作",
+    "delete": "删除智能体"
+  },
+  "confirm": {
+    "delete": "删除智能体“{name}”？它的对话记录会一起删掉，页面会回到主智能体。",
+    "cancel": "取消",
+    "ok": "删除"
+  },
+  "destroy": {
+    "noAnswer": "节点没有回应",
+    "failed": "无法删除智能体“{name}”：{reason}"
+  },
+  "roles": {
+    "assistant": "智能体",
+    "user": "你",
+    "system": "系统",
+    "tool": "工具结果"
+  },
+  "state": {
+    "idle": "空闲",
+    "generating": "正在生成…",
+    "tool": "正在调用工具…",
+    "stopping": "正在停止…"
+  },
+  "msg": {
+    "from": "来自 {from}",
+    "usage": "新增输入 ≈{input} · 输出 {output} · 合计 ≈{total} Tokens",
+    "took": " · {seconds} 秒"
+  },
+  "copy": {
+    "thisMessage": "复制这条消息",
+    "thinking": "复制思考内容",
+    "arguments": "复制参数",
+    "result": "复制结果",
+    "copied": "已复制",
+    "failed": "复制失败"
+  },
+  "fold": {
+    "thinking": "思考",
+    "showRest": "展开其余 · {count} 字"
+  },
+  "call": {
+    "arguments": "参数",
+    "result": "结果",
+    "noResult": "没有返回结果"
+  },
+  "tool": {
+    "listNodes": "列出节点",
+    "listTools": "列出工具",
+    "call": "调用"
+  },
+  "ask": {
+    "preparing": "正在准备问题",
+    "timedOut": "已超时",
+    "waiting": "等你回答",
+    "yours": "你的回答",
+    "answered": "已回答",
+    "cancelled": "已取消",
+    "failed": "这个问题没能问出来",
+    "defaultTitle": "智能体有一个问题",
+    "sent": "已发送 — 等待智能体接收…",
+    "placeholder": "输入你的回答…",
+    "send": "发送",
+    "refused": "智能体拒绝了这个回答",
+    "timedOutNoAnswer": "已超时 — 没有回答，继续往下走",
+    "timedOutDefault": "已超时 — 按默认值“{used}”继续",
+    "secondsLeft": "还剩 {seconds} 秒"
+  },
+  "empty": {
+    "title": "想让我做什么？",
+    "text": "开始新的对话；智能体会调用工具把事情做完。"
+  },
+  "older": {
+    "loading": "正在加载更早的消息…",
+    "failed": "无法加载更早的消息"
+  },
+  "label": {
+    "node": "智能体",
+    "caps": {
+      "chat": "对话",
+      "chat_no_wait": "不等待结果地对话",
+      "history": "对话历史",
+      "status": "状态",
+      "stop": "停止智能体",
+      "provider": "模型服务",
+      "agents": "智能体列表",
+      "destroy_agent": "销毁智能体",
+      "answer": "回答问题",
+      "ui": "对话页面"
+    },
+    "args": {
+      "chat": {
+        "msg": "消息",
+        "priority": "优先级",
+        "agent": "智能体"
+      },
+      "chat_no_wait": {
+        "msg": "消息",
+        "priority": "优先级",
+        "agent": "智能体"
+      },
+      "history": {
+        "from": "起始序号",
+        "count": "条数",
+        "agent": "智能体"
+      },
+      "status": {
+        "agent": "智能体"
+      },
+      "stop": {
+        "agent": "智能体"
+      },
+      "provider": {
+        "action": "操作",
+        "name": "名称",
+        "agent": "智能体"
+      },
+      "destroy_agent": {
+        "name": "名称"
+      },
+      "answer": {
+        "id": "问题 id",
+        "answer": "回答",
+        "agent": "智能体"
+      }
+    }
+  }
+}

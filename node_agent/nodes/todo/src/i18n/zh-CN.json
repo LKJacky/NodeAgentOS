@@ -1,0 +1,128 @@
+{
+  "title": "待办 · node_agent",
+  "today": {
+    "title": "今天",
+    "empty": "还没有内容",
+    "noButtons": "还没有按钮",
+    "updated": "更新于 {at}"
+  },
+  "sync": {
+    "title": "实时更新",
+    "connecting": "正在连接",
+    "live": "实时同步",
+    "reconnecting": "正在重连"
+  },
+  "sort": {
+    "label": "排序",
+    "manual": "按手序（原始顺序）",
+    "manualTitle": "按手序排序",
+    "updated": "按更新时间",
+    "updatedTitle": "按更新时间排序"
+  },
+  "summary": {
+    "none": "还没有待办",
+    "open": "还有 {count} 项未完成",
+    "openDone": "{open} 项未完成 · {done} 项已完成"
+  },
+  "list": {
+    "title": "你的清单",
+    "placeholder": "添加待办…",
+    "newLabel": "新待办的标题",
+    "add": "添加",
+    "emptyTitle": "清单还是空的",
+    "emptyHint": "在上面输入，回车即可添加。"
+  },
+  "presses": {
+    "summary": "最近按下的按钮"
+  },
+  "row": {
+    "done": "完成于 {at}",
+    "edit": "编辑 {title}",
+    "delete": "删除 {title}",
+    "moveUp": "上移 {title}",
+    "moveDown": "下移 {title}",
+    "dragLabel": "拖动以重排",
+    "drag": "拖动以重排 {title}",
+    "frozen": "完成编辑后才能拖动这一行",
+    "needManual": "切换到手序才能拖动行",
+    "reopen": "重新打开 {title}",
+    "checkOff": "勾选完成 {title}"
+  },
+  "editor": {
+    "titleLabel": "待办标题",
+    "notesLabel": "待办备注",
+    "notesPlaceholder": "备注",
+    "cancel": "取消",
+    "save": "保存"
+  },
+  "confirm": {
+    "delete": "删除这条待办？此操作无法撤销。"
+  },
+  "toast": {
+    "added": "已添加待办",
+    "movedUp": "已上移",
+    "movedDown": "已下移",
+    "moved": "已移动",
+    "deleted": "已删除待办",
+    "saved": "修改已保存",
+    "needTitle": "待办需要一个标题"
+  },
+  "note": {
+    "sending": "正在发送「{label}」…",
+    "sent": "已把「{label}」发送给 {target}",
+    "notSent": "未发送：{reason}",
+    "cancelled": "已取消移动",
+    "lifted": "已拿起这一行：上下箭头移动，回车放下，Esc 取消",
+    "noNeighbour": "无法移动：旁边没有可以交换的行",
+    "moveFailed": "无法移动：{reason}"
+  },
+  "label": {
+    "node": "待办",
+    "caps": {
+      "today": "今天",
+      "set-today": "设置今天",
+      "press": "按下按钮",
+      "presses": "按下记录",
+      "list": "清单",
+      "add": "添加",
+      "update": "修改",
+      "toggle": "勾选完成",
+      "remove": "删除",
+      "move": "移动",
+      "ui": "待办页面"
+    },
+    "args": {
+      "set-today": {
+        "text": "文字",
+        "buttons": "按钮"
+      },
+      "press": {
+        "index": "序号"
+      },
+      "list": {
+        "filter": "筛选"
+      },
+      "add": {
+        "title": "标题",
+        "text": "备注"
+      },
+      "update": {
+        "id": "编号",
+        "title": "标题",
+        "text": "备注"
+      },
+      "toggle": {
+        "id": "编号",
+        "done": "完成"
+      },
+      "remove": {
+        "id": "编号"
+      },
+      "move": {
+        "id": "编号",
+        "before": "之前",
+        "after": "之后"
+      }
+    }
+  }
+}

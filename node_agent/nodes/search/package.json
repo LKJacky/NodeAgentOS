@@ -1,0 +1,117 @@
+{
+  "name": "node-agent-search",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A node exposing DeepSeek search and safe HTTP fetch through the Harness web runtime API",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node ../../sdk/dist/serve.js .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@deepseek-ai/cordis": "4.0.2",
+    "@deepseek-ai/dsh-attachment": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-web": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-web-fetch-http": "0.1.5-rc.3",
+    "@deepseek-ai/dsh-web-search-deepseek": "0.1.5-rc.3",
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "node": {
+    "id": "search",
+    "i18n": "dist/i18n",
+    "desc": "DeepSeek web search and safe page retrieval, plus the page the API key is saved on",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "search": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The query to pass to DeepSeek native web search"
+          },
+          "maxResults": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Maximum sources to return (default 8)"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "description": "Return structured source results from DeepSeek native web search"
+      },
+      "fetch": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Public HTTP(S) URL to retrieve safely"
+          }
+        },
+        "required": [
+          "url"
+        ],
+        "description": "Return bounded HTML or text content from a public URL"
+      },
+      "key": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "status",
+              "save",
+              "clear"
+            ],
+            "description": "status (the default) says whether a key is set; save keeps `api_key`; clear forgets the saved one"
+          },
+          "api_key": {
+            "type": "string",
+            "description": "The DeepSeek API key to keep; only `save` takes one, and it is never read back"
+          }
+        },
+        "description": "Check whether a DeepSeek API key is set, save one, or clear the saved one; never returns the key"
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "The DeepSeek search page: save or clear the API key it searches with",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- The lens in sky blue, the handle in teal: one look, one hit. -->\n  <circle cx=\"10.5\" cy=\"10.5\" r=\"6\" stroke=\"#0ea5e9\" />\n  <path stroke=\"#0d9488\" d=\"m15.2 15.2 4.4 4.4\" />\n</svg>\n"
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/search"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

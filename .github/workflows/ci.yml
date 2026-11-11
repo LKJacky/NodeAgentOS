@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # The license copies inside each package must match the root LICENSE.
+      - run: npm run licenses:check
+      - run: npm run build
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      # `npm test` builds the workspace first (the build artifacts are gitignored), then runs
+      # every workspace suite. @node-agent/sdk is installed from npm, not built here.
+      # Do not add continue-on-error here -- a red suite is fixed, not hidden.
+      - run: npm test

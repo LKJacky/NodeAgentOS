@@ -1,0 +1,162 @@
+{
+  "title": "Agent · node_agent",
+  "usage": {
+    "label": "session token usage and active provider",
+    "input": "in ≈",
+    "output": "out",
+    "total": "total ≈",
+    "provider": "provider",
+    "loading": "Loading providers…",
+    "activeProvider": "Active provider",
+    "noProviders": "No providers available",
+    "providersFailed": "Could not load providers",
+    "switchFailed": "Could not switch provider: {error}",
+    "noCallYet": "No model call yet",
+    "noCountsOne": "1 model call so far; the provider reported no token counts",
+    "noCounts": "{calls} model calls so far; the provider reported no token counts",
+    "none": "This node reports no token usage"
+  },
+  "composer": {
+    "placeholder": "Type a message…",
+    "label": "message",
+    "send": "Send message",
+    "stop": "Stop the answer in progress",
+    "failed": "something went wrong: {error}"
+  },
+  "queue": {
+    "queued": "queued"
+  },
+  "tabs": {
+    "label": "which agent this page is showing",
+    "main": "the main agent",
+    "sub": "sub-agent of {parent}"
+  },
+  "menu": {
+    "label": "agent actions",
+    "delete": "Delete agent"
+  },
+  "confirm": {
+    "delete": "Delete the agent “{name}”? Its transcript is deleted with it, and the page goes back to the main agent.",
+    "cancel": "Cancel",
+    "ok": "Delete"
+  },
+  "destroy": {
+    "noAnswer": "the node did not answer",
+    "failed": "Could not delete the agent “{name}”: {reason}"
+  },
+  "roles": {
+    "assistant": "Agent",
+    "user": "You",
+    "system": "System",
+    "tool": "Tool result"
+  },
+  "state": {
+    "idle": "idle",
+    "generating": "generating…",
+    "tool": "calling a tool…",
+    "stopping": "stopping…"
+  },
+  "msg": {
+    "from": "From {from}",
+    "usage": "New input ≈{input} · output {output} · total ≈{total} Tokens",
+    "took": " · {seconds}s"
+  },
+  "copy": {
+    "thisMessage": "Copy this message",
+    "thinking": "Copy the thinking",
+    "arguments": "Copy the arguments",
+    "result": "Copy the result",
+    "copied": "Copied",
+    "failed": "Copy failed"
+  },
+  "fold": {
+    "thinking": "Thinking",
+    "showRest": "Show rest · {count} chars"
+  },
+  "call": {
+    "arguments": "Arguments",
+    "result": "Result",
+    "noResult": "no result came back"
+  },
+  "tool": {
+    "listNodes": "List nodes",
+    "listTools": "List tools",
+    "call": "Call"
+  },
+  "ask": {
+    "preparing": "Preparing a question",
+    "timedOut": "Timed out",
+    "waiting": "Waiting for your answer",
+    "yours": "Your answer",
+    "answered": "Answered",
+    "cancelled": "Cancelled",
+    "failed": "The question could not be asked",
+    "defaultTitle": "The agent has a question",
+    "sent": "Sent — waiting for the agent to pick it up…",
+    "placeholder": "Type your answer…",
+    "send": "Send",
+    "refused": "the agent refused the answer",
+    "timedOutNoAnswer": "Timed out — carried on with no answer",
+    "timedOutDefault": "Timed out — carried on with the default \"{used}\"",
+    "secondsLeft": "{seconds}s left"
+  },
+  "empty": {
+    "title": "How can I help?",
+    "text": "Start a new conversation; the Agent can call tools to get things done."
+  },
+  "older": {
+    "loading": "Loading earlier messages…",
+    "failed": "Could not load earlier messages"
+  },
+  "label": {
+    "node": "Agent",
+    "caps": {
+      "chat": "Chat",
+      "chat_no_wait": "Chat without waiting",
+      "history": "Conversation history",
+      "status": "Status",
+      "stop": "Stop the agent",
+      "provider": "Model provider",
+      "agents": "Agents",
+      "destroy_agent": "Destroy an agent",
+      "answer": "Answer a question",
+      "ui": "Chat page"
+    },
+    "args": {
+      "chat": {
+        "msg": "Message",
+        "priority": "Priority",
+        "agent": "Agent"
+      },
+      "chat_no_wait": {
+        "msg": "Message",
+        "priority": "Priority",
+        "agent": "Agent"
+      },
+      "history": {
+        "from": "From",
+        "count": "Count",
+        "agent": "Agent"
+      },
+      "status": {
+        "agent": "Agent"
+      },
+      "stop": {
+        "agent": "Agent"
+      },
+      "provider": {
+        "action": "Action",
+        "name": "Name",
+        "agent": "Agent"
+      },
+      "destroy_agent": {
+        "name": "Name"
+      },
+      "answer": {
+        "id": "Question id",
+        "answer": "Answer",
+        "agent": "Agent"
+      }
+    }
+  }
+}

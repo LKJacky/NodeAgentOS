@@ -1,0 +1,56 @@
+{
+  "name": "node-agent",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The node agent meta package: combines the bus (node-agent-bus) and the agent (node-agent-agent), and provides the headless backend entry (bin: node-agent)",
+  "bin": {
+    "node-agent": "./dist/serve.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../scripts/sync-licenses.mjs",
+    "pretest": "npm run build",
+    "test": "node --test tests/*.test.mjs",
+    "build": "tsc -p tsconfig.json"
+  },
+  "node": {
+    "id": "node-agent",
+    "desc": "The core in one process: the bus + the history node + the agent, then whatever NODE_AGENT_NODES names",
+    "caps": [],
+    "bin": "node-agent"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/runtime": "file:../runtime",
+    "node-agent-agent": "file:../nodes/agent",
+    "node-agent-bus": "file:../bus",
+    "node-agent-history": "file:../nodes/history",
+    "@node-agent/sdk": "^0.1.1",
+    "node-agent-webui": "file:../nodes/webui"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/node-agent"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

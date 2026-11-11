@@ -1,0 +1,34 @@
+{
+  "name": "node-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A complete agent you run yourself: one bus, nodes in one process, and a Web UI",
+  "workspaces": [
+    "node_agent/sdk",
+    "node_agent/bus",
+    "node_agent/runtime",
+    "node_agent/node-agent",
+    "node_agent/nodes/*",
+    "node_example/hello-node"
+  ],
+  "scripts": {
+    "licenses:sync": "node scripts/sync-licenses.mjs",
+    "licenses:check": "node scripts/sync-licenses.mjs --check",
+    "build": "npm run build -w @node-agent/sdk && npm run build -w node-agent-bus && npm run build -w @node-agent/runtime && npm run build -w node-agent-agent && npm run build -w node-agent-history && npm run build -w node-agent-provider && npm run build -w @node-agent/shell && npm run build -w node-agent-system && npm run build -w node-agent-webui && npm run build -w node-agent-notes && npm run build -w node-agent-todo && npm run build -w node-agent-timer && npm run build -w node-agent-search && npm run build -w node-agent-introduce && npm run build -w node-agent && npm run build -w node-agent-example",
+    "test": "npm run build && npm test --workspaces --if-present",
+    "start": "node node_agent/node-agent/dist/serve.js"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

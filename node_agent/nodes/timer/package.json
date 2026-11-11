@@ -1,0 +1,180 @@
+{
+  "name": "node-agent-timer",
+  "version": "0.2.0",
+  "type": "module",
+  "description": "The timer node: wake a node later by calling chat_no_wait on it - set / cancel / list, plus its own page",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/system.d.ts",
+      "default": "./dist/system.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "rm -rf dist tsconfig.tsbuildinfo && tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node ../../sdk/dist/serve.js .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "node": {
+    "id": "timer",
+    "i18n": "dist/i18n",
+    "desc": "Timers: what is pending, how long is left, repeats, and a form to add one",
+    "entry": "dist/system.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "set": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "alarm",
+              "countdown"
+            ],
+            "description": "alarm: a moment on the clock, with `at`. countdown: a length of time from now, with `after_seconds`. Leave it out and the argument you gave decides"
+          },
+          "after_seconds": {
+            "type": "number",
+            "description": "countdown mode: seconds from now; fractions allowed (300 = in five minutes)"
+          },
+          "at": {
+            "type": "string",
+            "description": "alarm mode: a clock time \"HH:MM\" (tomorrow if it has passed today) or an ISO-8601 timestamp"
+          },
+          "message": {
+            "type": "string",
+            "description": "the sentence the node is woken with; the timer adds where it came from"
+          },
+          "repeat": {
+            "type": "string",
+            "description": "an alarm repeats: once (default), daily, weekdays, weekly. A countdown repeats: once, or every:<seconds> (>= 60)"
+          },
+          "node": {
+            "type": "string",
+            "description": "which node to wake; default is the caller, so a timer wakes me"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "queue",
+              "interpret"
+            ],
+            "description": "queue waits for the current turn, interpret goes into it; default queue"
+          },
+          "name": {
+            "type": "string",
+            "description": "a short label for the page, e.g. \"the oven\""
+          }
+        },
+        "required": [
+          "message"
+        ],
+        "description": "Wake a node at a time (mode alarm, at) or after a delay (mode countdown, after_seconds), optionally repeating; returns the id",
+        "callers": ["*"]
+      },
+      "cancel": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "the timer id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Cancel one timer, repeats included, so it never fires again",
+        "callers": ["*"]
+      },
+      "list": {
+        "type": "object",
+        "properties": {},
+        "description": "Every timer: id, target, message, mode, kind, repeat, next_at, in_seconds, phrase",
+        "callers": ["*"]
+      },
+      "wake": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "the timer id"
+          },
+          "name": {
+            "type": "string",
+            "description": "a short label, e.g. \"the oven\""
+          },
+          "target": {
+            "type": "string",
+            "description": "the node to wake"
+          },
+          "priority": {
+            "type": "string",
+            "enum": [
+              "queue",
+              "interpret"
+            ],
+            "description": "queue waits for the current turn, interpret goes into it"
+          },
+          "message": {
+            "type": "string",
+            "description": "the sentence the node is woken with"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "alarm",
+              "countdown"
+            ],
+            "description": "alarm: a moment on the clock; countdown: a length of time from now"
+          },
+          "repeat": {
+            "type": "string",
+            "description": "once (default), daily, weekdays, weekly, or every:<seconds>"
+          },
+          "firesAt": {
+            "type": "number",
+            "description": "when it goes off, as a number"
+          }
+        },
+        "expose": false
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "Timers: what is pending, how long is left, repeats, and a form to add one",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- An alarm clock: the dial in amber, the hands in orange, the bells in red. -->\n  <circle cx=\"12\" cy=\"13.6\" r=\"6.9\" stroke=\"#f59e0b\" />\n  <path stroke=\"#ea580c\" d=\"M12 9.8v3.8l2.6 1.6\" />\n  <path stroke=\"#ef4444\" d=\"m3.4 5.6 3.2-2.6M20.6 5.6l-3.2-2.6\" />\n</svg>\n",
+        "expose": false,
+        "callers": []
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/timer"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

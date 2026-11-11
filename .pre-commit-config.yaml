@@ -1,0 +1,106 @@
+# pre-commit configuration — requires the stage names introduced in pre-commit v3.2
+#
+# Run each once after cloning:
+#     pre-commit install            # installs .git/hooks/pre-commit (the devcontainer already runs this automatically)
+#     pre-commit run --all-files    # run it once over the whole repo
+#
+# Common commands:
+#     pre-commit run                # only runs on the files staged this time
+#     pre-commit autoupdate         # bump the revs below to the latest
+#     pre-commit run --hook-stage manual --all-files
+#
+# Why the gate is scoped to node_agent/: it is the only code in the repo with "types" to check — docs/ is
+# documentation and .devcontainer/ is the environment. So the TS hooks use files: to scope themselves —
+# when only docs change they are skipped automatically and commits are not slowed down.
+
+minimum_pre_commit_version: '3.2.0'
+default_stages: [pre-commit]
+default_install_hook_types: [pre-commit]
+
+repos:
+  # ------------------------------------------------------------------
+  # 1) General health checks: the language-independent "the file itself has a problem" category. These hooks modify files,
+  #    so you need to git add again (this is normal pre-commit behavior).
+  # ------------------------------------------------------------------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: [--maxkb=512]
+      - id: check-yaml
+      - id: check-json
+        # .vscode/launch.json and .devcontainer/*.json are JSONC (comments / trailing commas in jobs),
+        # which a standard JSON parser flags as a syntax error — these files are exempted.
+        exclude: ^(\.vscode|\.devcontainer)/.*\.json$
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        # Two trailing spaces at the end of a Markdown line are a "hard line break"; removing them changes the rendered result, so they are kept.
+        args: [--markdown-linebreak-ext=md]
+      - id: mixed-line-ending
+        args: [--fix=lf]
+
+  # ------------------------------------------------------------------
+  # 2) Formatting: Prettier, applied only to .ts / .tsx
+  #
+  #    Why repo: local + npx instead of the ready-made mirrors-prettier —
+  #    the latter (including the officially archived pre-commit/mirrors-prettier and the community-maintained
+  #    rbubley/mirrors-prettier) cannot be installed in this image; both obstacles are environment problems:
+  #      a) pre-commit considers "executables in $HOME" untrusted (exe_exists in languages/node.py:
+  #         an exe under ~ is judged False), while this container's node is under /root/.nvm/ →
+  #         it does not use the system node and downloads its own; but the nodeenv download path in the image is broken:
+  #         get_last_stable_node_version() throws IndexError directly.
+  #      b) adding language_version: system works around a) (nodeenv switches to -n system, no download),
+  #         but then `npm install -g prettier` hangs in that nodeenv —
+  #         measured 150s with no output and no http log; the same command with the system npm takes only 1.2s.
+  #    So language: system is used instead. Wrapping in `bash -c` is for the same reason as group 3): a non-interactive bash
+  #    sources $BASH_ENV, and nvm is exactly what writes PATH there, so npm is also found in VS Code's git integration.
+  #    On first run npx --yes pulls prettier@3.9.9 into the ~/.npm/_npx cache; after that it works offline;
+  #    `--yes` cannot be omitted — without it npx asks "Ok to proceed? (y)", and there is no TTY in the hook,
+  #    so the commit hangs there.
+  #    The version therefore lives in entry, where `pre-commit autoupdate` cannot manage it (look beside
+  #    .prettierrc.json). To move this "package fetching" to build time as well, in .devcontainer/Dockerfile
+  #    run `npm i -g prettier@3.9.9` and symlink it to /usr/local/bin as done elsewhere, changing entry to
+  #    `bash -c 'prettier --write --ignore-unknown "$@"' --`.
+  #
+  #    types_or: [ts, tsx] is required — without it the hook runs on **all text files**
+  #    (pre-commit tags with identify: .ts → [text, ts], .tsx → [text, tsx]) and would rewrite
+  #    .json / .yaml / .md on the very first commit. To open it up to those, just change this line.
+  #
+  #    The options are in .prettierrc.json at the repo root: printWidth 100 + singleQuote.
+  #    These two were measured, not guessed — of the repo's 98 TS files and 16071 lines, 99% do not exceed 98
+  #    characters, and the existing code already uses single quotes. Measured churn: 1514 lines at printWidth 100;
+  #    tightening to the default 80 would change 4878 lines; singleQuote the other way (double quotes) 7216 lines.
+  #
+  #    --write modifies files in place → this commit fails, so git add again and commit
+  #    (same as those fixers in group 1; this is the normal pre-commit convention).
+  # ------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: prettier
+        name: prettier (TS/TSX formatting)
+        entry: bash -c 'npx --yes prettier@3.9.9 --write --ignore-unknown "$@"' --
+        language: system
+        types_or: [ts, tsx]
+
+  # ------------------------------------------------------------------
+  # 3) The real gate: types for node_agent/
+  #
+  #    Wrap in `bash -c` rather than exec npm directly: a non-interactive bash sources $BASH_ENV,
+  #    and nvm is exactly what writes PATH there — so committing in VS Code's git integration
+  #    (where env vars differ from the terminal) still finds npm.
+  #
+  #    pass_filenames: false — `npm run build` builds every workspace at once and does not accept file name arguments;
+  #    whether it runs is decided by files: above.
+  #
+  #    There is only a type gate here: the demo has no test suite — the test in package.json just runs
+  #    launch_test.ts, which starts webui and stays up on 8790, making it unsuitable as a commit hook.
+  # ------------------------------------------------------------------
+  - repo: local
+    hooks:
+      - id: node-agent-check
+        name: TypeScript build (npm workspaces under node_agent/)
+        entry: bash -c 'npm run build'
+        language: system
+        files: ^(node_agent|node_example)/.*\.(ts|json|mjs)$
+        pass_filenames: false

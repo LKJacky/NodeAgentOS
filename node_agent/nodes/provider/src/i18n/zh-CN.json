@@ -1,0 +1,95 @@
+{
+  "new": "新建服务商",
+  "heading": "模型服务",
+  "form": {
+    "name": "名称",
+    "protocol": "协议",
+    "model": "模型",
+    "baseUrl": "基础 URL",
+    "apiKey": "API 密钥",
+    "organization": "组织",
+    "timeout": "超时（秒）",
+    "thinking": "思考强度",
+    "thinkingCustom": "自定义强度",
+    "keyNew": "API 密钥",
+    "keyKeep": "留空则保留现有密钥",
+    "save": "保存",
+    "test": "测试",
+    "delete": "删除"
+  },
+  "type": {
+    "openai": "OpenAI 兼容",
+    "anthropic": "Anthropic（Claude）",
+    "responses": "OpenAI（Responses API）"
+  },
+  "hint": {
+    "openai": "OpenAI 兼容：任何支持 /v1/chat/completions 的服务端，网关也包括在内。",
+    "anthropic": "Anthropic（Claude）：原生 Messages API。只在它上面转发 Claude 的网关需要自己的地址（/v1/messages 之前的部分），以及该网关列出的模型 id。",
+    "responses": "OpenAI（Responses API）：向 /responses 而不是 /chat/completions 提交请求，用于在 /responses 上提供某个模型的部署或网关（例如 MIOFFICE azure_openai/gpt-5.6-sol）。基础 URL 是 /responses 之前的部分。"
+  },
+  "thinking": {
+    "default": "服务商默认",
+    "custom": "自定义…"
+  },
+  "note": {
+    "persistent": "服务商设置已保存在历史记录中。",
+    "volatile": "服务商设置只在此节点运行期间保留。"
+  },
+  "error": {
+    "call": "服务商操作失败",
+    "callFailed": "服务商调用失败",
+    "required": "名称和模型都必须填写。",
+    "baseUrl": "基础 URL 要以 http:// 或 https:// 开头。",
+    "selectFirst": "请先保存或选择一个服务商。"
+  },
+  "status": {
+    "saved": "已保存服务商“{name}”。"
+  },
+  "test": {
+    "testing": "测试中…",
+    "usage": "（输入 {prompt} / 输出 {completion}）",
+    "ok": "{reply}{usage} — 已用其保存的配置测试“{name}”。",
+    "empty": "服务商调用成功（回复为空）。{usage} 已用其保存的配置测试“{name}”。"
+  },
+  "confirm": {
+    "delete": "删除服务商“{name}”？"
+  },
+  "label": {
+    "node": "模型服务",
+    "caps": {
+      "providers": "模型服务商",
+      "chat": "对话",
+      "start_stream": "开启流式回复",
+      "stream_ready": "流就绪",
+      "cancel_stream": "取消流",
+      "ui": "模型服务页面"
+    },
+    "args": {
+      "providers": {
+        "action": "操作",
+        "name": "名称",
+        "config": "配置"
+      },
+      "chat": {
+        "name": "服务商",
+        "messages": "消息",
+        "tools": "工具",
+        "max_completion_tokens": "最大回复 token 数",
+        "previous_response_id": "上一条响应 id"
+      },
+      "start_stream": {
+        "name": "服务商",
+        "messages": "消息",
+        "tools": "工具",
+        "max_completion_tokens": "最大回复 token 数",
+        "previous_response_id": "上一条响应 id"
+      },
+      "stream_ready": {
+        "stream_id": "流 id"
+      },
+      "cancel_stream": {
+        "stream_id": "流 id"
+      }
+    }
+  }
+}

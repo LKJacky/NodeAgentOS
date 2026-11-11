@@ -1,0 +1,295 @@
+{
+  "name": "node-agent-system",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Privileged system node: user language/timezone and durable timers",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node dist/serve.js",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "node": {
+    "id": "system",
+    "i18n": "dist/i18n",
+    "desc": "Privileged system node: user language/timezone and durable timers",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "language": {
+        "type": "object",
+        "properties": {},
+        "description": "Return the user's language tag",
+        "allow_edit_permission": false
+      },
+      "locale": {
+        "type": "object",
+        "properties": {},
+        "description": "Return the stored language and the one in force",
+        "callers": [
+          "runtime-control"
+        ],
+        "allow_edit_permission": false
+      },
+      "ensure_language": {
+        "type": "object",
+        "properties": {
+          "browser": {
+            "type": "string",
+            "description": "The browser's Accept-Language header"
+          }
+        },
+        "description": "Set the language from the browser once, while none has been chosen",
+        "callers": [],
+        "allow_edit_permission": false
+      },
+      "timezone": {
+        "type": "object",
+        "properties": {},
+        "description": "Return the user's IANA timezone",
+        "allow_edit_permission": false
+      },
+      "add_timer": {
+        "type": "object",
+        "required": [
+          "id",
+          "at",
+          "callpayload"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "Caller-chosen timer id, unique among pending timers"
+          },
+          "at": {
+            "type": "string",
+            "description": "ISO-8601 instant when the caller should be called"
+          },
+          "callpayload": {
+            "type": "object",
+            "required": [
+              "cap"
+            ],
+            "properties": {
+              "cap": {
+                "type": "string",
+                "description": "Capability to call on the caller's node"
+              },
+              "args": {
+                "type": "object",
+                "description": "Arguments for that capability"
+              }
+            },
+            "description": "The call the system sends to the caller at `at`"
+          }
+        },
+        "description": "Schedule a call back to the calling node"
+      },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "language": {
+            "type": "string",
+            "description": "zh-CN or en; omit both fields to read settings",
+            "enum": [
+              "zh-CN",
+              "en"
+            ]
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA timezone to persist"
+          }
+        },
+        "description": "Read or update the user's language and timezone",
+        "callers": [
+          "runtime-control"
+        ]
+      },
+      "timers": {
+        "type": "object",
+        "properties": {},
+        "description": "List pending timers"
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "System settings and pending timers page",
+        "callers": [],
+        "allow_edit_permission": false,
+        "expose": false
+      },
+      "cancel_timer": {
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          }
+        }
+      },
+      "authorize": {
+        "type": "object",
+        "required": [
+          "caller",
+          "target",
+          "cap",
+          "tenant"
+        ],
+        "properties": {
+          "caller": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "cap": {
+            "type": "string"
+          },
+          "tenant": {
+            "type": "string"
+          },
+          "defaultCallers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "callers": [
+          "bus"
+        ],
+        "description": "Internal: decide whether a node may call another node capability",
+        "allow_edit_permission": false
+      },
+      "permissions": {
+        "type": "object",
+        "properties": {},
+        "description": "List effective cap permissions",
+        "callers": []
+      },
+      "set_permission": {
+        "type": "object",
+        "required": [
+          "target",
+          "cap",
+          "callers"
+        ],
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "cap": {
+            "type": "string"
+          },
+          "callers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "Override the callers allowed to invoke one capability",
+        "callers": [],
+        "allow_edit_permission": true
+      },
+      "clear_permission": {
+        "type": "object",
+        "required": [
+          "target",
+          "cap"
+        ],
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "cap": {
+            "type": "string"
+          }
+        },
+        "description": "Remove a permission override and use the cap default",
+        "callers": [],
+        "allow_edit_permission": true
+      },
+      "set_own_permission": {
+        "type": "object",
+        "required": [
+          "cap",
+          "callers"
+        ],
+        "properties": {
+          "cap": {
+            "type": "string"
+          },
+          "callers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "description": "Edit the callers allowed to invoke one of your own capabilities",
+        "callers": [
+          "*"
+        ],
+        "allow_edit_permission": false
+      },
+      "clear_own_permission": {
+        "type": "object",
+        "required": [
+          "cap"
+        ],
+        "properties": {
+          "cap": {
+            "type": "string"
+          }
+        },
+        "description": "Remove an override for one of your own capabilities",
+        "callers": [
+          "*"
+        ],
+        "allow_edit_permission": false
+      }
+    },
+    "bindings": [
+      "system-scheduler"
+    ]
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/system"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

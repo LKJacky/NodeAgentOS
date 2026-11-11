@@ -1,0 +1,21 @@
+{
+  "chrome.install": "安装到主屏幕：分享 → 添加到主屏幕。",
+  "chrome.close": "关闭",
+  "chrome.closeNode": "关闭 {node}",
+  "chrome.offline": "已离线：连不上 node_agent。",
+  "chrome.retry": "重试",
+  "chrome.pinnedNav": "左栏的页面",
+  "chrome.nav": "主区域的页面",
+  "chrome.launcher": "启动器",
+  "chrome.launcherTitle": "所有提供了页面的节点",
+  "chrome.launcherPanel": "有页面的节点",
+  "chrome.pinnedView": "固定在左栏的节点页面",
+  "chrome.view": "节点页面",
+  "chrome.splitter": "拖动调整宽度 · 双击复位",
+  "chrome.empty": "还没有节点提供页面：给节点加上 ui 能力，它就有了。",
+  "chrome.online": "在线",
+  "chrome.offlineDot": "离线",
+  "label": {
+    "node": "网页界面"
+  }
+}

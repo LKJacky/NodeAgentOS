@@ -1,0 +1,240 @@
+{
+  "name": "node-agent-notes",
+  "version": "0.1.2",
+  "type": "module",
+  "description": "The notes node: add, read, update and delete memos (notes), stored in history, with its own page",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "scripts/migrate-memos-from-memory.mjs",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node ../../sdk/dist/serve.js .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "markdown-it": "^14.1.0",
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "node": {
+    "id": "notes",
+    "desc": "Persistent memos (notes): read / add / update / delete / search",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "i18n": "dist/i18n",
+    "caps": {
+      "list": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "only documents with this tag (exact, optional)"
+          }
+        },
+        "required": [],
+        "description": "One summary per document (id, title, tag, bytes, lines), newest first; no body"
+      },
+      "get": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "the memo id"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "One document's entry, body included — this is how the text is fetched"
+      },
+      "read": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which document to read"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "first line to read (1-based, optional)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "how many lines at most (optional)"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Read one document's text, in line chunks"
+      },
+      "search": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "substring to look for (case-insensitive)"
+          },
+          "tag": {
+            "type": "string",
+            "description": "only documents with this tag (exact, optional)"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "description": "Where the text appears: line, column and the text around each hit; no body"
+      },
+      "tags": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "description": "Every tag in use, with how many documents carry it"
+      },
+      "add": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "title"
+          },
+          "text": {
+            "type": "string",
+            "description": "body text, optional"
+          },
+          "tag": {
+            "type": "string",
+            "description": "the label to file it under ('' is no tag, optional)"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "description": "Add one; returns confirmation text (with id and title)"
+      },
+      "update": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which memo to update"
+          },
+          "title": {
+            "type": "string",
+            "description": "new title"
+          },
+          "text": {
+            "type": "string",
+            "description": "new body text"
+          },
+          "tag": {
+            "type": "string",
+            "description": "new tag — this is how a document is refiled"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "write only if the memo is still at this revision; anything else is a conflict"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Rewrite the title, body or tag that was sent"
+      },
+      "edit": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which document to edit"
+          },
+          "old": {
+            "type": "string",
+            "description": "the exact text to replace; must be unique unless replaceAll"
+          },
+          "new": {
+            "type": "string",
+            "description": "what to put in its place ('' deletes it, optional)"
+          },
+          "replaceAll": {
+            "type": "boolean",
+            "description": "allow replacing every match (default false)"
+          }
+        },
+        "required": [
+          "id",
+          "old"
+        ],
+        "description": "Replace a snippet in the document's text; returns confirmation text"
+      },
+      "append": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which document to append to"
+          },
+          "text": {
+            "type": "string",
+            "description": "the line to add at the end"
+          }
+        },
+        "required": [
+          "id",
+          "text"
+        ],
+        "description": "Add text at the end of the document, on a line of its own"
+      },
+      "delete": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which memo to delete"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Delete by id; returns confirmation text (with id and title)"
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "Documents with tags: read / edit / append / search / add / update / delete",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- A page of notes in violet, its lines in amber: what is written down stays. -->\n  <path stroke=\"#7c3aed\" d=\"M14.5 3.5h-7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V8z\" />\n  <path stroke=\"#7c3aed\" d=\"M14.5 3.5V8h4\" />\n  <path stroke=\"#f59e0b\" d=\"M9 12.5h6M9 16.5h3.5\" />\n</svg>\n"
+      }
+    }
+  },
+  "publisher": "node-agent",
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/notes"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

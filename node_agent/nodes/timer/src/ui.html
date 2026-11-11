@@ -1,0 +1,1393 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script src="/webui/events-client.js"></script>
+    <script src="/webui/events-broker.js"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">Timer · node_agent</title>
+    <script>
+      // Inside the webui shell this page is an iframe, and then it has to fill the FRAME it was given
+      // rather than the window: the height chain below reads this class. Set before the style is
+      // parsed, so nothing is ever laid out at the wrong height. `self !== top` never throws.
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f4f6fb;
+        --surface: #ffffff;
+        --surface-soft: #f8f9fc;
+        --surface-hover: #f1f4fa;
+        --text: #171a23;
+        --muted: #5f6a7d;
+        --faint: #6f7888;
+        --line: #e4e8f0;
+        --line-strong: #d4d9e4;
+        --brand: #635bff;
+        --brand-fill: #635bff;
+        --brand-dark: #5148e5;
+        --brand-soft: #eeecff;
+        --danger: #d92d4b;
+        --danger-soft: #fff0f3;
+        --success: #15956f;
+        --success-soft: #e8f7f1;
+        --shadow-sm: 0 1px 2px #151b2b0a, 0 1px 5px #151b2b0d;
+        --shadow-md: 0 8px 30px #20294a12, 0 2px 8px #20294a0a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0f15;
+          --surface: #151820;
+          --surface-soft: #1a1e28;
+          --surface-hover: #202531;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --faint: #7d8798;
+          --line: #292e3a;
+          --line-strong: #39404f;
+          --brand: #8b83ff;
+          --brand-fill: #5b52e8;
+          --brand-dark: #4f46e5;
+          --brand-soft: #29254d;
+          --danger: #ff6b85;
+          --danger-soft: #3a2029;
+          --success: #4bd2a7;
+          --success-soft: #17332a;
+          --shadow-sm: 0 1px 3px #0003;
+          --shadow-md: 0 12px 36px #0004;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--page);
+        color: var(--text);
+        font:
+          14px/1.5 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+      /* `display: flex` on a view would otherwise beat the [hidden] default and two pages would show
+         at once; saying it once here is what makes `hidden` mean hidden everywhere on this page. */
+      [hidden] {
+        display: none !important;
+      }
+      .app {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      /* One page at a time. The list is the page; the two forms are pages of their own reached by a
+         button and left by Back, Cancel or Save — never a form parked above the list. */
+      .topbar {
+        flex: none;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        padding-top: calc(10px + env(safe-area-inset-top));
+        border-bottom: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .back {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 44px;
+        padding: 0 10px 0 6px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 13.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .back:hover {
+        background: var(--surface-hover);
+      }
+      .back span {
+        color: var(--faint);
+        font-size: 18px;
+        line-height: 1;
+      }
+      .title {
+        margin: 0;
+        overflow: hidden;
+        font-size: 17px;
+        font-weight: 650;
+        letter-spacing: -0.02em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      /* The connection state belongs to the list it describes: a chip beside the Pending heading, not
+         a bar across the top of the page. It is not on the forms, which have nothing to sync. */
+      .sync {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+      .sync-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--faint);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--faint) 16%, transparent);
+      }
+      .sync.live .sync-dot {
+        background: var(--success);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
+      }
+      .workspace {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .view {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+      }
+      .heading {
+        flex: none;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 4px 10px;
+        padding: 14px 16px 4px;
+      }
+      .heading h2 {
+        margin: 0;
+        font-size: 15px;
+        letter-spacing: -0.02em;
+      }
+      .heading p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      /* The list is the page, so it takes every pixel the heading, the footnote and the two buttons
+         do not: it scrolls here rather than the page. */
+      .list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 2px 12px 12px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
+      }
+      .wake {
+        display: grid;
+        gap: 10px;
+        margin: 0 0 8px;
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+      }
+      .wake:last-child {
+        margin-bottom: 0;
+      }
+      .count {
+        display: flex;
+        align-items: baseline;
+        flex-wrap: wrap;
+        gap: 6px;
+        color: var(--brand);
+      }
+      .count b {
+        font-size: 21px;
+        font-variant-numeric: tabular-nums;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .count span {
+        color: var(--faint);
+        font-size: 10.5px;
+      }
+      .wake-body {
+        min-width: 0;
+      }
+      .wake-body b {
+        display: block;
+        overflow: hidden;
+        font-size: 13.5px;
+        font-weight: 650;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .wake-body p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12.5px;
+        overflow-wrap: anywhere;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+        color: var(--faint);
+        font-size: 11px;
+      }
+      /* Every row says which of the two it is, with the same two words the two buttons use. */
+      .badge {
+        padding: 1px 8px;
+        border-radius: 20px;
+        background: var(--surface-hover);
+        color: var(--muted);
+        font-weight: 600;
+      }
+      .badge.alarm {
+        background: var(--brand-soft);
+        color: var(--brand-dark);
+      }
+      @media (prefers-color-scheme: dark) {
+        .badge.alarm {
+          color: var(--brand);
+        }
+      }
+      .badge.countdown {
+        background: var(--success-soft);
+        color: var(--success);
+      }
+      .chip {
+        padding: 1px 8px;
+        border-radius: 20px;
+        background: var(--brand-soft);
+        color: var(--brand-dark);
+        font-weight: 550;
+      }
+      @media (prefers-color-scheme: dark) {
+        .chip {
+          color: var(--brand);
+        }
+      }
+      .cancel {
+        width: 100%;
+        min-height: 44px;
+        padding: 0 14px;
+        border: 1px solid var(--line-strong);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12.5px;
+        cursor: pointer;
+        transition: background 0.14s, color 0.14s, border-color 0.14s;
+      }
+      .cancel:hover {
+        border-color: color-mix(in srgb, var(--danger) 40%, var(--line-strong));
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      /* The empty list and the failed list are the same shape: a mark, a sentence, and — when there
+         is something to do about it — one button. */
+      .empty {
+        padding: 40px 24px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .empty-mark {
+        width: 46px;
+        height: 46px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 12px;
+        border-radius: 14px;
+        background: var(--surface-hover);
+        color: var(--faint);
+      }
+      .empty-mark svg {
+        width: 22px;
+        height: 22px;
+      }
+      .empty strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--text);
+        font-size: 13.5px;
+      }
+      .empty span {
+        font-size: 12.5px;
+      }
+      .error-card {
+        padding: 16px;
+        border: 1px solid color-mix(in srgb, var(--danger) 35%, var(--line));
+        border-radius: 14px;
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      .error-card strong {
+        display: block;
+        font-size: 13.5px;
+      }
+      .error-card p {
+        margin: 4px 0 12px;
+        font-size: 12.5px;
+        overflow-wrap: anywhere;
+      }
+      .retry {
+        min-height: 44px;
+        padding: 0 16px;
+        border: 1px solid currentColor;
+        border-radius: 10px;
+        background: transparent;
+        color: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .retry:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      /* The one honest caveat the page carries, folded away so the list keeps the height: it is
+         content a person reads once, not a strip they read every time. */
+      .note {
+        flex: none;
+        padding: 0 16px;
+        color: var(--muted);
+        font-size: 11.5px;
+        line-height: 1.5;
+      }
+      .note summary {
+        padding: 10px 2px;
+        color: var(--faint);
+        font-size: 11.5px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .note[open] summary {
+        color: var(--text);
+      }
+      .note p {
+        margin: 0 0 10px;
+      }
+      /* The two ways in, where a thumb already is: one row at the bottom of the page, each half a
+         thumb wide and 52px tall. */
+      .actions {
+        flex: none;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .new {
+        min-height: 52px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        padding: 0 10px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      .new small {
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.02em;
+        opacity: 0.75;
+      }
+      .new-alarm {
+        background: var(--brand-fill);
+        color: white;
+      }
+      .new-alarm:hover {
+        background: var(--brand-dark);
+      }
+      .new-countdown {
+        border-color: color-mix(in srgb, var(--success) 30%, var(--line));
+        background: var(--success-soft);
+        color: var(--success);
+      }
+      .new-countdown:hover {
+        border-color: color-mix(in srgb, var(--success) 55%, var(--line));
+      }
+      /* A form is a page: it scrolls on its own when the keyboard is up, and its Cancel/Save pair
+         sits at the end of the fields rather than floating over them. */
+      .form {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        overflow-y: auto;
+        padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
+      }
+      .lead {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+      .field label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .field input,
+      .field select {
+        width: 100%;
+        min-height: 48px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        outline: none;
+        background: var(--surface);
+        color: var(--text);
+        /* 16px stops iOS Safari from zooming the page in when a field takes focus. */
+        font-size: 16px;
+      }
+      .field input:focus,
+      .field select:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+      }
+      .hms {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+      .hms .cell {
+        position: relative;
+      }
+      .hms .cell input {
+        padding-right: 26px;
+      }
+      .hms .cell span {
+        position: absolute;
+        top: 50%;
+        right: 12px;
+        transform: translateY(-50%);
+        color: var(--faint);
+        font-size: 11.5px;
+        pointer-events: none;
+      }
+      .form-error {
+        margin: 0;
+        padding: 10px 12px;
+        border-radius: 10px;
+        background: var(--danger-soft);
+        color: var(--danger);
+        font-size: 12.5px;
+        overflow-wrap: anywhere;
+      }
+      .form-actions {
+        display: grid;
+        grid-template-columns: 1fr 1.4fr;
+        gap: 10px;
+        margin-top: auto;
+        padding-top: 4px;
+      }
+      .form-actions button {
+        min-height: 52px;
+        border-radius: 12px;
+        font-size: 15px;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      .form-actions .cancel {
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .save {
+        border: 0;
+        background: var(--brand-fill);
+        color: white;
+        transition: background 0.15s;
+      }
+      .save:hover {
+        background: var(--brand-dark);
+      }
+      .save:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
+      .toast {
+        position: fixed;
+        left: 50%;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        max-width: calc(100% - 24px);
+        padding: 10px 15px;
+        transform: translate(-50%, 12px);
+        border-radius: 10px;
+        background: #11131a;
+        box-shadow: var(--shadow-md);
+        color: #f4f6fb;
+        font-size: 12.5px;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.18s, transform 0.18s;
+      }
+      .toast.on {
+        opacity: 1;
+        transform: translate(-50%, 0);
+      }
+      .toast.bad {
+        background: var(--danger);
+      }
+      /* On the list the toast has to clear the two buttons rather than sit on top of them; on a form
+         there is no bar under it and the same offset would land on Save. */
+      body[data-view='list'] .toast {
+        bottom: calc(84px + env(safe-area-inset-bottom));
+      }
+      /* The wider layout, from 640px up: the two ways in become two buttons on the right, a timer
+         reads as three columns, and the forms keep a readable measure instead of the window's. */
+      @media (min-width: 640px) {
+        .topbar {
+          padding: 10px 16px;
+        }
+        .heading {
+          padding: 18px 16px 6px;
+        }
+        .list {
+          padding: 2px 16px 14px;
+        }
+        .actions {
+          grid-template-columns: 168px 168px;
+          justify-content: end;
+          padding: 12px 16px 14px;
+        }
+        .form {
+          width: min(100%, 520px);
+          margin: 0 auto;
+          padding: 22px 0 24px;
+        }
+        .wake {
+          grid-template-columns: 104px minmax(0, 1fr) auto;
+          align-items: center;
+          gap: 14px;
+        }
+        .cancel {
+          justify-self: end;
+          width: 84px;
+        }
+      }
+      /* The phone recipe, last so no wider breakpoint can win on a phone again: one column, the
+         insets the notch and the home indicator take, a height that follows a collapsing URL bar, and
+         44px for everything a thumb presses. The query also catches a phone held sideways — wider
+         than 640px but only ~400px tall — which is why it has to undo the wider layout, not just
+         restate the narrow one. */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        body {
+          height: 100dvh;
+        }
+        .topbar {
+          padding-right: calc(12px + env(safe-area-inset-right));
+          padding-left: calc(12px + env(safe-area-inset-left));
+        }
+        .heading {
+          padding-right: calc(16px + env(safe-area-inset-right));
+          padding-left: calc(16px + env(safe-area-inset-left));
+        }
+        .list {
+          padding-right: calc(12px + env(safe-area-inset-right));
+          padding-left: calc(12px + env(safe-area-inset-left));
+        }
+        .note {
+          padding-right: calc(16px + env(safe-area-inset-right));
+          padding-left: calc(16px + env(safe-area-inset-left));
+        }
+        .actions {
+          grid-template-columns: 1fr 1fr;
+          justify-content: stretch;
+          padding-right: calc(12px + env(safe-area-inset-right));
+          padding-bottom: calc(10px + env(safe-area-inset-bottom));
+          padding-left: calc(12px + env(safe-area-inset-left));
+        }
+        .new,
+        .form-actions button,
+        input,
+        select {
+          min-height: 44px;
+        }
+        .new {
+          min-height: 52px;
+        }
+        .form {
+          width: auto;
+          margin: 0;
+          padding-right: calc(16px + env(safe-area-inset-right));
+          padding-bottom: calc(16px + env(safe-area-inset-bottom));
+          padding-left: calc(16px + env(safe-area-inset-left));
+        }
+        .wake {
+          grid-template-columns: 1fr;
+        }
+        .cancel {
+          justify-self: stretch;
+          width: 100%;
+        }
+        .field input,
+        .field select {
+          font-size: 16px;
+        }
+      }
+      /* Inside the shell's frame the box is the truth: 100% follows it, while `100dvh` may be the
+         window's height in engines that do not shrink viewport units to the frame. After the phone
+         block on purpose, so in a frame it wins at every width. */
+      :root.framed body {
+        height: 100%;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body data-view="list">
+    <div class="app">
+      <header class="topbar">
+        <button
+          class="back"
+          id="back"
+          type="button"
+          aria-label="Back to the timer list"
+          data-text-label-key="back.label"
+          hidden
+        >
+          <span aria-hidden="true">‹</span> <span data-text-key="nav.timers">Timers</span>
+        </button>
+        <h1 class="title" id="title" data-text-key="nav.timers">Timers</h1>
+        <div class="sync" id="sync" title="Live updates">
+          <span class="sync-dot" aria-hidden="true"></span>
+          <span id="syncText" data-text-key="sync.connecting">connecting…</span>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <!-- The list is the page. Nothing is composed here: the two buttons at the bottom open the
+             two forms, each on a page of its own. -->
+        <section class="view" id="view-list" aria-labelledby="pendingTitle">
+          <div class="heading">
+            <h2 id="pendingTitle" data-text-key="pending.title">Pending</h2>
+            <p id="summary" data-text-key="pending.reading">
+              Reading the timers this node is holding…
+            </p>
+          </div>
+          <div class="list" id="list"></div>
+          <details class="note" id="note">
+            <summary data-text-key="note.summary">Where the timers are kept</summary>
+            <p data-text-key="note.body">
+              The queue is kept through the history node when one is on the bus, so a restart brings
+              the timers that are still pending back — repeats included. With no history node on the
+              bus the queue lives in this node's process only, so restarting the timer node forgets
+              all of them. A wake whose moment passed while the node was away fires once at the next
+              start. Each wake is a single call, made once, and a repeat comes back on its own rule.
+            </p>
+          </details>
+          <div class="actions">
+            <button
+              class="new new-alarm"
+              id="newAlarm"
+              type="button"
+              aria-label="New alarm"
+              data-text-label-key="view.alarm"
+            >
+              <span aria-hidden="true">＋</span> <span data-text-key="mode.alarm">Alarm</span>
+              <small data-text-key="new.alarm.hint">at a time of day</small>
+            </button>
+            <button
+              class="new new-countdown"
+              id="newCountdown"
+              type="button"
+              aria-label="New countdown"
+              data-text-label-key="view.countdown"
+            >
+              <span aria-hidden="true">＋</span> <span data-text-key="mode.countdown">Countdown</span>
+              <small data-text-key="new.countdown.hint">after a delay</small>
+            </button>
+          </div>
+        </section>
+
+        <!-- An alarm is a moment on the clock. Its page asks for that and nothing else; the fields
+             a countdown needs are on the other page, not hidden on this one. -->
+        <section
+          class="view"
+          id="view-alarm"
+          aria-label="New alarm"
+          data-text-label-key="view.alarm"
+          hidden
+        >
+          <form class="form" id="alarmForm" autocomplete="off" novalidate>
+            <p class="lead" data-text-key="alarm.lead">
+              Rings at a time of day. A time that has already passed today rings tomorrow.
+            </p>
+            <div class="field">
+              <label for="alarmMessage" data-text-key="form.message">What should it say?</label>
+              <input
+                id="alarmMessage"
+                type="text"
+                placeholder="Remind me to…"
+                data-text-placeholder-key="form.message.placeholder"
+                enterkeyhint="next"
+              />
+            </div>
+            <div class="field">
+              <label for="alarmAt" data-text-key="form.at">At</label>
+              <input id="alarmAt" type="time" />
+            </div>
+            <div class="field">
+              <label for="alarmRepeat" data-text-key="form.repeat">Repeat</label>
+              <select id="alarmRepeat">
+                <option value="once" data-text-key="repeat.once">once</option>
+                <option value="daily" data-text-key="repeat.daily">daily</option>
+                <option value="weekdays" data-text-key="repeat.weekdays">weekdays</option>
+                <option value="weekly" data-text-key="repeat.weekly">weekly</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="alarmTarget" data-text-key="form.target">Wake which node?</label>
+              <input id="alarmTarget" type="text" value="agent" />
+            </div>
+            <p class="form-error" id="alarmError" role="alert" hidden></p>
+            <div class="form-actions">
+              <button class="cancel" id="alarmCancel" type="button" data-text-key="form.cancel">
+                Cancel
+              </button>
+              <button class="save" id="alarmSave" type="submit" data-text-key="alarm.save">
+                Save alarm
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <!-- A countdown is a length of time from now. -->
+        <section
+          class="view"
+          id="view-countdown"
+          aria-label="New countdown"
+          data-text-label-key="view.countdown"
+          hidden
+        >
+          <form class="form" id="countdownForm" autocomplete="off" novalidate>
+            <p class="lead" data-text-key="countdown.lead">
+              Counts down from now and wakes the node when it reaches zero.
+            </p>
+            <div class="field">
+              <label for="countdownMessage" data-text-key="form.message">What should it say?</label>
+              <input
+                id="countdownMessage"
+                type="text"
+                placeholder="Remind me to…"
+                data-text-placeholder-key="form.message.placeholder"
+                enterkeyhint="next"
+              />
+            </div>
+            <div class="field">
+              <span id="countdownTimeLabel" data-text-key="form.after">After</span>
+              <div class="hms" role="group" aria-labelledby="countdownTimeLabel">
+                <div class="cell">
+                  <input
+                    id="countdownHours"
+                    type="number"
+                    min="0"
+                    max="23"
+                    value="0"
+                    inputmode="numeric"
+                    aria-label="hours"
+                    data-text-label-key="unit.h"
+                  />
+                  <span data-text-key="unit.h.short">h</span>
+                </div>
+                <div class="cell">
+                  <input
+                    id="countdownMinutes"
+                    type="number"
+                    min="0"
+                    max="59"
+                    value="5"
+                    inputmode="numeric"
+                    aria-label="minutes"
+                    data-text-label-key="unit.m"
+                  />
+                  <span data-text-key="unit.m.short">m</span>
+                </div>
+                <div class="cell">
+                  <input
+                    id="countdownSeconds"
+                    type="number"
+                    min="0"
+                    max="59"
+                    value="0"
+                    inputmode="numeric"
+                    aria-label="seconds"
+                    data-text-label-key="unit.s"
+                  />
+                  <span data-text-key="unit.s.short">s</span>
+                </div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="countdownRepeat" data-text-key="form.repeat">Repeat</label>
+              <select id="countdownRepeat">
+                <option value="once" data-text-key="repeat.once">once</option>
+                <option value="every:60" data-text-key="repeat.every1m">every 1 min</option>
+                <option value="every:300" data-text-key="repeat.every5m">every 5 min</option>
+                <option value="every:900" data-text-key="repeat.every15m">every 15 min</option>
+                <option value="every:1800" data-text-key="repeat.every30m">every 30 min</option>
+                <option value="every:3600" data-text-key="repeat.everyHour">every hour</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="countdownTarget" data-text-key="form.target">Wake which node?</label>
+              <input id="countdownTarget" type="text" value="agent" />
+            </div>
+            <p class="form-error" id="countdownError" role="alert" hidden></p>
+            <div class="form-actions">
+              <button class="cancel" id="countdownCancel" type="button" data-text-key="form.cancel">
+                Cancel
+              </button>
+              <button class="save" id="countdownSave" type="submit" data-text-key="countdown.save">
+                Save countdown
+              </button>
+            </div>
+          </form>
+        </section>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <script type="module">
+      // This page's words live in its own files — src/i18n/en.json and src/i18n/zh-CN.json. The node
+      // that draws the page writes them in before it leaves the node, embeds the same files as one
+      // JSON script tag, and the SDK draws every `data-text-key` element from them. This script asks
+      // the same resource for the sentences it builds itself, so no sentence is written twice and
+      // the SDK holds none of them.
+      import { currentLocale, resourceFromDocument, resourceTexts } from '/sdk/i18n-client.js';
+
+      const RESOURCE = resourceFromDocument();
+      const T = RESOURCE === null ? {} : resourceTexts(RESOURCE);
+
+      /** The sentence under one key, in the language the page is drawn in. */
+      const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
+
+      /** An element's words, marked with its key and its parameters, so a later language change
+       *  redraws this sentence along with the ones written in the markup. */
+      const say = (element, key, params) => {
+        element.dataset.textKey = key;
+        if (params === undefined) delete element.dataset.textParams;
+        else element.dataset.textParams = JSON.stringify(params);
+        element.textContent = t(key, params);
+        return element;
+      };
+
+      // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing
+      // here may assume it is called "timer". The node fills its own name in where it hands the page
+      // out (system.ts); a page opened unfilled falls back to the path, which is where a panel is
+      // served: /panel/<node>.
+      const INJECTED = "__NODE__";
+      const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+
+      const $ = (id) => document.getElementById(id);
+      // The two modes in the words the user used, on the buttons and on every row's badge: the
+      // capability's own words (`alarm` / `countdown`) stay the values on the wire, so the map holds
+      // the key each of them is said with instead of the word itself.
+      const MODE_WORD = { alarm: 'mode.alarm', countdown: 'mode.countdown' };
+      // One page per view, and the hash is the view: `#/list` is the timer list, `#/alarm` and
+      // `#/countdown` are the two forms. That is what makes the browser's own Back button and this
+      // page's Back button the same journey, inside the shell's iframe too. A view's name is a key.
+      const VIEWS = { list: 'nav.timers', alarm: 'view.alarm', countdown: 'view.countdown' };
+
+      // Every "when" arrives as an ISO timestamp (`next_at`), which is absolute: the countdown is
+      // computed against the browser's own clock each second, so it keeps moving without asking the
+      // bus for the list again.
+      let shown = [];
+      let view = 'list';
+      let listError = '';
+      let toasting = 0;
+      // How the stream to the node stands: `connecting`, `live` or `reconnecting`.
+      let link = 'connecting';
+
+      async function call(tool, args) {
+        const res = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        });
+        return await res.json();
+      }
+
+      function toast(text, bad) {
+        const box = $('toast');
+        box.textContent = text;
+        box.classList.toggle('bad', bad === true);
+        box.classList.add('on');
+        clearTimeout(toasting);
+        toasting = setTimeout(() => box.classList.remove('on'), 3600);
+      }
+
+      function modeWord(value) {
+        return MODE_WORD[value] === undefined ? value : t(MODE_WORD[value]);
+      }
+
+      function secondsLeft(wake) {
+        return Math.max(0, (Date.parse(wake.next_at) - Date.now()) / 1000);
+      }
+
+      // The same reading the node's countdown phrase uses (`3h 12m`), in the page's own units, so the
+      // page and the model are looking at the same moment.
+      function phrase(seconds) {
+        const whole = Math.max(0, Math.round(seconds));
+        if (whole < 60) return t('phrase.seconds', { count: whole });
+        const days = Math.floor(whole / 86400);
+        const hours = Math.floor((whole % 86400) / 3600);
+        const minutes = Math.floor((whole % 3600) / 60);
+        if (days > 0)
+          return hours === 0
+            ? t('phrase.days', { count: days })
+            : t('phrase.daysHours', { days, hours });
+        if (hours > 0)
+          return minutes === 0
+            ? t('phrase.hours', { count: hours })
+            : t('phrase.hoursMinutes', { hours, minutes });
+        return t('phrase.minutes', { count: minutes });
+      }
+
+      function clock(iso) {
+        const at = new Date(iso);
+        return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+      }
+
+      // The weekday in the page's language, from the browser's own tables: `水` for a reader of
+      // Chinese, `Wed` for one of English. Read on every call, because the language can change.
+      function weekdayName(at) {
+        return new Intl.DateTimeFormat(currentLocale(), { weekday: 'short' }).format(at);
+      }
+
+      function dayName(iso) {
+        const today = new Date();
+        const at = new Date(iso);
+        if (at.toDateString() === today.toDateString()) return t('day.today');
+        const tomorrow = new Date(today.getTime() + 86400000);
+        if (at.toDateString() === tomorrow.toDateString()) return t('day.tomorrow');
+        return weekdayName(at);
+      }
+
+      // A moment as a person says it: `07:30 tomorrow` in English, `明天 07:30` in Chinese — the
+      // order of the two halves is the resource's business, not this function's.
+      function whenText(iso) {
+        return t('when.alarm', { time: clock(iso), day: dayName(iso) });
+      }
+
+      // The rule as a person says it: `daily 07:30`, `weekly Wed 07:30`, `every 15m`, `once`.
+      function ruleText(wake) {
+        const every = /^every:(\d+)$/.exec(wake.repeat);
+        if (every) return t('rule.every', { span: phrase(Number(every[1])) });
+        if (wake.repeat === 'weekly')
+          return t('rule.weekly', { day: dayName(wake.next_at), time: clock(wake.next_at) });
+        if (wake.repeat === 'once') return t('repeat.once');
+        if (wake.repeat === 'daily') return t('rule.daily', { time: clock(wake.next_at) });
+        if (wake.repeat === 'weekdays') return t('rule.weekdays', { time: clock(wake.next_at) });
+        return `${wake.repeat} ${clock(wake.next_at)}`;
+      }
+
+      // One row, in both modes: the time left ticks in both (an alarm shows how long until it rings,
+      // which is the same arithmetic), and the word under it says what mode's reading that is —
+      // `until 07:30 tomorrow` for an alarm, `left` for a countdown.
+      function row(wake) {
+        const item = document.createElement('div');
+        item.className = 'wake';
+        item.dataset.id = String(wake.id);
+        item.dataset.mode = wake.mode;
+
+        const count = document.createElement('div');
+        count.className = 'count';
+        const left = document.createElement('b');
+        left.textContent = phrase(secondsLeft(wake));
+        const unit = document.createElement('span');
+        if (wake.mode === 'alarm') say(unit, 'row.until', { when: whenText(wake.next_at) });
+        else say(unit, 'row.left');
+        count.append(left, unit);
+
+        const body = document.createElement('div');
+        body.className = 'wake-body';
+        const title = document.createElement('b');
+        // A timer the user named says that name, which is not this page's to translate; one without
+        // a name is called by its id, which is.
+        if (wake.name === '') say(title, 'row.unnamed', { id: wake.id });
+        else title.textContent = wake.name;
+        const message = document.createElement('p');
+        message.textContent = wake.message;
+
+        const meta = document.createElement('div');
+        meta.className = 'meta';
+        const badge = document.createElement('span');
+        badge.className = `badge ${wake.mode}`;
+        // Said in the user's words and marked with their key: a badge is not a name, so it is not
+        // passed through `say` with an id it does not have.
+        badge.dataset.textKey = MODE_WORD[wake.mode] ?? '';
+        badge.textContent = modeWord(wake.mode);
+        // The tooltip is the capability's own word, which is what a caller would pass.
+        badge.title = wake.mode;
+        const rule = document.createElement('span');
+        rule.className = 'chip';
+        rule.textContent = ruleText(wake);
+        meta.append(badge, rule);
+        if (wake.mode === 'countdown') {
+          // A countdown's phrase is how long it has left; the moment it lands on is worth saying too.
+          meta.append(say(document.createElement('span'), 'row.rings', { when: whenText(wake.next_at) }));
+        }
+        meta.append(say(document.createElement('span'), 'row.wakes', { target: wake.target }));
+        body.append(title, message, meta);
+
+        const cancel = document.createElement('button');
+        cancel.type = 'button';
+        cancel.className = 'cancel';
+        say(cancel, 'form.cancel');
+        cancel.setAttribute('aria-label', t('row.cancel.label', { mode: modeWord(wake.mode), id: wake.id }));
+        cancel.addEventListener('click', () => void stop(wake.id, cancel));
+
+        item.append(count, body, cancel);
+        return item;
+      }
+
+      function emptyState() {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        // The mark is the one thing here that is not words, so it is the only part written as markup.
+        empty.innerHTML = `
+          <div class="empty-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              <circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>
+            </svg>
+          </div>`;
+        empty.append(
+          say(document.createElement('strong'), 'empty.title'),
+          say(document.createElement('span'), 'empty.body', {
+            alarm: t('mode.alarm'),
+            countdown: t('mode.countdown'),
+          }),
+        );
+        return empty;
+      }
+
+      // A list that could not be read says so where the list would be, and offers the one thing that
+      // can fix it. The page keeps working: the two buttons still open their forms.
+      function errorState(message) {
+        const card = document.createElement('div');
+        card.className = 'error-card';
+        card.id = 'listError';
+        card.setAttribute('role', 'alert');
+        const title = say(document.createElement('strong'), 'error.title');
+        const text = document.createElement('p');
+        text.textContent = message;
+        const retry = say(document.createElement('button'), 'error.retry');
+        retry.type = 'button';
+        retry.className = 'retry';
+        retry.id = 'retry';
+        retry.addEventListener('click', () => {
+          retry.disabled = true;
+          void refresh();
+        });
+        card.append(title, text, retry);
+        return card;
+      }
+
+      function renderList() {
+        const list = $('list');
+        if (listError !== '') {
+          say($('summary'), 'summary.failed');
+          list.replaceChildren(errorState(listError));
+          return;
+        }
+        say(
+          $('summary'),
+          shown.length === 0 ? 'summary.none' : 'summary.pending',
+          shown.length === 0
+            ? undefined
+            : { count: shown.length, soonest: phrase(secondsLeft(shown[0])) },
+        );
+        list.replaceChildren(...(shown.length ? shown.map(row) : [emptyState()]));
+      }
+
+      async function refresh() {
+        try {
+          const reply = await call(`${NODE}.list`, {});
+          if (!reply.ok) {
+            listError = reply.error;
+            shown = [];
+            renderList();
+            return;
+          }
+          listError = '';
+          shown = reply.value;
+          renderList();
+        } catch (error) {
+          listError = error.message;
+          shown = [];
+          renderList();
+        }
+      }
+
+      // The view the hash names, or the list for anything else (an old bookmark, a hand-typed hash).
+      function route() {
+        const name = location.hash.replace(/^#\/?/, '');
+        return VIEWS[name] === undefined ? 'list' : name;
+      }
+
+      // The words outside the list: the two titles and the connection chip.
+      function paintChrome() {
+        const title = t(VIEWS[view]);
+        $('title').textContent = title;
+        document.title = t('title.view', { view: title });
+        $('sync').title = t('sync.title');
+        $('syncText').textContent = t(`sync.${link}`);
+      }
+
+      function show(next) {
+        view = next;
+        $('view-list').hidden = next !== 'list';
+        $('view-alarm').hidden = next !== 'alarm';
+        $('view-countdown').hidden = next !== 'countdown';
+        $('back').hidden = next === 'list';
+        $('sync').hidden = next !== 'list';
+        paintChrome();
+        // The one view-dependent rule outside the views themselves: the toast clears the two buttons
+        // on the list.
+        document.body.dataset.view = next;
+        if (next === 'list') renderList();
+      }
+
+      // Navigation always goes through the hash, so the two Back buttons (this page's and the
+      // browser's) cannot disagree about where they are.
+      function go(next) {
+        const hash = `#/${next}`;
+        if (location.hash === hash) return show(next);
+        location.hash = hash;
+      }
+
+      // A form's one error line: empty when there is nothing wrong, and it takes the focus to the
+      // field that needs it, because a phone has no room for an error nobody can see.
+      function formError(kind, message, focusId) {
+        const box = $(`${kind}Error`);
+        box.textContent = message;
+        box.hidden = message === '';
+        if (message !== '' && focusId !== undefined && focusId !== null) $(focusId).focus();
+      }
+
+      // Cancel throws the draft away; Back (and Escape) leave it in place, so a half-written reminder
+      // survives a look at the list. Nothing is ever created without Save.
+      function resetForm(kind) {
+        $(`${kind}Form`).reset();
+        formError(kind, '', null);
+      }
+
+      async function save(kind, args) {
+        formError(kind, '', null);
+        const button = $(`${kind}Save`);
+        button.disabled = true;
+        try {
+          const reply = await call(`${NODE}.set`, args);
+          if (!reply.ok) {
+            formError(kind, reply.error, null);
+            return;
+          }
+          resetForm(kind);
+          // The node's own answer names the timer it made (`set timer id=1: …`); it is the node's
+          // sentence, so it is shown as it came.
+          toast(reply.value);
+          go('list');
+          await refresh();
+        } catch (error) {
+          formError(kind, t('error.setFailed', { error: error.message }), null);
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      function saveAlarm(event) {
+        event.preventDefault();
+        const message = $('alarmMessage').value.trim();
+        if (message === '')
+          return formError('alarm', t('error.alarm.message'), 'alarmMessage');
+        const at = $('alarmAt').value;
+        if (at === '') return formError('alarm', t('error.alarm.at'), 'alarmAt');
+        void save('alarm', {
+          mode: 'alarm',
+          message,
+          at,
+          repeat: $('alarmRepeat').value,
+          node: $('alarmTarget').value.trim() || 'agent',
+        });
+      }
+
+      function saveCountdown(event) {
+        event.preventDefault();
+        const message = $('countdownMessage').value.trim();
+        if (message === '')
+          return formError('countdown', t('error.countdown.message'), 'countdownMessage');
+        const seconds =
+          Number($('countdownHours').value || 0) * 3600 +
+          Number($('countdownMinutes').value || 0) * 60 +
+          Number($('countdownSeconds').value || 0);
+        if (!(seconds > 0))
+          return formError('countdown', t('error.countdown.length'), 'countdownMinutes');
+        void save('countdown', {
+          mode: 'countdown',
+          message,
+          after_seconds: seconds,
+          repeat: $('countdownRepeat').value,
+          node: $('countdownTarget').value.trim() || 'agent',
+        });
+      }
+
+      async function stop(id, button) {
+        button.disabled = true;
+        const reply = await call(`${NODE}.cancel`, { id });
+        if (!reply.ok) {
+          button.disabled = false;
+          return toast(reply.error, true);
+        }
+        toast(reply.value);
+        await refresh();
+      }
+
+      function tick() {
+        for (const [index, node] of $('list').querySelectorAll('.wake').entries()) {
+          const wake = shown[index];
+          if (wake === undefined) continue;
+          const count = node.querySelector('.count b');
+          if (count !== null) count.textContent = phrase(secondsLeft(wake));
+        }
+        if (shown.length > 0 && listError === '') {
+          say($('summary'), 'summary.pending', {
+            count: shown.length,
+            soonest: phrase(secondsLeft(shown[0])),
+          });
+        }
+      }
+
+      const feed = window.NodeAgentEvents.connect('/events?topic=' + encodeURIComponent(NODE));
+      feed.onopen = () => {
+        link = 'live';
+        $('sync').classList.add('live');
+        $('syncText').textContent = t(`sync.${link}`);
+      };
+      feed.onerror = () => {
+        link = 'reconnecting';
+        $('sync').classList.remove('live');
+        $('syncText').textContent = t(`sync.${link}`);
+      };
+      feed.onmessage = async (frame) => {
+        const event = JSON.parse(frame.data).value ?? {};
+        if (event.type === 'set') {
+          // The moment is said from `next_at`, the way this page says every other moment, so a
+          // countdown and an alarm read the same on the toast and on their row.
+          const when =
+            event.mode === 'alarm' ? whenText(event.next_at) : phrase(secondsLeft(event));
+          toast(
+            t('toast.set', {
+              mode: modeWord(event.mode),
+              id: event.id,
+              target: event.target,
+              when,
+            }) + (event.repeat === 'once' ? '' : t('toast.set.repeat', { rule: ruleText(event) })),
+          );
+          return await refresh();
+        }
+        if (event.type === 'cancel') {
+          return await refresh();
+        }
+        if (event.type === 'fire') {
+          if (event.woke) {
+            toast(
+              event.next_at === ''
+                ? t('toast.woke', { id: event.id, target: event.target })
+                : t('toast.woke.next', {
+                    id: event.id,
+                    target: event.target,
+                    next: clock(event.next_at),
+                  }),
+            );
+          } else {
+            toast(
+              t('toast.woke.failed', {
+                id: event.id,
+                target: event.target,
+                error: event.error,
+              }),
+              true,
+            );
+          }
+          return await refresh();
+        }
+      };
+
+      $('newAlarm').addEventListener('click', () => go('alarm'));
+      $('newCountdown').addEventListener('click', () => go('countdown'));
+      $('back').addEventListener('click', () => go('list'));
+      $('alarmCancel').addEventListener('click', () => {
+        resetForm('alarm');
+        go('list');
+      });
+      $('countdownCancel').addEventListener('click', () => {
+        resetForm('countdown');
+        go('list');
+      });
+      $('alarmForm').addEventListener('submit', saveAlarm);
+      $('countdownForm').addEventListener('submit', saveCountdown);
+      // Escape is the Back button for a keyboard: it leaves the form without saving the draft.
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && view !== 'list') {
+          event.preventDefault();
+          go('list');
+        }
+      });
+      window.addEventListener('hashchange', () => show(route()));
+
+      // The user's language changed. The SDK has already drawn every marked sentence in the new one;
+      // this redraws the three places that are words rather than markers — the titles outside the
+      // list, and the rows, which build sentences about a moment (its weekday, the line under the
+      // count) out of that same moment.
+      document.addEventListener('node-agent:language', () => {
+        paintChrome();
+        renderList();
+      });
+
+      // The first view is the list, and it is a real entry in the history, so Back from a form lands
+      // on it rather than on whatever page was open before.
+      if (location.hash === '') history.replaceState(null, '', '#/list');
+      show(route());
+      // One second is what a countdown needs; it is the only repeating thing on this page.
+      setInterval(tick, 1000);
+      void refresh();
+    </script>
+  </body>
+</html>

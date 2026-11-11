@@ -1,0 +1,25 @@
+{
+  "label": {
+    "node": "历史记录",
+    "caps": {
+      "load": "加载",
+      "save": "保存",
+      "delete": "删除",
+      "list": "列表"
+    },
+    "args": {
+      "load": {
+        "unitId": "单元 id"
+      },
+      "save": {
+        "unitId": "单元 id",
+        "meta": "元数据",
+        "expectedRevision": "期望版本"
+      },
+      "delete": {
+        "unitId": "单元 id",
+        "expectedRevision": "期望版本"
+      }
+    }
+  }
+}

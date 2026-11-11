@@ -1,0 +1,19 @@
+# Dependencies. npm workspaces installs once, at the root.
+**/node_modules/
+
+# Build output: every package compiles src/ into its own dist/.
+**/dist/
+**/*.tsbuildinfo
+
+# What a live run leaves behind: the runtime home, the history database, node logs.
+/runtime-home/
+/node_data/
+*.log
+
+# Secrets. The examples stay in, so a fresh clone knows what to copy.
+**/.env
+**/.env.*
+!**/.env.example
+
+# Local git worktrees used during development.
+/worktrees/

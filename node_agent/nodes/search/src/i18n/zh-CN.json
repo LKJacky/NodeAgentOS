@@ -1,0 +1,39 @@
+{
+  "title": "联网搜索 · node_agent",
+  "key.placeholder": "DeepSeek API 密钥",
+  "key.save": "保存",
+  "key.clear": "清除",
+  "key.none": "还没有密钥——在保存之前，搜索会一直这样提示。",
+  "key.saved": "密钥已保存在这里。",
+  "key.environment": "密钥来自环境变量。",
+  "key.persistent": "已存入历史记录，重启后仍保留。",
+  "key.volatile": "没有 history 节点：密钥只在此节点运行期间有效。",
+  "key.readFailed": "读取密钥失败：{error}",
+  "key.saveFailed": "保存密钥失败：{error}",
+  "key.clearFailed": "清除密钥失败：{error}",
+  "key.pasteFirst": "请先粘贴密钥。",
+  "key.savedNow": "已保存。",
+  "key.cleared": "已清除。",
+  "label": {
+    "node": "联网搜索",
+    "caps": {
+      "search": "搜索",
+      "fetch": "抓取网页",
+      "key": "API 密钥",
+      "ui": "搜索页面"
+    },
+    "args": {
+      "search": {
+        "query": "查询",
+        "maxResults": "最多结果数"
+      },
+      "fetch": {
+        "url": "网址"
+      },
+      "key": {
+        "action": "操作",
+        "api_key": "API 密钥"
+      }
+    }
+  }
+}

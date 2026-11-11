@@ -1,0 +1,21 @@
+{
+  "chrome.install": "Install on the home screen: Share → Add to Home Screen.",
+  "chrome.close": "Close",
+  "chrome.closeNode": "Close {node}",
+  "chrome.offline": "Offline: cannot reach node_agent.",
+  "chrome.retry": "Retry",
+  "chrome.pinnedNav": "the left column's pages",
+  "chrome.nav": "the main area's pages",
+  "chrome.launcher": "launcher",
+  "chrome.launcherTitle": "Every node with a page",
+  "chrome.launcherPanel": "the nodes with a page",
+  "chrome.pinnedView": "Pinned node page",
+  "chrome.view": "Node page",
+  "chrome.splitter": "Drag to resize · double-click to reset",
+  "chrome.empty": "No node has a page yet: give a node a ui capability and it will.",
+  "chrome.online": "online",
+  "chrome.offlineDot": "offline",
+  "label": {
+    "node": "Web UI"
+  }
+}

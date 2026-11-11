@@ -1,0 +1,58 @@
+{
+  // Two builds, one rule: what you launch is what you just built. Every configuration in launch.json
+  // runs one of them before it starts, and a failing build stops the launch instead of running a
+  // stale dist. (preLaunchTask runs on every launch — there is no "unchanged, skip it" shortcut.)
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "npm: install",
+      "type": "shell",
+      "command": "npm install --no-audit --no-fund",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "silent", "panel": "shared" }
+    },
+    {
+      // This tree: every workspace, the SDK first (it is a workspace of this repo, and the nodes
+      // type-check against its dist), rebuilt on every launch — that is the point of running it
+      // before one. A source change therefore cannot be launched as an older build.
+      "label": "build: latest",
+      "detail": "node_modules (if missing), then every workspace — the SDK first — in this tree.",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "set -euo pipefail; [ -d node_modules ] || npm install --no-audit --no-fund; npm run build"
+      ],
+      "options": { "cwd": "${workspaceFolder}" },
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "silent", "panel": "shared", "clear": true }
+    },
+    {
+      // The branch under worktrees/. It must build *its own* SDK: the nodes there import what the
+      // published @node-agent/sdk does not have yet, so the link is made (not just checked) and the
+      // tree's SDK is compiled before the workspaces that type-check against it.
+      "label": "build: worktree",
+      "detail": "The same build, inside worktrees/i18n-infra.",
+      "type": "shell",
+      "command": "bash",
+      "args": [
+        "-lc",
+        "set -euo pipefail; [ -d node_modules ] || npm install --no-audit --no-fund; if [ ! -L node_modules/@node-agent/sdk ]; then rm -rf node_modules/@node-agent/sdk; ln -s ../../node_agent/sdk node_modules/@node-agent/sdk; fi; (cd node_agent/sdk && npm run build); npm run build"
+      ],
+      "options": { "cwd": "${workspaceFolder}/worktrees/i18n-infra" },
+      "group": "build",
+      "problemMatcher": ["$tsc"],
+      "presentation": { "reveal": "silent", "panel": "shared", "clear": true }
+    },
+    {
+      "label": "npm: test",
+      "type": "shell",
+      "command": "npm test",
+      "options": { "cwd": "${workspaceFolder}" },
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "dedicated" }
+    }
+  ]
+}

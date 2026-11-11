@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="t d">
+  <title id="t">node-agent — one point, many nodes, your agent</title>
+  <desc id="d">The node-agent dandelion mark and wordmark on a dark banner.</desc>
+  <defs>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#A78BFA" stroke-opacity="0.055"/>
+    </pattern>
+    <radialGradient id="halo" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#7C5CFF" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#7C5CFF" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="420" rx="28" fill="#0B1020"/>
+  <rect width="1200" height="420" rx="28" fill="url(#grid)"/>
+  <circle cx="300" cy="210" r="240" fill="url(#halo)"/>
+  <g>
+    <path d="M300.00 210.00 Q338.44 211.73 421.36 210.00" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="421.36" cy="210.00" r="12.58" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q329.09 235.19 424.20 308.15" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="424.20" cy="308.15" r="10.06" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q309.46 247.30 334.54 324.37" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="334.54" cy="324.37" r="12.58" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q287.55 246.41 259.56 348.32" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="259.56" cy="348.32" r="10.06" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q268.67 232.34 201.58 287.09" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="201.58" cy="287.09" r="12.58" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q261.58 207.84 143.14 208.27" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="143.14" cy="208.27" r="10.06" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q270.95 184.77 208.95 137.83" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="208.95" cy="137.83" r="12.58" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q290.16 172.80 256.24 70.31" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="256.24" cy="70.31" r="10.06" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q312.20 173.51 335.02 87.18" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="335.02" cy="87.18" r="12.58" fill="#8B5CF6"/>
+    <path d="M300.00 210.00 Q331.48 187.87 421.80 115.93" stroke="#8B5CF6" stroke-width="8.29" stroke-linecap="round"/>
+    <circle cx="421.80" cy="115.93" r="10.06" fill="#8B5CF6"/>
+    <circle cx="300" cy="210" r="22.20" fill="#8B5CF6"/>
+  </g>
+  <g font-family="ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif">
+    <text x="560" y="210" fill="#F8FAFC" font-size="92" font-weight="750" letter-spacing="-4">node-agent</text>
+    <text x="566" y="260" fill="#A5B4CF" font-size="25" font-weight="450" letter-spacing="0.4">one point. many nodes. your agent.</text>
+    <g font-size="14" font-weight="650" letter-spacing="1.4">
+      <rect x="566" y="300" width="126" height="34" rx="17" fill="#7C5CFF" fill-opacity="0.12" stroke="#8B5CF6" stroke-opacity="0.5"/>
+      <text x="629" y="322" text-anchor="middle" fill="#C4B5FD">SELF-HOSTED</text>
+      <rect x="704" y="300" width="154" height="34" rx="17" fill="#7C5CFF" fill-opacity="0.12" stroke="#8B5CF6" stroke-opacity="0.5"/>
+      <text x="781" y="322" text-anchor="middle" fill="#C4B5FD">OPEN SOURCE</text>
+    </g>
+  </g>
+</svg>

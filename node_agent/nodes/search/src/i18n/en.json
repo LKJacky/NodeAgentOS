@@ -1,0 +1,39 @@
+{
+  "title": "Web search · node_agent",
+  "key.placeholder": "DeepSeek API key",
+  "key.save": "Save",
+  "key.clear": "Clear",
+  "key.none": "No key yet — search will say so until one is saved.",
+  "key.saved": "A key is saved here.",
+  "key.environment": "A key comes from the environment.",
+  "key.persistent": "Saved in history, so a restart keeps it.",
+  "key.volatile": "No history node here: a key lasts until this node stops.",
+  "key.readFailed": "Could not read the key: {error}",
+  "key.saveFailed": "Could not save the key: {error}",
+  "key.clearFailed": "Could not clear the key: {error}",
+  "key.pasteFirst": "Paste a key first.",
+  "key.savedNow": "Saved.",
+  "key.cleared": "Cleared.",
+  "label": {
+    "node": "Web search",
+    "caps": {
+      "search": "Search",
+      "fetch": "Fetch a page",
+      "key": "API key",
+      "ui": "Search page"
+    },
+    "args": {
+      "search": {
+        "query": "Query",
+        "maxResults": "Max results"
+      },
+      "fetch": {
+        "url": "URL"
+      },
+      "key": {
+        "action": "Action",
+        "api_key": "API key"
+      }
+    }
+  }
+}

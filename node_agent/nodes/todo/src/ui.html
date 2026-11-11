@@ -1,0 +1,2264 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script src="/webui/events-client.js"></script>
+    <script src="/webui/events-broker.js"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">To-do · node_agent</title>
+    <script>
+      // Inside the webui shell this page is an iframe, and then it has to fill the FRAME it was given
+      // rather than the window: the height chain below reads this class. Set before the style is
+      // parsed, so nothing is ever laid out at the wrong height. `self !== top` never throws.
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f4f6fb;
+        --surface: #ffffff;
+        --surface-soft: #f8f9fc;
+        --surface-hover: #f1f4fa;
+        --text: #171a23;
+        --muted: #596374;
+        --faint: #6f7888;
+        --line: #e4e8f0;
+        --line-strong: #d4d9e4;
+        --brand: #635bff;
+        --brand-fill: #635bff;
+        --brand-dark: #5148e5;
+        --brand-soft: #eeecff;
+        --danger: #d92d4b;
+        --danger-soft: #fff0f3;
+        --success: #15956f;
+        --shadow-sm: 0 1px 2px #151b2b0a, 0 1px 5px #151b2b0d;
+        --shadow-md: 0 8px 30px #20294a12, 0 2px 8px #20294a0a;
+        --card: linear-gradient(150deg, #6f67ff, #4d43dd);
+        --card-shadow: 0 14px 34px #635bff33;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0f15;
+          --surface: #151820;
+          --surface-soft: #1a1e28;
+          --surface-hover: #202531;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --faint: #7d8798;
+          --line: #292e3a;
+          --line-strong: #39404f;
+          --brand: #8b83ff;
+          --brand-fill: #5b52e8;
+          --brand-dark: #4f46e5;
+          --brand-soft: #29254d;
+          --danger: #ff6b85;
+          --danger-soft: #3a2029;
+          --success: #4bd2a7;
+          --shadow-sm: 0 1px 3px #0003;
+          --shadow-md: 0 12px 36px #0004;
+          --card: linear-gradient(150deg, #5f57e8, #3d34b8);
+          --card-shadow: 0 14px 34px #0000004d;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--page);
+        color: var(--text);
+        font:
+          14px/1.5 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button,
+      .check,
+      .row {
+        -webkit-tap-highlight-color: transparent;
+      }
+      .app {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      /* The connection state is a chip on the Today card's title row, beside the date and the sort
+         control: it says what the list under it is doing, so it sits with the list. */
+      .sync {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sync-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--faint);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--faint) 16%, transparent);
+      }
+      .sync.live .sync-dot {
+        background: var(--success);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
+      }
+      /* The page is the one scroller: the Today card and the list are one column, and the column
+         scrolls inside the workspace. The column is centred by its own margins rather than by this
+         box: a flex parent stretches it to the frame's height, and a column exactly as tall as its
+         frame can never scroll, however much it holds. */
+      .workspace {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 20px 20px 32px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
+      }
+      .column {
+        width: 100%;
+        max-width: 720px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      /* The Today card: free text the human or the model writes, and the buttons the model puts on it.
+         Pressing a button sends its message to the agent, so the card is a small control panel too. */
+      .today {
+        position: relative;
+        flex: none;
+        overflow: hidden;
+        padding: 18px 20px 20px;
+        border-radius: 18px;
+        background: var(--card);
+        box-shadow: var(--card-shadow);
+        color: #fff;
+      }
+      .today::after {
+        position: absolute;
+        top: -70px;
+        right: -50px;
+        width: 210px;
+        height: 210px;
+        border-radius: 50%;
+        background: #ffffff1a;
+        content: '';
+        pointer-events: none;
+      }
+      .today-head {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .card-title {
+        margin: 0;
+        font-size: 13px;
+        font-weight: 650;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      .today-date {
+        font-size: 13px;
+        font-weight: 600;
+        color: #ffffffd9;
+      }
+      /* The card's title row holds the one control the reader works with: where the list is sorted
+         from. It sits on the right, next to the date, and it is drawn at every width - a reorder
+         control that only appears on hover is one nobody finds, least of all on a phone. */
+      .today-tools {
+        position: relative;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex: none;
+      }
+      /* And the button keeps its size in a narrow card: the date beside it is the part that gives
+         way when the row runs out of room. */
+      .sort {
+        flex: none;
+      }
+      /* 44px at every width, not only in the phone block: the card is a thing a thumb presses on a
+         phone and a mouse aims at on a desktop, and one target is easier to keep right than two. */
+      .sort-button {
+        width: 44px;
+        height: 44px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: 11px;
+        outline: none;
+        background: #ffffff26;
+        color: #fff;
+        cursor: pointer;
+        transition:
+          background 0.14s,
+          color 0.14s,
+          box-shadow 0.14s;
+      }
+      .sort-button svg {
+        width: 18px;
+        height: 18px;
+      }
+      .sort-button:hover {
+        background: #ffffff3d;
+      }
+      .sort-button:focus-visible {
+        box-shadow: 0 0 0 3px #ffffff80;
+      }
+      /* The visible state: while the list follows the clock instead of the order it was left in, the
+         button is lit - a white card instead of a small tint, so it reads at a glance and in dark
+         mode too. An open menu lights it the same way, so the button and the menu it owns look like
+         one thing. */
+      .sort-button.on,
+      .sort-button[aria-expanded='true'] {
+        background: #fff;
+        color: #4137bd;
+      }
+      .sort-menu {
+        /* In the card's flow, under the button it belongs to: the card clips its own decoration, so a
+           layer hanging out of it would be cut off at the card's edge. */
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        width: max-content;
+        min-width: 190px;
+        max-width: 100%;
+        margin: 10px 0 0 auto;
+        padding: 6px;
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow-md);
+        color: var(--text);
+      }
+      .sort-menu[hidden] {
+        display: none;
+      }
+      .sort-item {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px; /* the same thumb target the card's buttons get */
+        padding: 0 10px;
+        border: 0;
+        border-radius: 9px;
+        outline: none;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .sort-item:hover {
+        background: var(--surface-hover);
+      }
+      .sort-item:focus-visible {
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+      }
+      /* The chosen mode is ticked, and the tick is the state - not a colour alone, which a reader who
+         cannot tell brand purple from text grey would miss. */
+      .sort-item .tick {
+        width: 16px;
+        flex: none;
+        visibility: hidden;
+        color: var(--brand);
+      }
+      .sort-item[aria-checked='true'] {
+        color: var(--brand);
+        font-weight: 600;
+      }
+      .sort-item[aria-checked='true'] .tick {
+        visibility: visible;
+      }
+      .card-text {
+        white-space: pre-wrap;
+        margin: 0;
+        min-height: 1.5em;
+      }
+      /* When the card was last written. Never drawn empty: a Today nobody has written has no time to
+         show, and a made-up one would be worse than no line at all. */
+      .card-updated {
+        position: relative;
+        margin: 8px 0 0;
+        color: #ffffffb3;
+        font-size: 11.5px;
+      }
+      .card-updated[hidden] {
+        display: none;
+      }
+
+      .card-buttons {
+        position: relative;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+      /* 44px is the smallest comfortable touch target, and a long label wraps instead of clipping. */
+      .card-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        max-width: 100%;
+        min-height: 44px;
+        padding: 8px 16px;
+        border: 0;
+        border-radius: 11px;
+        background: #fff;
+        box-shadow: 0 6px 16px #1a13424d;
+        color: #4137bd;
+        font-weight: 600;
+        text-align: left;
+        overflow-wrap: anywhere;
+        cursor: pointer;
+        transition:
+          transform 0.14s,
+          box-shadow 0.14s;
+      }
+      .card-button:hover {
+        transform: translateY(-1px);
+        box-shadow: 0 9px 20px #1a13425e;
+      }
+      .card-button:focus-visible {
+        outline: none;
+        box-shadow:
+          0 0 0 3px #ffffff80,
+          0 6px 16px #1a13424d;
+      }
+      .card-button:disabled {
+        opacity: 0.7;
+        cursor: progress;
+      }
+      .card-empty {
+        margin: 0;
+        color: #ffffffb3;
+        font-size: 13px;
+      }
+      .card-result {
+        position: relative;
+        margin: 10px 0 0;
+        font-size: 12.5px;
+        line-height: 1.5;
+        color: #ffffffd9;
+        overflow-wrap: anywhere;
+      }
+      .card-result:empty {
+        display: none;
+      }
+      .card-result.bad {
+        color: #ffd9df;
+      }
+      .presses {
+        position: relative;
+        margin-top: 12px;
+        color: #ffffffb3;
+        font-size: 12px;
+      }
+      .presses[hidden] {
+        display: none;
+      }
+      .presses summary {
+        cursor: pointer;
+      }
+      .presses ul {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        margin: 6px 0 0;
+        padding: 0;
+        list-style: none;
+      }
+      .presses li {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .presses time {
+        flex: none;
+        color: #ffffff8c;
+        font-variant-numeric: tabular-nums;
+      }
+      .presses span {
+        overflow-wrap: anywhere;
+      }
+      .presses .bad {
+        color: #ffd9df;
+      }
+      /* The card and the list are one column, so this box is only the list's frame: it is as tall as
+         what it holds and never a height of its own. It used to be `flex: 1 1 auto` with `min-height:
+         0` and `overflow: hidden` — a flex item competing with the card for one frame's height, which
+         squeezed the list to a seam (10px in the shell's frame) the moment the card grew, and clipped
+         whatever did not fit. */
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+      }
+      .list-head {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 16px 20px 12px;
+      }
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .section-title h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 650;
+        letter-spacing: -0.01em;
+      }
+      .count {
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: var(--brand-soft);
+        color: var(--brand-dark);
+        font-size: 11px;
+        font-weight: 650;
+      }
+      .summary {
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .add-row {
+        flex: none;
+        display: flex;
+        gap: 8px;
+        padding: 0 20px 12px;
+      }
+      .add-row input {
+        flex: 1;
+        min-width: 0;
+        height: 42px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        outline: none;
+        background: var(--surface-soft);
+        color: var(--text);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          background 0.15s;
+      }
+      .add-row input::placeholder,
+      .editor input::placeholder,
+      .editor textarea::placeholder {
+        color: var(--faint);
+      }
+      .add-row input:focus {
+        border-color: var(--brand);
+        background: var(--surface);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+      }
+      /* Every row at its natural height: nothing inside the page scrolls but the page, so the list
+         grows and the workspace scrolls under it. This is the box that used to give its height away
+         (`flex: 1 1 auto` with `min-height: 0`) — 10px tall in the shell's frame with 2810px of rows
+         in it, and a wheel over it moved nothing. */
+      .list {
+        padding: 0 12px 10px;
+      }
+      .row {
+        position: relative;
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 4px;
+        padding: 12px;
+        border-radius: 12px;
+        /* A row can be moved by a transform while another one is dragged past it: the transition is
+           what makes it make way instead of jump. The lifted row turns it off for itself. */
+        transition:
+          background 0.14s,
+          transform 0.14s;
+      }
+      .row:hover {
+        background: var(--surface-hover);
+      }
+      .row.today {
+        background: var(--brand-soft);
+      }
+      .row.editing {
+        background: var(--surface-soft);
+      }
+      /* The row in the air: lifted off the list with a shadow, so the hand can see what it holds, and
+         the rows around it close the gap it left.  Nothing here moves the row - the transform that
+         follows the finger is set from the pointer, one frame at a time, in the script below. */
+      .row.dragging {
+        z-index: 3;
+        background: var(--surface);
+        opacity: 0.96;
+        box-shadow:
+          0 10px 24px rgba(0, 0, 0, 0.18),
+          0 2px 6px rgba(0, 0, 0, 0.12);
+        transition: none;
+        will-change: transform;
+      }
+      body.dragging {
+        user-select: none;
+        cursor: grabbing;
+      }
+      /* The frame a drop is drawn in. The rows that were making way would otherwise slide from their
+         shifted places into the redrawn ones, which reads as the row taking a second step; the script
+         takes this class off on the next frame, so the way-making transition is back for the next
+         drag. */
+      .list.dropping .row {
+        transition: none;
+      }
+      .check {
+        position: relative;
+        width: 24px;
+        height: 24px;
+        flex: none;
+        margin-top: 2px;
+      }
+      .check input {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        opacity: 0;
+        cursor: pointer;
+      }
+      .check .box {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        border: 1.5px solid var(--line-strong);
+        border-radius: 6px;
+        background: var(--surface);
+        transition:
+          background 0.14s,
+          border-color 0.14s;
+        pointer-events: none;
+      }
+      .check .box svg {
+        width: 12px;
+        height: 12px;
+        color: #fff;
+        opacity: 0;
+        transition: opacity 0.12s;
+      }
+      .check input:checked + .box {
+        border-color: var(--brand);
+        background: var(--brand-fill);
+      }
+      .check input:checked + .box svg {
+        opacity: 1;
+      }
+      .check input:focus-visible + .box {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+      }
+      .row-main {
+        flex: 1;
+        min-width: 0;
+      }
+      .row-title {
+        display: block;
+        font-size: 14px;
+        font-weight: 550;
+        line-height: 1.45;
+        overflow-wrap: break-word;
+      }
+      .row.done .row-title {
+        color: var(--muted);
+        text-decoration: line-through;
+        text-decoration-thickness: 1.5px;
+      }
+      .row-text {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 12.5px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        overflow-wrap: break-word;
+      }
+      .row.done .row-text {
+        color: var(--faint);
+      }
+      .row-meta {
+        display: block;
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .row-actions {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        flex: none;
+      }
+      .icon {
+        width: 32px;
+        height: 32px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        border: 0;
+        border-radius: 8px;
+        outline: none;
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+        opacity: 0;
+        transition:
+          opacity 0.14s,
+          background 0.14s,
+          color 0.14s;
+      }
+      .icon svg {
+        width: 16px;
+        height: 16px;
+      }
+      /* The row's own buttons stay out of the way until you are on the row — and stay reachable by
+         keyboard, because :focus-within shows them again the moment one of them has focus. */
+      .row:hover .icon,
+      .row:focus-within .icon,
+      .icon:focus-visible,
+      .icon.on {
+        opacity: 1;
+      }
+      .icon:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+      .icon.on {
+        background: var(--brand-soft);
+        color: var(--brand);
+      }
+      .icon:focus-visible {
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+      }
+      .icon.danger:hover {
+        background: var(--danger-soft);
+        color: var(--danger);
+      }
+      /* The two arrows are the one pair of row buttons that is always visible: a reorder control that
+         appears on hover is one nobody finds, least of all on a phone. 30px here, 44px in the phone
+         block below — a thumb needs the bigger one. */
+      .icon.move {
+        opacity: 1;
+        color: var(--muted);
+      }
+      .icon.move:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+      /* The grip: the handle that drags a row. 44px at every width, because it is a thumb target
+         before it is anything else, and `touch-action: none` on it - and only on it - is what lets a
+         finger move the row instead of scrolling the page. The page itself still scrolls by touch. */
+      .grip {
+        flex: none;
+        display: grid;
+        place-items: center;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        margin: -12px 0 -12px -8px;
+        align-self: center;
+        padding: 0;
+        border: 0;
+        border-radius: 10px;
+        outline: none;
+        background: transparent;
+        color: var(--faint);
+        cursor: grab;
+        opacity: 1;
+        touch-action: none;
+        user-select: none;
+        -webkit-user-select: none;
+        transition:
+          background 0.14s,
+          color 0.14s;
+      }
+      .grip svg {
+        width: 18px;
+        height: 18px;
+        pointer-events: none;
+      }
+      .row:hover .grip {
+        color: var(--muted);
+      }
+      .grip:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+      .grip:focus-visible {
+        color: var(--text);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 20%, transparent);
+      }
+      .grip[aria-pressed='true'] {
+        background: var(--brand-soft);
+        color: var(--brand);
+        cursor: grabbing;
+      }
+      .grip:disabled {
+        opacity: 0.3;
+        cursor: default;
+      }
+      .editor {
+        flex: 1;
+        min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .editor input,
+      .editor textarea {
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        outline: none;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 13.5px;
+        resize: vertical;
+      }
+      .editor textarea {
+        min-height: 60px;
+        line-height: 1.6;
+      }
+      .editor input:focus,
+      .editor textarea:focus {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+      }
+      .edit-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .primary,
+      .secondary {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        height: 42px;
+        padding: 0 16px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        cursor: pointer;
+        font-weight: 550;
+        transition:
+          background 0.14s,
+          border-color 0.14s;
+      }
+      .primary {
+        background: var(--brand-fill);
+        box-shadow: 0 4px 12px #635bff2b;
+        color: #fff;
+      }
+      .primary:hover {
+        background: var(--brand-dark);
+      }
+      .primary:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 26%, transparent);
+      }
+      .secondary {
+        border-color: var(--line-strong);
+        background: var(--surface);
+        color: var(--text);
+      }
+      .secondary:hover {
+        background: var(--surface-hover);
+      }
+      .small {
+        height: 32px;
+        padding: 0 12px;
+        font-size: 12.5px;
+      }
+      .ico {
+        display: inline-flex;
+      }
+      .ico svg {
+        width: 16px;
+        height: 16px;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .empty {
+        display: grid;
+        place-items: center;
+        min-height: 200px;
+        padding: 30px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .empty-mark {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 12px;
+        border-radius: 14px;
+        background: var(--surface-hover);
+        color: var(--faint);
+      }
+      .empty-mark svg {
+        width: 22px;
+        height: 22px;
+      }
+      .empty strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--text);
+        font-size: 14px;
+      }
+      .empty span {
+        font-size: 12.5px;
+      }
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: min(420px, calc(100vw - 32px));
+        padding: 10px 15px;
+        transform: translate(-50%, 12px);
+        border: 1px solid #ffffff1f;
+        border-radius: 10px;
+        background: #171a23ed;
+        box-shadow: var(--shadow-md);
+        color: white;
+        font-size: 12px;
+        opacity: 0;
+        transition:
+          opacity 0.18s,
+          transform 0.18s;
+        pointer-events: none;
+      }
+      .toast.on {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+      .toast::before {
+        width: 6px;
+        height: 6px;
+        flex: none;
+        border-radius: 50%;
+        background: #6ce1ba;
+        content: '';
+      }
+      @media (max-width: 760px) {
+        body {
+          overflow: auto;
+        }
+        .app {
+          height: auto;
+          min-height: 100%;
+        }
+        .workspace {
+          padding: 14px 12px calc(24px + env(safe-area-inset-bottom));
+        }
+        .today {
+          padding: 16px 16px 18px;
+        }
+        /* 16px keeps iOS from zooming into a field; the card's buttons are 44px tall already. */
+        .add-row input {
+          font-size: 16px;
+        }
+        /* No hover on a touch screen: the row's buttons are simply there. */
+        .icon {
+          opacity: 1;
+        }
+      }
+      @media (max-width: 480px) {
+        .sync-label {
+          display: none;
+        }
+        .card-title {
+          font-size: 20px;
+        }
+        .add-row,
+        .list-head {
+          padding-right: 14px;
+          padding-left: 14px;
+        }
+        .icon {
+          width: 28px;
+        }
+      }
+      /* The phone recipe, in the same shape as every other page: one full-height body the URL bar
+         cannot crop (the framed rule below makes that the frame's box inside the shell), the
+         notch's insets, 44px targets, 16px fields and labels that wrap instead of clipping. */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        body {
+          height: 100dvh; /* a collapsing URL bar must not crop the page */
+        }
+        .workspace {
+          padding: calc(12px + env(safe-area-inset-top)) 12px
+            calc(24px + env(safe-area-inset-bottom));
+        }
+        .column {
+          max-width: none;
+        }
+        .card-input,
+        .add-row input,
+        .editor input,
+        .editor textarea {
+          min-height: 44px;
+          font-size: 16px; /* iOS zooms into a smaller field */
+        }
+        .row,
+        .card-buttons button,
+        .presses button,
+        .add-row button {
+          min-height: 44px;
+        }
+        /* The row's controls are thumb-sized, but four 44px buttons inline leave the title
+           an 18px column on a 390px screen. Put the action strip on its own line under the
+           title; the title gets the full middle column back. */
+        .row {
+          display: grid;
+          grid-template-columns: 44px 44px minmax(0, 1fr);
+          grid-template-areas:
+            'grip check main'
+            '.    .     actions';
+          align-items: start;
+          column-gap: 10px;
+          row-gap: 2px;
+        }
+        .row > .grip {
+          grid-area: grip;
+        }
+        .row > .check {
+          grid-area: check;
+        }
+        .row > .row-main {
+          grid-area: main;
+          min-width: 0;
+        }
+        .row > .row-actions {
+          grid-area: actions;
+          justify-self: end;
+          align-self: center;
+        }
+        .row.editing {
+          grid-template-columns: 44px minmax(0, 1fr);
+          grid-template-areas: 'grip editor';
+        }
+        .row.editing > .editor {
+          grid-area: editor;
+          min-width: 0;
+        }
+        /* Up and down are the row buttons a thumb reaches for, so they grow to a thumb target in a
+           hand — the same 44px the card's buttons already get, and so do the row's edit and delete,
+           which the 480px block above shrinks to a pointer's 28px. */
+        .row-actions .move {
+          width: 44px;
+          height: 44px;
+        }
+        .row-actions .icon {
+          width: 44px;
+          height: 44px;
+        }
+        /* The checkbox is the one control on the row with no words beside it: a 44px label with the
+           24px box drawn in the middle, so the target is a thumb's while the mark stays a mark. */
+        .check {
+          width: 44px;
+          height: 44px;
+          margin-top: -6px;
+        }
+        .check .box {
+          inset: auto;
+          top: 50%;
+          left: 50%;
+          width: 24px;
+          height: 24px;
+          transform: translate(-50%, -50%);
+        }
+        .check .box svg {
+          width: 14px;
+          height: 14px;
+        }
+        /* The way into the list's order: a thumb gets the same 44px the arrows get, and the menu's
+           own rows are that tall too - and nothing in this block hides the button, which is the one
+           control a phone user needs to find. */
+        .sort-button {
+          width: 44px;
+          height: 44px;
+        }
+        .card-title,
+        .summary,
+        .row {
+          overflow-wrap: anywhere; /* a long free-text line wraps instead of widening the page */
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        /* On a dark wash the deeper brand of the light scheme is unreadable: the chip takes the
+           light one, the same colour the page uses for brand-coloured words. */
+        .count {
+          color: var(--brand);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+      /* Inside the shell's frame the box is the truth: 100% follows it, while `100dvh` may be the
+         window's height in engines that do not shrink viewport units to the frame. After the phone
+         block on purpose, so in a frame it wins at every width. `.app` needs it as much as the body:
+         the phone block above sets `height: auto` on it, and a frame in the shell's left column is
+         always inside that block (the column is clamp(300px, 33vw, 430px) wide). Left alone there,
+         the page grows past its frame and the WHOLE document scrolls instead of the list. */
+      :root.framed body,
+      :root.framed .app {
+        height: 100%;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <main class="workspace">
+        <div class="column">
+          <section class="today" aria-labelledby="todayTitle">
+            <div class="today-head">
+              <h2 class="card-title" id="todayTitle" data-text-key="today.title">Today</h2>
+              <div class="today-tools">
+                <div class="sync" id="sync" title="Live updates">
+                  <i class="sync-dot"></i>
+                  <span class="sync-label" id="syncLabel" data-text-key="sync.connecting">
+                    Connecting
+                  </span>
+                </div>
+                <span class="today-date" id="todayDate"></span>
+                <!-- The list's order, in the place a reader looks for it: on the card's title row.
+                     The button says what it is (`aria-label`), what the list is in right now
+                     (`title`, filled in from the mode) and lights up while the order is not the
+                     one the list was left in. The menu itself is built below, from the one table
+                     of modes, so the two rows and the code cannot disagree. -->
+                <div class="sort" id="sort">
+                  <button
+                    class="sort-button"
+                    id="sortButton"
+                    type="button"
+                    aria-label="排序"
+                    data-text-label-key="sort.label"
+                    aria-haspopup="menu"
+                    aria-controls="sortMenu"
+                    aria-expanded="false"
+                    data-mode="manual"
+                    title="按手序排序"
+                  >
+                    <span class="ico" aria-hidden="true">
+                      <svg
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        stroke-width="1.9"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      >
+                        <path d="M7 4v16" />
+                        <path d="m3.5 16.5 3.5 3.5 3.5-3.5" />
+                        <path d="M17 20V4" />
+                        <path d="m13.5 7.5 3.5-3.5 3.5 3.5" />
+                      </svg>
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+            <!-- The menu is a row of the card's own flow, not a floating layer over it: the card
+                 clips the decoration in its corner (`overflow: hidden`), so a dropdown hanging out
+                 of it would be cut off at the card's edge exactly when the card is short. In flow
+                 it grows the card instead, and every row stays reachable by a thumb. -->
+            <div
+              class="sort-menu"
+              id="sortMenu"
+              role="menu"
+              aria-label="排序"
+              data-text-label-key="sort.label"
+              hidden
+            ></div>
+            <p class="card-text" id="todayText"></p>
+            <p class="card-updated" id="todayUpdated" hidden></p>
+            <div class="card-buttons" id="todayButtons"></div>
+            <p class="card-result" id="todayResult" role="status" aria-live="polite"></p>
+            <details class="presses" id="todayPresses" hidden>
+              <summary data-text-key="presses.summary">Recent presses</summary>
+              <ul id="pressesList"></ul>
+            </details>
+          </section>
+
+          <section class="panel" aria-labelledby="listTitle">
+            <div class="list-head">
+              <div class="section-title">
+                <h2 id="listTitle" data-text-key="list.title">Your list</h2>
+                <span class="count" id="count">0</span>
+              </div>
+              <span class="summary" id="summary"></span>
+            </div>
+            <form class="add-row" id="addForm">
+              <input
+                id="newTitle"
+                placeholder="Add a todo…"
+                data-text-placeholder-key="list.placeholder"
+                aria-label="New todo title"
+                data-text-label-key="list.newLabel"
+                autocomplete="off"
+                maxlength="200"
+              />
+              <button class="primary" id="addButton" type="submit">
+                <span class="ico" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                  </span>
+                <span data-text-key="list.add">Add</span>
+              </button>
+            </form>
+            <ul class="list" id="list" aria-live="polite"></ul>
+          </section>
+        </div>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <script>
+      // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing
+      // here may assume it is called "todo". The node fills its own name in where it hands the page
+      // out (index.ts); a page opened unfilled falls back to the path, which is where a panel is
+      // served: /panel/<node>.
+      const INJECTED = "__NODE__";
+      const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+
+      async function call(tool, args) {
+        const res = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        });
+        return await res.json();
+      }
+
+      const $ = (id) => document.getElementById(id);
+      const ICONS = {
+        pencil: '<path d="M4 20h4L20 8l-4-4L4 16z" /><path d="m14 6 4 4" />',
+        trash: '<path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />',
+        inbox: '<path d="M3 12h5l1.5 2h5L16 12h5" /><path d="M4.5 5.5h15l1.5 6.5v6.5h-18V12z" />',
+        up: '<path d="M12 19V5" /><path d="m5 12 7-7 7 7" />',
+        down: '<path d="M12 5v14" /><path d="m5 12 7 7 7-7" />',
+        check: '<path d="m5 12.5 4.5 4.5L19 7" />',
+        // Six dots: the handle, and nothing else on the row says "hold me".
+        grip:
+          '<circle cx="9" cy="6" r="1.7" /><circle cx="15" cy="6" r="1.7" />' +
+          '<circle cx="9" cy="12" r="1.7" /><circle cx="15" cy="12" r="1.7" />' +
+          '<circle cx="9" cy="18" r="1.7" /><circle cx="15" cy="18" r="1.7" />',
+      };
+
+      let shown = [];
+      let editing = null; // { id, title, text } while a row is open for editing
+      let want = null; // where focus lands after the next render: { kind: 'edit' | 'row' | 'move' | 'grip', id, dir? }
+      let lastList = '';
+      let card = null; // the Today the node last answered
+      let pressesShown = [];
+      let toasting = 0;
+      // The row in the air, while a hand holds it: { id, via, pointerId, grabY, grabTop, order, moved }.
+      // `order` is the list as it was before the lift, which is where a refused or cancelled move puts
+      // the row back; nothing is written to the store while the row is moving.
+      let drag = null;
+      // How many drops this page has drawn itself. A read that started before one of them is stale by
+      // the time it lands: the drop has already put the order the node is being asked for on screen,
+      // and drawing that answer would show the old order for a frame (the "it goes back first").
+      let drops = 0;
+      // The gap under a row (its own margin): how far the rows it passes have to move to close it.
+      const ROW_GAP = 4;
+
+      // The list's order as the reader asked to see it. The node keeps ONE order - the hand order a
+      // human set with the arrows - so this is the page's own remembering, and a preference rather than
+      // data: it is the browser's, not the node's, and a store that refuses (a sandboxed frame, a
+      // blocked origin, a full quota) is silently ignored, leaving the page drawing what it drew before
+      // this control existed.
+      const SORT_KEY = 'todo.sort';
+      // Two keys, not two sentences: the row says `label`, the button's tooltip says `title`, and both
+      // come from the page's resource - the words here are what a page with none still shows.
+      const SORT_MODES = [
+        {
+          mode: 'manual',
+          key: 'sort.manual',
+          titleKey: 'sort.manualTitle',
+          label: '按手序（原始顺序）',
+          title: '按手序排序',
+        },
+        {
+          mode: 'updated',
+          key: 'sort.updated',
+          titleKey: 'sort.updatedTitle',
+          label: '按更新时间',
+          title: '按更新时间排序',
+        },
+      ];
+      let sortMode = readSort();
+      let sortOpen = false;
+
+      /** The saved mode, or the hand order - the order the node hands out, which is the one this page
+       *  has always drawn. Anything else in the store (an older page's value, a hand-edited one) is as
+       *  good as no value. */
+      function readSort() {
+        try {
+          const kept = localStorage.getItem(SORT_KEY);
+          return SORT_MODES.some((one) => one.mode === kept) ? kept : 'manual';
+        } catch {
+          return 'manual';
+        }
+      }
+
+      /** Remember the choice; never let the remembering undo the choice. */
+      function keepSort(mode) {
+        try {
+          localStorage.setItem(SORT_KEY, mode);
+        } catch {
+          // no store: the choice still holds for this visit
+        }
+      }
+
+      /** One sentence this page builds itself, from the words the node put in the page: `t('toast.moved')`
+       *  is the resource's sentence in the reader's language. The English beside each key is the page's
+       *  own, for a page with no resource to read (a test, a fetch, a shell that sent no language):
+       *  keys on the screen are worse than one language on it. */
+      function t(key, fallback, params) {
+        const words = globalThis.nodeAgentI18n?.t?.(key, params);
+        return words === undefined || words === key ? fallback : words;
+      }
+
+      /** What the sync light says, and the words for it. The state is kept beside the words so a
+       *  language change can say the same thing again in the new one. */
+      const SYNC_WORDS = {
+        connecting: 'Connecting',
+        live: 'Live sync',
+        reconnecting: 'Reconnecting',
+      };
+      let syncState = 'connecting';
+
+      function paintSync() {
+        $('sync').title = t('sync.title', 'Live updates');
+        $('syncLabel').textContent = t(`sync.${syncState}`, SYNC_WORDS[syncState]);
+      }
+
+      function toast(text) {
+        const box = $('toast');
+        box.textContent = text;
+        box.classList.add('on');
+        clearTimeout(toasting);
+        toasting = setTimeout(() => box.classList.remove('on'), 2400);
+      }
+
+      function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      }
+
+      function icon(name) {
+        const span = el('span', 'ico');
+        span.setAttribute('aria-hidden', 'true');
+        span.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`;
+        return span;
+      }
+
+      /** The language the page is drawn in, as the browser's own formatting wants it (a weekday, a
+       *  clock face): the SDK's, once its browser half is there, else the one the node wrote on <html>.
+       *  It is a tag, not words - the words around it come from `t(…)`. */
+      function pageLocale() {
+        return globalThis.nodeAgentI18n?.currentLocale?.() ?? (document.documentElement.lang || undefined);
+      }
+
+      function when(iso) {
+        const date = new Date(iso);
+        const sameDay = date.toDateString() === new Date().toDateString();
+        return new Intl.DateTimeFormat(pageLocale(), {
+          ...(sameDay ? {} : { month: 'short', day: 'numeric' }),
+          hour: 'numeric',
+          minute: '2-digit',
+        }).format(date);
+      }
+
+      function summarize(open, done) {
+        if (open + done === 0) return t('summary.none', 'Nothing yet');
+        if (done === 0) return t('summary.open', `${open} open`, { count: open });
+        return t('summary.openDone', `${open} open · ${done} done`, { open, done });
+      }
+
+      /** The Today card: free text written here or by the model, and the buttons the model put on it.
+       *  Pressing one asks the node to send that button's message to the agent; this page never talks to
+       *  the agent itself, it only shows what the node answered. */
+      function renderCard() {
+        $('todayDate').textContent = new Intl.DateTimeFormat(pageLocale(), {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+        }).format(new Date());
+
+        // Unsaved text belongs to the user: a card arriving from somewhere else must not take it away.
+        $('todayText').textContent =
+          card === null ? t('today.empty', 'Nothing yet') : card.text;
+
+        // When the card was last written, in the reader's own language and format. A card nobody has
+        // written has no time: the line stays hidden rather than showing one that means nothing.
+        const written = card === null ? null : card.updatedAt;
+        $('todayUpdated').hidden = written === null;
+        const at = written === null ? '' : when(written);
+        $('todayUpdated').textContent =
+          at === '' ? '' : t('today.updated', `Updated ${at}`, { at });
+
+        const row = $('todayButtons');
+        if (card === null || card.buttons.length === 0) {
+          row.replaceChildren(
+            el('p', 'card-empty', t('today.noButtons', 'No buttons yet')),
+          );
+        } else {
+          row.replaceChildren(
+            ...card.buttons.map((button, i) => {
+              const node = el('button', 'card-button');
+              node.type = 'button';
+              node.append(document.createTextNode(button.label));
+              node.addEventListener('click', () => void press(i + 1, node));
+              return node;
+            }),
+          );
+        }
+
+        $('todayPresses').hidden = pressesShown.length === 0;
+        $('pressesList').replaceChildren(
+          ...pressesShown.slice(0, 5).map((one) => {
+            const item = el('li');
+            const at = el('time', '', when(one.at));
+            at.dateTime = one.at;
+            item.append(
+              at,
+              el(
+                'span',
+                one.sent ? '' : 'bad',
+                one.sent ? one.label : `${one.label} - ${one.reason}`,
+              ),
+            );
+            return item;
+          }),
+        );
+      }
+
+      /** Press: ask the node to send that button's message. The answer is a receipt, and a receipt that
+       *  says it was not sent is shown as plainly as one that was - this page never claims a message
+       *  went somewhere when the node said it did not. */
+      async function press(index, button) {
+        const label = card === null ? '' : card.buttons[index - 1].label;
+        button.disabled = true;
+        note(t('note.sending', `Sending "${label}"…`, { label }), false);
+        try {
+          const reply = await call(`${NODE}.press`, { index });
+          if (!reply.ok) note(reply.error, true);
+          else if (reply.value.sent)
+            note(
+              t('note.sent', `Sent "${reply.value.label}" to ${reply.value.target}`, {
+                label: reply.value.label,
+                target: reply.value.target,
+              }),
+              false,
+            );
+          else {
+            const reason = reply.value.reason;
+            note(t('note.notSent', `Not sent: ${reason}`, { reason }), true);
+          }
+        } finally {
+          await refresh();
+        }
+      }
+
+      function note(text, bad) {
+        const line = $('todayResult');
+        line.textContent = text;
+        line.classList.toggle('bad', bad);
+      }
+
+      function action(todo, act, name, label, on, danger) {
+        const button = el('button', 'icon' + (on ? ' on' : '') + (danger ? ' danger' : ''));
+        button.type = 'button';
+        button.setAttribute('aria-label', label);
+        if (on) button.setAttribute('aria-pressed', 'true');
+        button.append(icon(name));
+        button.addEventListener('click', () => {
+          if (act === 'edit') beginEdit(todo);
+          if (act === 'delete') void remove(todo);
+        });
+        return button;
+      }
+
+      /** One of the two arrows. It is a button only when there is a row to swap with: the first open
+       *  todo has nothing above it, and a done one never moves up past an open one — open ones before
+       *  done ones is the list's own rule, while `order` is the arrangement inside a group. */
+      function mover(todo, target, up) {
+        const button = el('button', 'icon move');
+        button.type = 'button';
+        button.dataset.dir = up ? 'up' : 'down';
+        const words = up ? 'Move up' : 'Move down';
+        button.setAttribute(
+          'aria-label',
+          t(up ? 'row.moveUp' : 'row.moveDown', `${words} ${todo.title}`, { title: todo.title }),
+        );
+        button.append(icon(up ? 'up' : 'down'));
+        button.disabled = target === null;
+        if (target !== null) button.addEventListener('click', () => void move(todo, target, up));
+        return button;
+      }
+
+      /** The grip: the handle that drags a row. It is a button, so a keyboard reaches it and Space
+       *  picks the row up; it takes the pointer, so a mouse, a finger and a pen all drag it; and it is
+       *  44px at every width, because a handle nobody can hit is a handle that is not there. Under the
+       *  clock the arrows are not drawn, and the grip is drawn but shut for the same reason: a drag
+       *  there would move a row the reader cannot see move. */
+      function gripFor(todo, frozen) {
+        const button = el('button', 'grip');
+        button.type = 'button';
+        button.setAttribute('aria-label', t('row.dragLabel', 'Drag to reorder'));
+        button.setAttribute('aria-pressed', 'false');
+        button.innerHTML = `<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">${ICONS.grip}</svg>`;
+        if (frozen || sortMode !== 'manual') {
+          button.disabled = true;
+          button.title =
+            sortMode === 'manual'
+              ? t('row.frozen', 'Finish editing to drag this row')
+              : t('row.needManual', 'Switch to hand order to drag rows');
+          return button;
+        }
+        button.title = t('row.drag', `Drag to reorder ${todo.title}`, { title: todo.title });
+        button.addEventListener('pointerdown', (event) => beginDrag(todo, button, event));
+        button.addEventListener('pointermove', (event) => dragOver(event));
+        button.addEventListener('pointerup', (event) => void dropDrag(event));
+        button.addEventListener('pointercancel', () => cancelDrag());
+        button.addEventListener('keydown', (event) => gripKey(todo, button, event));
+        return button;
+      }
+
+      function checklist(todo) {
+        const check = el('label', 'check');
+        const box = document.createElement('input');
+        box.type = 'checkbox';
+        box.checked = todo.done;
+        const words = todo.done ? 'Reopen' : 'Check off';
+        box.setAttribute(
+          'aria-label',
+          t(todo.done ? 'row.reopen' : 'row.checkOff', `${words} ${todo.title}`, {
+            title: todo.title,
+          }),
+        );
+        box.addEventListener('change', () => void toggle(todo.id, box.checked));
+
+        const mark = el('span', 'box');
+        mark.setAttribute('aria-hidden', 'true');
+        mark.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">${ICONS.check}</svg>`;
+        check.append(box, mark);
+        return check;
+      }
+
+      function editor(todo) {
+        const form = el('form', 'editor');
+        const title = el('input', 'edit-title');
+        title.value = editing.title;
+        title.maxLength = 200;
+        title.setAttribute('aria-label', t('editor.titleLabel', 'Todo title'));
+        title.addEventListener('input', () => {
+          editing.title = title.value;
+        });
+
+        const notes = el('textarea', 'edit-text');
+        notes.value = editing.text;
+        notes.rows = 2;
+        notes.placeholder = t('editor.notesPlaceholder', 'Notes');
+        notes.setAttribute('aria-label', t('editor.notesLabel', 'Todo notes'));
+        notes.addEventListener('input', () => {
+          editing.text = notes.value;
+        });
+
+        const actions = el('div', 'edit-actions');
+        const cancel = el('button', 'secondary small', t('editor.cancel', 'Cancel'));
+        cancel.type = 'button';
+        cancel.addEventListener('click', () => endEdit(todo.id));
+        const save = el('button', 'primary small', t('editor.save', 'Save'));
+        save.type = 'submit';
+        actions.append(cancel, save);
+
+        form.append(title, notes, actions);
+        form.addEventListener('submit', (event) => {
+          event.preventDefault();
+          void saveEdit(todo.id);
+        });
+        form.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape') {
+            event.preventDefault();
+            endEdit(todo.id);
+          }
+          // Enter is the title input's own submit; inside the textarea it has to be spelled out.
+          if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+            event.preventDefault();
+            void saveEdit(todo.id);
+          }
+        });
+        return form;
+      }
+
+      function row(todo, list, index) {
+        const open = editing !== null && editing.id === todo.id;
+        const item = el('li', 'row' + (todo.done ? ' done' : '') + (open ? ' editing' : ''));
+        item.dataset.id = String(todo.id);
+        // Every row carries its handle, in the same place: the row that is open for editing has one
+        // that cannot be taken, so the list never changes shape under a hand that is typing.
+        item.append(gripFor(todo, open));
+        if (open) {
+          item.append(editor(todo));
+          return item;
+        }
+
+        const main = el('div', 'row-main');
+        main.append(el('b', 'row-title', todo.title));
+        if (todo.text !== '') main.append(el('p', 'row-text', todo.text));
+        if (todo.done && todo.doneAt !== null) {
+          const doneAt = when(todo.doneAt);
+          const at = el('time', 'row-meta', t('row.done', `Done ${doneAt}`, { at: doneAt }));
+          at.dateTime = todo.doneAt;
+          main.append(at);
+        }
+
+        const actions = el('div', 'row-actions');
+        // The neighbour on either side, if it is in the same group: the list the node hands out is
+        // grouped (open rows, then done ones), so that comparison is simply the row next door.
+        const before = list[index - 1] ?? null;
+        const after = list[index + 1] ?? null;
+        // The arrows place a todo by hand, and hand order is what the list is in while it is drawn that
+        // way. Under the clock the row next door is a neighbour in time, not in the node's list, and an
+        // arrow there would move something the reader cannot see - so it is simply not drawn.
+        if (sortMode === 'manual') {
+          actions.append(
+            mover(todo, before !== null && before.done === todo.done ? before : null, true),
+            mover(todo, after !== null && after.done === todo.done ? after : null, false),
+          );
+        }
+        actions.append(
+          action(
+            todo,
+            'edit',
+            'pencil',
+            t('row.edit', `Edit ${todo.title}`, { title: todo.title }),
+            false,
+            false,
+          ),
+          action(
+            todo,
+            'delete',
+            'trash',
+            t('row.delete', `Delete ${todo.title}`, { title: todo.title }),
+            false,
+            true,
+          ),
+        );
+
+        item.append(checklist(todo), main, actions);
+        return item;
+      }
+
+      function emptyState() {
+        const empty = el('div', 'empty');
+        const content = el('div');
+        content.innerHTML = `
+          <div class="empty-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              ${ICONS.inbox}
+            </svg>
+          </div>`;
+        content.append(
+          el('strong', '', t('list.emptyTitle', 'Nothing on the list yet')),
+          el('span', '', t('list.emptyHint', 'Type above and press Enter.')),
+        );
+        empty.append(content);
+        return empty;
+      }
+
+      // Focus is restored after a redraw, because a redraw replaces the elements the user was on.
+      function applyFocus() {
+        if (want === null) return;
+        const go = want;
+        want = null;
+        const where = `.row[data-id="${go.id}"] `;
+        if (go.kind === 'edit') {
+          const input = document.querySelector(`${where}.edit-title`);
+          if (input) {
+            input.focus();
+            input.setSelectionRange(input.value.length, input.value.length);
+          }
+          return;
+        }
+        if (go.kind === 'grip') {
+          // A drag ends on the handle that started it, so the hand can take the same row again. It is
+          // shut under the clock view, where dragging is shut too.
+          const handle = document.querySelector(`${where}.grip`);
+          if (handle && !handle.disabled) {
+            handle.focus();
+            return;
+          }
+        }
+        if (go.kind === 'move') {
+          const arrow = document.querySelector(`${where}.move[data-dir="${go.dir}"]`);
+          // The row may have arrived at the end of its group, where that arrow is disabled: the focus
+          // then falls through to the row itself, which is the checkbox at the bottom of this function.
+          if (arrow && !arrow.disabled) {
+            arrow.focus();
+            return;
+          }
+        }
+        const box = document.querySelector(`${where}input[type="checkbox"]`);
+        if (box) box.focus();
+      }
+
+      /** The list as the reader asked to see it. `manual` is the node's own order: open ones first, and
+       *  inside a group the places a human set with the arrows. `updated` re-sorts each of those groups
+       *  by the clock, newest write first - it does not merge them, because "open ones before done
+       *  ones" is the list's own rule and reading a view by time is no licence to break it. */
+      function ordered(todos) {
+        if (sortMode !== 'updated') return todos;
+        const byClock = (a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0);
+        return todos
+          .slice()
+          .sort((a, b) => (a.done === b.done ? 0 : a.done ? 1 : -1) || byClock(a, b));
+      }
+
+      /** The button and its menu: the title says which mode is on, the chosen row is ticked, and the
+       *  button is lit while the list is not in the order it was left in. */
+      function renderSort() {
+        const mode = SORT_MODES.find((one) => one.mode === sortMode) ?? SORT_MODES[0];
+        const button = $('sortButton');
+        button.dataset.mode = mode.mode;
+        button.setAttribute('aria-expanded', sortOpen ? 'true' : 'false');
+        button.classList.toggle('on', mode.mode !== 'manual');
+        button.title = t(mode.titleKey, mode.title);
+        $('sortMenu').hidden = !sortOpen;
+        for (const item of $('sortMenu').querySelectorAll('.sort-item')) {
+          item.setAttribute('aria-checked', item.dataset.mode === mode.mode ? 'true' : 'false');
+        }
+      }
+
+      /** The menu's two rows, built from the table above so a mode can never be offered here and
+       *  understood nowhere else. */
+      function buildSortMenu() {
+        $('sortMenu').replaceChildren(
+          ...SORT_MODES.map((one) => {
+            const item = el('button', 'sort-item');
+            item.type = 'button';
+            item.dataset.mode = one.mode;
+            item.setAttribute('role', 'menuitemradio');
+            item.setAttribute('aria-checked', 'false');
+            const tick = el('span', 'tick');
+            tick.setAttribute('aria-hidden', 'true');
+            tick.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7" /></svg>`;
+            // The row's words are a marked element, so the SDK's browser half paints them in the
+            // reader's language, and again on a change; `one.label` is the first paint.
+            const label = el('span', '', one.label);
+            label.dataset.textKey = one.key;
+            item.append(tick, label);
+            item.addEventListener('click', () => chooseSort(one.mode));
+            return item;
+          }),
+        );
+      }
+
+      /** Open or close the menu. Opening puts the focus on the mode in use (or the first one), so a
+       *  keyboard is inside the menu after one press; closing puts it back on the button that owns it. */
+      function openSort(open) {
+        sortOpen = open;
+        renderSort();
+        if (!open) {
+          $('sortButton').focus();
+          return;
+        }
+        const chosen =
+          $('sortMenu').querySelector('.sort-item[aria-checked="true"]') ??
+          $('sortMenu').querySelector('.sort-item');
+        if (chosen) chosen.focus();
+      }
+
+      /** A choice: remember it, draw the list again in that order, and hand the focus back to the
+       *  button - the menu closes because the answer is on the list now. */
+      function chooseSort(mode) {
+        sortMode = mode;
+        keepSort(mode);
+        openSort(false);
+        redraw();
+      }
+
+      function render() {
+        // A row the model removed cannot stay open for editing.
+        if (editing !== null && !shown.some((todo) => todo.id === editing.id)) editing = null;
+
+        const open = shown.filter((todo) => !todo.done).length;
+        $('count').textContent = String(shown.length);
+        $('summary').textContent = summarize(open, shown.length - open);
+        renderCard();
+        // The rows are drawn in the order the reader asked for. `shown` stays the node's own list, and
+        // that is what the arrows move inside: a view sorted by the clock is a way of reading the list,
+        // not a new order to write back.
+        const view = ordered(shown);
+        $('list').replaceChildren(
+          ...(view.length === 0 ? [emptyState()] : view.map((todo, i) => row(todo, view, i))),
+        );
+        applyFocus();
+      }
+
+      /** Redraw only when the list actually changed: while a row is being edited, an event that says
+       *  nothing new must not take the draft away. */
+      function paint(todos) {
+        shown = todos;
+        const key = JSON.stringify(todos);
+        if (key === lastList) return;
+        lastList = key;
+        render();
+      }
+
+      function redraw() {
+        lastList = '';
+        render();
+      }
+
+      /** The list as the node holds it, read and drawn. `keepOrder` is for a drop that has already drawn
+       *  the order the node is about to confirm: an answer that names the same ids in the same places has
+       *  nothing to redraw, and a stale one must not draw the old order back over the new. A read that
+       *  started before a drop is stale for the same reason, whether or not it was asked for by one. */
+      async function refresh(options = {}) {
+        const drawn = drops;
+        const [list, today, presses] = await Promise.all([
+          call(`${NODE}.list`, {}),
+          call(`${NODE}.today`, {}),
+          call(`${NODE}.presses`, {}),
+        ]);
+        if (today.ok) {
+          card = today.value;
+          // A card that arrives saying what the box already holds is no longer "not saved yet".
+        }
+        if (presses.ok) pressesShown = presses.value;
+        renderCard();
+        if (!list.ok) return toast(list.error);
+        const same = drawnOrder(list.value) === drawnOrder(shown);
+        // A drop drew the order the node is being asked for while this read was on its way: drawing
+        // the answer now would put the row back where it was taken from, for one frame.
+        if (drawn !== drops && !same) return;
+        if (options.keepOrder && same) {
+          shown = list.value;
+          lastList = JSON.stringify(list.value);
+          return;
+        }
+        paint(list.value);
+      }
+
+      /** Every write: one address, one confirmation, then the list as the node now holds it. A
+       *  refused write redraws too — a checkbox has already moved in the browser by then, and a
+       *  refusal may simply mean this page is out of date. */
+      async function write(cap, args, message) {
+        const reply = await call(`${NODE}.${cap}`, args);
+        if (!reply.ok) {
+          toast(reply.error);
+          await refresh();
+          return false;
+        }
+        if (message) toast(message);
+        await refresh();
+        return true;
+      }
+
+      async function add() {
+        const input = $('newTitle');
+        const title = input.value.trim();
+        if (title === '') {
+          input.focus();
+          return;
+        }
+        $('addButton').disabled = true;
+        try {
+          // The field is emptied only once the node has taken it: a refused add keeps the text.
+          if (await write('add', { title }, t('toast.added', 'Todo added'))) input.value = '';
+        } finally {
+          $('addButton').disabled = false;
+          input.focus();
+        }
+      }
+
+      async function toggle(id, done) {
+        await write('toggle', { id, done }, null);
+      }
+
+      /** One step up or down: the node is told which todo to sit next to, by id. The arrow the thumb
+       *  just pressed is where the focus goes back to, so pressing it twice moves twice. */
+      async function move(todo, target, up) {
+        want = { kind: 'move', id: todo.id, dir: up ? 'up' : 'down' };
+        const args = up ? { id: todo.id, before: target.id } : { id: todo.id, after: target.id };
+        const words = up ? 'Moved up' : 'Moved down';
+        await write('move', args, t(up ? 'toast.movedUp' : 'toast.movedDown', words));
+        want = null;
+      }
+
+      // ---- The grip, dragged -------------------------------------------------------------------
+      // A drag is a pointer on the handle, not HTML5 drag and drop: that one does nothing under a
+      // finger, which is where a handle is wanted most. The pointer is captured by the grip, so every
+      // move of it arrives here; the lifted row follows it with a transform while the rows it passes
+      // make way with transforms of their own; and the whole drag ends in ONE `move` - the same
+      // capability the arrows call - so the node hears about the drop, never about a frame of it.
+
+      /** The rows on screen, in the order they are drawn: the grip reads and writes this list. */
+      function viewIds() {
+        return [...$('list').querySelectorAll('.row')].map((one) => Number(one.dataset.id));
+      }
+
+      function rowFor(id) {
+        return $('list').querySelector(`.row[data-id="${id}"]`);
+      }
+
+      function todoFor(id) {
+        return shown.find((one) => one.id === id) ?? null;
+      }
+
+      /** The ids of one row's group, in the order they are drawn. The open ones come before the done
+       *  ones - that is the list's own rule, not an arrangement - so a row only ever makes way inside
+       *  its group, the same boundary the arrows respect. */
+      function groupIds(id) {
+        const todo = todoFor(id);
+        if (todo === null) return [];
+        return [...$('list').querySelectorAll('.row')]
+          .map((one) => Number(one.dataset.id))
+          .filter((other) => todoFor(other)?.done === todo.done);
+      }
+
+      /** The group's places on screen, measured once when a hand closes on a row: middle and all. The
+       *  drag keeps these, because its own transforms move the boxes it would otherwise measure. */
+      function groupSlots(todo) {
+        return groupIds(todo.id).map((id) => {
+          const box = rowFor(id).getBoundingClientRect();
+          return { id, mid: box.top + box.height / 2 };
+        });
+      }
+
+      /** Where a row sits inside its group right now. */
+      function groupPosition(id) {
+        return groupIds(id).indexOf(id);
+      }
+
+      /** Every transform a drag put on the rows, taken back off. The list is only where the node says
+       *  it is: a drag that ends - dropped, refused or cancelled - leaves no row looking elsewhere. */
+      function clearShifts() {
+        for (const row of $('list').querySelectorAll('.row')) row.style.transform = '';
+      }
+
+      /** The row is off the floor: it is drawn above its neighbours with a shadow, and the handle says
+       *  so - which is also what a screen reader hears while a keyboard holds it. */
+      function lift(item, button) {
+        item.classList.add('dragging');
+        document.body.classList.add('dragging');
+        button.setAttribute('aria-pressed', 'true');
+      }
+
+      /** Pick the row up under a pointer. `setPointerCapture` is what keeps a finger that leaves the
+       *  handle (it will: the handle is 44px) still dragging the row it took. */
+      function beginDrag(todo, button, event) {
+        if (drag !== null) return;
+        const item = rowFor(todo.id);
+        if (item === null) return;
+        const box = item.getBoundingClientRect();
+        drag = {
+          id: todo.id,
+          via: 'pointer',
+          pointerId: event.pointerId,
+          grabY: event.clientY,
+          // The row plus the gap under it: how far the rows it passes have to move.
+          height: box.height + ROW_GAP,
+          // The places its group occupies right now. A drag never reorders the DOM, so these stay
+          // true for the whole gesture and a frame of it measures nothing.
+          slots: groupSlots(todo),
+          order: viewIds(),
+          origin: groupPosition(todo.id),
+          target: groupPosition(todo.id),
+          moved: false,
+        };
+        try {
+          button.setPointerCapture(event.pointerId);
+        } catch {
+          // A pointer that is already gone: the row still lifts, and the first move ends the drag.
+        }
+        lift(item, button);
+        event.preventDefault();
+      }
+
+      function dragOver(event) {
+        if (drag === null || drag.via !== 'pointer' || event.pointerId !== drag.pointerId) return;
+        slide(event.clientY);
+        event.preventDefault();
+      }
+
+      /** Put the row under the pointer and let the others make way. Nothing is reordered in the DOM
+       *  while a finger is down: each row is translated by the height of the lifted one - the rows it
+       *  passed move up, the rows it is about to join move down - and the lifted row is translated the
+       *  distance the pointer travelled. No store, no request, no measurement per frame: the places the
+       *  group had when the hand closed on it are the only ones this uses. */
+      function slide(clientY) {
+        const moved = Math.round(clientY - drag.grabY);
+        const height = drag.height;
+        // Where it would land: its group's rows whose middle is above the pointer. The group's edge is
+        // the boundary the arrows respect too - an open row never makes way among the done ones.
+        const others = drag.slots.filter((slot) => slot.id !== drag.id);
+        const target = others.filter((slot) => clientY > slot.mid).length;
+        drag.target = target;
+        drag.moved = target !== drag.origin;
+        for (const [at, slot] of drag.slots.entries()) {
+          const row = rowFor(slot.id);
+          if (row === null) continue;
+          let shift = 0;
+          if (slot.id === drag.id) shift = moved;
+          else if (target > drag.origin && at > drag.origin && at <= target) shift = -height;
+          else if (target < drag.origin && at >= target && at < drag.origin) shift = height;
+          row.style.transform = shift === 0 ? '' : `translateY(${shift}px)`;
+        }
+      }
+
+      async function dropDrag(event) {
+        if (drag === null || drag.via !== 'pointer') return;
+        // The pointer's last word is where the row lands: it is measured here rather than trusted to
+        // the last `pointermove`, which a fast hand can leave behind. Same slots, same answer.
+        if (event !== undefined && event.pointerId === drag.pointerId) slide(event.clientY);
+        const one = drag;
+        drag = null;
+        await settle(one);
+      }
+
+      /** The marks a drag leaves come off together, as one frame's worth of change: the lifted row's
+       *  class and its handle's state, the transforms the rows made way with, and - for that frame
+       *  only - their transitions, so a drop comes to rest where it is drawn instead of sliding there
+       *  after the redraw. */
+      function endDragMarks(one) {
+        const item = rowFor(one.id);
+        if (item !== null) item.classList.remove('dragging');
+        document.body.classList.remove('dragging');
+        const handle = item?.querySelector('.grip') ?? null;
+        if (handle !== null) handle.setAttribute('aria-pressed', 'false');
+        clearShifts();
+        const list = $('list');
+        list.classList.add('dropping');
+        requestAnimationFrame(() => list.classList.remove('dropping'));
+      }
+
+      /** The list with one row taken out of its old place and put into the place the hand chose: the
+       *  same lift-and-insert the node makes, done here first, so the drop can be drawn before the node
+       *  is asked anything. `place` counts inside the row's own group, without the row itself. */
+      function placeAt(list, id, place) {
+        const one = list.find((todo) => todo.id === id) ?? null;
+        if (one === null) return list.slice();
+        const group = list.filter((todo) => todo.id !== id && todo.done === one.done);
+        const at = Math.max(0, Math.min(place, group.length));
+        const placed = [...group.slice(0, at), one, ...group.slice(at)];
+        // The group's places are the same places in the whole list: walk the list and fill each of the
+        // group's slots with the next row of the arrangement above, leaving other groups alone.
+        let k = 0;
+        return list.map((todo) => (todo.done === one.done ? placed[k++] : todo));
+      }
+
+      /** The ids in the order the list is drawn: what "the same order" means when an answer comes back
+       *  from the node after a drop. */
+      function drawnOrder(list) {
+        return ordered(list)
+          .map((todo) => todo.id)
+          .join();
+      }
+
+      /** Let the row go. The drop is drawn where the hand left it BEFORE the node is asked: the new
+       *  order is written to the list on screen in the same frame the drag's transforms come off, and
+       *  only then is ONE `move` sent. So the old order is never a frame the reader sees after the drop
+       *  - the row cannot fall home and then set out again. A refused drop is one redraw back; a
+       *  keyboard lift already moved the rows themselves, and is drawn from the node's answer. */
+      async function settle(one) {
+        // A pointer drag never touched the DOM, so the list is different only if the row was let go
+        // somewhere else than it was taken.
+        const landed = one.via === 'pointer' ? one.moved : viewIds().join() !== one.order.join();
+        if (!landed) {
+          endDragMarks(one);
+          restoreOrder(one.order);
+          focusGrip(one.id);
+          return;
+        }
+
+        const args = one.via === 'pointer' ? neighbourAt(one.id, one.target) : neighbourFor(one.id);
+        if (args === null) {
+          endDragMarks(one);
+          restoreOrder(one.order);
+          note(
+            t('note.noNeighbour', 'could not move: there is no row next to it to move against'),
+            true,
+          );
+          focusGrip(one.id);
+          return;
+        }
+
+        // The order the hand just made, written down here and drawn once, in the frame the transforms
+        // come off: from this line on the list on screen IS the order the node is about to be asked
+        // for, so nothing has to hold the row in the air while the answer is on its way.
+        const before = shown;
+        const dropped = one.via === 'pointer' ? placeAt(shown, one.id, one.target) : null;
+        endDragMarks(one);
+        if (dropped !== null) {
+          want = { kind: 'grip', id: one.id };
+          drops += 1;
+          paint(dropped);
+        }
+
+        const reply = await call(`${NODE}.move`, args);
+        if (!reply.ok) {
+          // One redraw, back to the order the row was taken from: no second journey for the eye.
+          if (dropped !== null) paint(before);
+          else restoreOrder(one.order);
+          focusGrip(one.id);
+          const reason = reply.error;
+          note(t('note.moveFailed', `could not move: ${reason}`, { reason }), true);
+          return;
+        }
+        toast(t('toast.moved', 'Moved'));
+        if (dropped === null) want = { kind: 'grip', id: one.id };
+        // The page already holds the order the node agreed to: a redraw of the same order is a flicker,
+        // and a stale answer drawn over it would be the old order coming back.
+        await refresh({ keepOrder: dropped !== null });
+        focusGrip(one.id);
+      }
+
+      /** The neighbour a `move` names for a row that would sit at place `p` of its group: the row below
+       *  it when there is one, else the row above. `null` when neither is - a group of one, which is no
+       *  move at all. */
+      function neighbourAt(id, p) {
+        const others = groupIds(id).filter((one) => one !== id);
+        const next = p < others.length ? others[p] : null;
+        if (next !== null) return { id, before: next };
+        const prev = p > 0 ? others[p - 1] : null;
+        if (prev !== null) return { id, after: prev };
+        return null;
+      }
+
+      /** A keyboard lift moves the rows themselves, so its place is read back off the DOM. */
+      function neighbourFor(id) {
+        return neighbourAt(id, groupPosition(id));
+      }
+
+      /** Put the rows back the way they were. The list IS the DOM, so the snapshot is enough: nothing
+       *  was written down, and nothing has to be read back. */
+      function restoreOrder(order) {
+        for (const id of order) {
+          const item = rowFor(id);
+          if (item !== null) $('list').append(item);
+        }
+      }
+
+      function focusGrip(id) {
+        const button = rowFor(id)?.querySelector('.grip') ?? null;
+        if (button !== null && !button.disabled) button.focus();
+      }
+
+      function cancelDrag() {
+        if (drag === null) return;
+        const one = drag;
+        drag = null;
+        rowFor(one.id)?.classList.remove('dragging');
+        document.body.classList.remove('dragging');
+        clearShifts();
+        restoreOrder(one.order);
+        focusGrip(one.id);
+        note(t('note.cancelled', 'Move cancelled'), false);
+      }
+
+      /** The keyboard walks the same road: Space picks the row up, the arrows move it one place
+       *  inside its group, Enter drops it (the same single `move`), Esc puts it back. The two arrows on
+       *  the row stay where they were: they are the fallback for a reader who never touches the grip. */
+      function gripKey(todo, button, event) {
+        if (event.key === ' ' || event.key === 'Spacebar') {
+          event.preventDefault();
+          if (drag === null) liftByKey(todo, button);
+          else if (drag.id === todo.id) void dropByKey();
+          return;
+        }
+        if (drag === null || drag.id !== todo.id) return;
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          void dropByKey();
+          return;
+        }
+        if (event.key === 'Escape') {
+          event.preventDefault();
+          cancelDrag();
+          return;
+        }
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+          event.preventDefault();
+          stepRow(todo.id, event.key === 'ArrowUp' ? -1 : 1);
+        }
+      }
+
+      function liftByKey(todo, button) {
+        const item = rowFor(todo.id);
+        if (item === null) return;
+        drag = { id: todo.id, via: 'key', order: viewIds(), moved: false };
+        lift(item, button);
+        note(
+          t('note.lifted', 'Row lifted: arrow up or down to move it, Enter to drop, Esc to cancel'),
+          false,
+        );
+      }
+
+      async function dropByKey() {
+        if (drag === null || drag.via !== 'key') return;
+        const one = drag;
+        drag = null;
+        await settle(one);
+      }
+
+      /** One place in the direction asked for, inside the row's own group: an open row never walks
+       *  into the done ones, because that is a move the node would refuse to write anyway. */
+      function stepRow(id, dir) {
+        const item = rowFor(id);
+        if (item === null) return;
+        const group = groupIds(id);
+        const other = group[group.indexOf(id) + dir] ?? null;
+        if (other === null) return;
+        const node = rowFor(other);
+        if (node === null) return;
+        if (dir < 0) $('list').insertBefore(item, node);
+        else $('list').insertBefore(item, node.nextSibling);
+        if (drag !== null) drag.moved = true;
+        focusGrip(id);
+      }
+
+      async function remove(todo) {
+        if (!confirm(t('confirm.delete', 'Delete this todo? This cannot be undone.'))) return;
+        if (editing !== null && editing.id === todo.id) editing = null;
+        await write('remove', { id: todo.id }, t('toast.deleted', 'Todo deleted'));
+      }
+
+      function beginEdit(todo) {
+        editing = { id: todo.id, title: todo.title, text: todo.text };
+        want = { kind: 'edit', id: todo.id };
+        redraw();
+      }
+
+      function endEdit(id) {
+        editing = null;
+        want = { kind: 'row', id };
+        redraw();
+      }
+
+      async function saveEdit(id) {
+        const draft = editing;
+        if (draft === null || draft.id !== id) return;
+        const title = draft.title.trim();
+        if (title === '') return toast(t('toast.needTitle', 'A todo needs a title'));
+        if (!(await write('update', { id, title, text: draft.text.trim() }, null))) return;
+
+        editing = null;
+        want = { kind: 'row', id };
+        redraw();
+        toast(t('toast.saved', 'Changes saved'));
+      }
+
+      $('addForm').addEventListener('submit', (event) => {
+        event.preventDefault();
+        void add();
+      });
+
+      // The sort control. The button is a real button, so Enter and Space are its own activation and
+      // nothing here has to spell them out. What does need spelling out: Esc closes the menu from
+      // wherever the focus is - the button, a row of it, anywhere - and puts the focus back on the
+      // button that owns it, and a press anywhere else closes it the way every menu behaves.
+      buildSortMenu();
+      renderSort();
+      $('sortButton').addEventListener('click', () => openSort(!sortOpen));
+      document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !sortOpen) return;
+        event.preventDefault();
+        openSort(false);
+      });
+      document.addEventListener('pointerdown', (event) => {
+        if (!sortOpen) return;
+        if ($('sort').contains(event.target) || $('sortMenu').contains(event.target)) return;
+        openSort(false);
+      });
+
+      const feed = window.NodeAgentEvents.connect('/events?topic=' + encodeURIComponent(NODE));
+      feed.onmessage = () => void refresh();
+      feed.onopen = () => {
+        $('sync').classList.add('live');
+        syncState = 'live';
+        paintSync();
+        void refresh();
+      };
+      feed.onerror = () => {
+        $('sync').classList.remove('live');
+        syncState = 'reconnecting';
+        paintSync();
+      };
+      paintSync();
+
+      // The sentences this script writes itself - the sync light, the sort button's tooltip, a row's
+      // labels - come from the page's resource like the marked ones, which the SDK's browser half
+      // repaints on its own. Its module runs after this script but before DOMContentLoaded, so by then
+      // the words are there: the sort control and the light are drawn again, and a list that answered
+      // during the parse (its rows carry sentences built here, one per todo) is drawn again too. A
+      // later language change is the same road, and always has a list to redraw.
+      document.addEventListener('DOMContentLoaded', () => {
+        renderSort();
+        paintSync();
+        if (lastList !== '') redraw();
+      });
+      document.addEventListener('node-agent:language', () => {
+        renderSort();
+        paintSync();
+        redraw();
+      });
+
+      refresh();
+    </script>
+  </body>
+</html>

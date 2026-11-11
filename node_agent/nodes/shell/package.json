@@ -1,0 +1,575 @@
+{
+  "name": "@node-agent/shell",
+  "version": "0.1.2",
+  "type": "module",
+  "description": "The shell node: reads and writes files, searches, and runs commands across paths accessible to the local process",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "prepublishOnly": "npm run build",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node-agent-sdk .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "node": {
+    "id": "shell",
+    "i18n": "dist/i18n",
+    "desc": "Read and write local files at absolute or relative paths, and run commands",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "read": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the file to read (absolute, or relative to the workspace root)"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "first line to read (1-based, optional)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "how many lines at most (optional)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "description": "Read one file as plain text (cut with a marker when too long)",
+        "callers": [
+          "agent"
+        ]
+      },
+      "write": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "where to write"
+          },
+          "content": {
+            "type": "string",
+            "description": "the whole file contents"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "description": "Create or overwrite a file (parent directories are created)",
+        "callers": [
+          "agent"
+        ]
+      },
+      "edit": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "which file to edit"
+          },
+          "old": {
+            "type": "string",
+            "description": "the exact text to replace; must be unique unless replaceAll"
+          },
+          "new": {
+            "type": "string",
+            "description": "what to put in its place"
+          },
+          "replaceAll": {
+            "type": "boolean",
+            "description": "allow replacing every match (default false)"
+          }
+        },
+        "required": [
+          "path",
+          "old",
+          "new"
+        ],
+        "description": "Replace a snippet instead of rewriting the whole file",
+        "callers": [
+          "agent"
+        ]
+      },
+      "list": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the directory to list (default: the workspace root)"
+          }
+        },
+        "description": "List one directory: d for directories / f for files + byte size",
+        "callers": [
+          "agent"
+        ]
+      },
+      "glob": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "a glob, e.g. **/*.ts"
+          },
+          "path": {
+            "type": "string",
+            "description": "where to start (default: the workspace root)"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "description": "Find paths by file name",
+        "callers": [
+          "agent"
+        ]
+      },
+      "grep": {
+        "type": "object",
+        "properties": {
+          "pattern": {
+            "type": "string",
+            "description": "a regular expression"
+          },
+          "path": {
+            "type": "string",
+            "description": "the directory to search (default: the workspace root)"
+          },
+          "glob": {
+            "type": "string",
+            "description": "only search files matching this glob"
+          }
+        },
+        "required": [
+          "pattern"
+        ],
+        "description": "Find by content: returns path:line: the line",
+        "callers": [
+          "agent"
+        ]
+      },
+      "files-tree": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the directory to list (default: the workspace)"
+          },
+          "depth": {
+            "type": "integer",
+            "description": "how many levels to expand (default 1, max 4); a directory at the last level carries no children"
+          }
+        },
+        "description": "List a directory for the file browser: name, type, size and mtime per entry, JSON — always at any accessible absolute or relative path",
+        "callers": [
+          "agent"
+        ]
+      },
+      "files-read": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the file to read (absolute or relative to the workspace)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "description": "Read one file for the preview: text with its line count and revision, an image as a data URL, or a structured refusal for binary / oversized files",
+        "callers": [
+          "agent"
+        ]
+      },
+      "files-write": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the file to save (absolute or relative to the workspace)"
+          },
+          "content": {
+            "type": "string",
+            "description": "the whole file contents"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "description": "the revision the edit started from; the save is refused when the file has moved past it (omit only to overwrite on purpose)"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "description": "Save one file from the page: at any accessible absolute or relative path, refused for the deny-list names a write may not touch, and refused when expectedRevision is stale — answers with the new revision",
+        "callers": [
+          "agent"
+        ]
+      },
+      "publish": {
+        "type": "object",
+        "properties": {
+          "dir": {
+            "type": "string",
+            "description": "the local package directory, absolute or relative to the workspace (default: the workspace)"
+          },
+          "version": {
+            "type": "string",
+            "description": "override the package version for this publish"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "description": "replace a version that is already published"
+          }
+        },
+        "description": "Pack a local node package and publish it through the store node on this bus",
+        "callers": [
+          "agent"
+        ]
+      },
+      "exec": {
+        "type": "object",
+        "properties": {
+          "command": {
+            "type": "string",
+            "description": "the shell command to run"
+          },
+          "cwd": {
+            "type": "string",
+            "description": "where to run it (default: the workspace root)"
+          },
+          "yield_ms": {
+            "type": "integer",
+            "description": "how long to wait before handing control back (default 10000, max 30000); a command still running comes back as a session handle"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "description": "hard timeout: kill it here (without it only the 30-minute ceiling applies)"
+          },
+          "max_output": {
+            "type": "integer",
+            "description": "most characters to return this time (default 4000)"
+          }
+        },
+        "required": [
+          "command"
+        ],
+        "description": "Run a command; a short one returns exit/stdout/stderr, a long one returns a session handle",
+        "callers": [
+          "agent"
+        ]
+      },
+      "run-node": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the node package directory, or an entry file inside it, relative to the workspace"
+          },
+          "cwd": {
+            "type": "string",
+            "description": "where to start it (default: the package directory, or the directory containing path)"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "arguments for a plain entry script; a node package is started through the SDK runner and takes none"
+          },
+          "name": {
+            "type": "string",
+            "description": "the bus name to register under (default: the package's node.id, or the entry file name for a plain script)"
+          },
+          "yield_ms": {
+            "type": "integer",
+            "description": "how long to wait before handing control back (default 10000, max 30000); a node still running comes back as a session handle"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "description": "hard timeout: kill it here (without it only the 30-minute ceiling applies)"
+          },
+          "max_output": {
+            "type": "integer",
+            "description": "most characters to return this time (default 4000)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "description": "Start a local node package (or a plain entry script) against this bus: a package runs through the SDK runner under its node.id (or name), a script gets the bus URL, token and NODE_AGENT_NODE_NAME; a long-running node comes back as a session handle",
+        "callers": [
+          "agent"
+        ]
+      },
+      "list-local-running-nodes": {
+        "type": "object",
+        "properties": {},
+        "description": "List the nodes this shell started with run-node (kind, bus name, package entry, session) and whether each is still running",
+        "callers": [
+          "agent"
+        ]
+      },
+      "kill-node": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "the name run-node registered: the bus id for a package, the name argument for a plain script"
+          },
+          "session_id": {
+            "type": "string",
+            "description": "the session id run-node returned"
+          },
+          "signal": {
+            "type": "string",
+            "description": "signal to send first (default SIGTERM; SIGKILL skips the grace period)"
+          }
+        },
+        "description": "Stop a node started by run-node, named by its run-node name or its session id; waits for it to leave",
+        "callers": [
+          "agent"
+        ]
+      },
+      "write-stdin": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "the session id exec returned, e.g. s1"
+          },
+          "chars": {
+            "type": "string",
+            "description": "what to write to stdin; omit it to just read new output"
+          },
+          "eof": {
+            "type": "boolean",
+            "description": "true closes stdin"
+          },
+          "yield_ms": {
+            "type": "integer",
+            "description": "how long to wait (default 1000, max 30000)"
+          },
+          "max_output": {
+            "type": "integer",
+            "description": "most characters to return this time (default 4000)"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "description": "Send input to a session / read what it has produced since the last read",
+        "callers": [
+          "agent"
+        ]
+      },
+      "sessions": {
+        "type": "object",
+        "properties": {},
+        "description": "List the long-running sessions on this node",
+        "callers": [
+          "agent"
+        ]
+      },
+      "kill-session": {
+        "type": "object",
+        "properties": {
+          "session_id": {
+            "type": "string",
+            "description": "the session to stop"
+          },
+          "signal": {
+            "type": "string",
+            "description": "which signal to send (default SIGTERM, then SIGKILL after 2 seconds)"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "description": "Stop a session that is still running",
+        "callers": [
+          "agent"
+        ]
+      },
+      "permissions": {
+        "type": "object",
+        "properties": {
+          "reload": {
+            "type": "boolean",
+            "description": "read this tenant's saved permissions again instead of answering from the copy this process keeps"
+          }
+        },
+        "description": "Read the capability switches: one row per capability, on or off, and why they are what they are",
+        "callers": [],
+        "expose": false
+      },
+      "set-permissions": {
+        "type": "object",
+        "properties": {
+          "caps": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "description": "one switch per capability: { \"exec\": false } refuses shell.exec to every caller"
+          },
+          "callers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "array",
+                "null"
+              ],
+              "items": {
+                "type": "string"
+              }
+            },
+            "description": "the same switches said as who may call: { \"exec\": [\"agent\"] }; an empty list is nobody, null allows everyone"
+          }
+        },
+        "description": "Save the capability switches; a capability that is off refuses its caller before it runs",
+        "callers": [],
+        "expose": false
+      },
+      "custom-commands": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "get",
+              "add",
+              "update",
+              "delete"
+            ],
+            "description": "what to do; defaults to list"
+          },
+          "id": {
+            "type": "string",
+            "description": "the command to change or delete (its name also works)"
+          },
+          "name": {
+            "type": "string",
+            "description": "the name run-custom uses: letters, digits, dot, dash or underscore"
+          },
+          "description": {
+            "type": "string",
+            "description": "what the command is for"
+          },
+          "command": {
+            "type": "string",
+            "description": "the /bin/sh script to run, exactly as written"
+          },
+          "cwd": {
+            "type": "string",
+            "description": "where it runs, as exec takes a cwd: relative to the workspace unless absolute"
+          },
+          "timeoutMs": {
+            "type": "integer",
+            "description": "its own deadline in milliseconds (at most 30 minutes)"
+          },
+          "env": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "extra variable names to hand the command from the shell environment (never NODE_AGENT_*)"
+          }
+        },
+        "description": "List, add, change or delete a user-defined command saved on this node",
+        "callers": [
+          "agent"
+        ],
+        "expose": true
+      },
+      "run-custom": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "the saved command to run"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
+            },
+            "description": "words for the command, reaching it as $1, $2, … and as SHELL_CUSTOM_ARGS (JSON) - never pasted into the script"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "description": "hard timeout for this call, under the command own deadline and the 30-minute ceiling"
+          },
+          "yield_ms": {
+            "type": "integer",
+            "description": "how long to wait before handing back a session (default 10000, max 30000)"
+          },
+          "max_output": {
+            "type": "integer",
+            "description": "most characters to return this time (default 4000)"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "description": "Run a user-defined command by name, with arguments that cannot become shell code",
+        "callers": [
+          "agent"
+        ]
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "Read and write files, run commands (long ones become sessions)",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- A terminal window: the frame in indigo, the prompt in green, the cursor in amber. -->\n  <rect x=\"3\" y=\"4.5\" width=\"18\" height=\"15\" rx=\"2.5\" stroke=\"#4f46e5\" />\n  <path stroke=\"#22c55e\" d=\"m7.5 9 3.2 2.9-3.2 2.9\" />\n  <path stroke=\"#f59e0b\" d=\"M12.5 14.8h4\" />\n</svg>\n",
+        "callers": [],
+        "allow_edit_permission": false,
+        "expose": false
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/shell"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  },
+  "bin": {
+    "node-agent-shell": "./dist/index.js"
+  }
+}

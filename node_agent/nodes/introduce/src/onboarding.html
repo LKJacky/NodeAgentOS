@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+  <!-- The first visit, as its own page: one decision, made before the stack has any state.
+
+       The webui asks `introduce.status`; when the answer is false it puts this page in a
+       full-screen frame instead of the shell. The page writes the chosen language into the
+       system profile, then calls `introduce.setup`, then tells the shell to reload. Every
+       sentence is painted by the node from `i18n/`, like the introduction page. -->
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="setup.title">Choose the language of your NodeAgent</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f4f6fb;
+        --surface: #fff;
+        --text: #171a23;
+        --muted: #5f6a7d;
+        --line: #e4e8f0;
+        --brand: #635bff;
+        --brand-soft: #eeecff;
+        --shadow: 0 1px 2px #151b2b0a, 0 18px 60px #20294a18;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0f15;
+          --surface: #151820;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --line: #292e3a;
+          --brand: #8b83ff;
+          --brand-soft: #201f33;
+          --shadow: 0 18px 60px #0007;
+        }
+      }
+      * { box-sizing: border-box; }
+      html, body { width: 100%; height: 100%; }
+      body {
+        margin: 0;
+        height: 100svh;
+        overflow: hidden;
+        background: #08090d;
+        color: #f4f3f8;
+        font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      .card {
+        position: relative;
+        width: 100vw;
+        height: 100svh;
+        overflow: hidden;
+        isolation: isolate;
+        background: #08090d;
+      }
+      .intro {
+        position: absolute;
+        inset: 0;
+        background: #08090d;
+      }
+      .intro iframe { display: block; width: 100%; height: 100%; border: 0; }
+      .form {
+        position: absolute;
+        left: 50%;
+        bottom: max(12px, env(safe-area-inset-bottom));
+        z-index: 2;
+        width: min(980px, calc(100% - 24px));
+        transform: translateX(-50%);
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+        align-items: center;
+        gap: 8px 24px;
+        padding: 14px 18px;
+        border: 1px solid #ffffff1f;
+        border-radius: 18px;
+        background: #0a0c12c7;
+        box-shadow: 0 18px 60px #0009;
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+      .copy { min-width: 0; }
+      h1 {
+        margin: 0 0 4px;
+        color: #fff;
+        font-size: clamp(18px, 2vw, 25px);
+        line-height: 1.2;
+        letter-spacing: -0.02em;
+      }
+      .lead {
+        margin: 0;
+        max-width: 620px;
+        color: #b7b4c6;
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        color: #aaa5bd;
+        font-size: 10px;
+        font-weight: 650;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+      .controls { display: flex; align-items: flex-end; gap: 8px; }
+      .control { flex: 1; min-width: 0; }
+      .row { position: relative; margin: 0; }
+      select {
+        width: 100%;
+        appearance: none;
+        padding: 10px 38px 10px 12px;
+        border: 1px solid #ffffff24;
+        border-radius: 11px;
+        background: #171925;
+        color: #f4f3f8;
+        font: inherit;
+        cursor: pointer;
+      }
+      select:focus-visible, button:focus-visible { outline: 3px solid #7c5cff66; outline-offset: 2px; }
+      .row::after {
+        content: "";
+        position: absolute;
+        right: 14px;
+        bottom: 16px;
+        width: 7px;
+        height: 7px;
+        border-right: 2px solid #aaa5bd;
+        border-bottom: 2px solid #aaa5bd;
+        transform: rotate(45deg);
+        pointer-events: none;
+      }
+      button {
+        width: auto;
+        padding: 11px 20px;
+        border: 0;
+        border-radius: 11px;
+        background: #7C5CFF;
+        color: #fff;
+        font: inherit;
+        font-weight: 700;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      button:hover { filter: brightness(1.08); }
+      button:disabled { opacity: 0.6; cursor: default; filter: none; }
+      @media (max-width: 720px) {
+        .form {
+          bottom: max(8px, env(safe-area-inset-bottom));
+          width: calc(100% - 16px);
+          max-height: 46svh;
+          overflow: auto;
+          grid-template-columns: 1fr;
+          gap: 8px;
+          padding: 12px;
+          border-radius: 14px;
+        }
+        h1 { font-size: 18px; }
+        .lead { font-size: 12px; }
+        .controls { width: 100%; }
+        .note { display: none; }
+      }
+      .error {
+        grid-column: 1 / -1;
+        margin: 0;
+        padding: 11px 13px;
+        border: 1px solid #f0b4b4;
+        border-radius: 10px;
+        background: #fff1f1;
+        color: #9f1d1d;
+        font-size: 13px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .error { border-color: #6e3030; background: #2a1515; color: #ffb4b4; }
+      }
+      .note { grid-column: 1 / -1; margin: 0; color: #8f8a9f; font-size: 11px; text-align: left; }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="intro">
+        <iframe id="intro-animation" title="node-agent introduction" srcdoc="{{animation}}"></iframe>
+      </div>
+      <div class="form">
+        <div class="copy">
+          <h1 data-text-key="setup.title">Choose the language of your NodeAgent</h1>
+          <p class="lead" data-text-key="setup.lead">
+            NodeAgent will speak it everywhere: this page, the guide it writes into your notes, and
+            the messages it sends you. You can change it later in the system page.
+          </p>
+        </div>
+        <div class="controls">
+          <div class="control">
+            <label for="onboarding-language" data-text-key="setup.language">Language</label>
+            <div class="row">
+              <select id="onboarding-language">
+                <option value="zh-CN">中文</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+          <button id="onboarding-start" type="button" data-text-key="setup.start">Start</button>
+        </div>
+        <p class="error" id="onboarding-error" role="alert" hidden></p>
+        <p class="note" data-text-key="setup.note">You can change this later in the system page.</p>
+      </div>
+    </main>
+    <script>
+      const picker = document.getElementById('onboarding-language');
+      const intro = document.getElementById('intro-animation');
+      const start = document.getElementById('onboarding-start');
+      const error = document.getElementById('onboarding-error');
+      const t = (key, params) => globalThis.nodeAgentI18n?.t?.(key, params) ?? key;
+
+      picker.value = document.documentElement.lang.toLowerCase().startsWith('zh') ? 'zh-CN' : 'en';
+      const resource = JSON.parse(
+        document.querySelector('script[data-i18n-resource]')?.textContent || '{}',
+      );
+      function pageLanguage() {
+        const locale = picker.value;
+        globalThis.nodeAgentI18n?.setLocale?.(locale);
+        const words = resource[locale] || resource.en || {};
+        for (const element of document.querySelectorAll('[data-text-key]')) {
+          const text = words[element.dataset.textKey];
+          if (typeof text === 'string') element.textContent = text;
+        }
+        document.documentElement.lang = locale;
+      }
+      function introLanguage() {
+        try {
+          intro.contentWindow?.postMessage(
+            { kind: 'node-agent:intro-language', language: picker.value },
+            '*',
+          );
+        } catch {}
+      }
+      intro.addEventListener('load', introLanguage);
+      picker.addEventListener('change', () => {
+        pageLanguage();
+        introLanguage();
+      });
+
+      async function callNode(tool, args = {}) {
+        const response = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const answer = await response.json();
+        if (!answer.ok) throw new Error(answer.error || 'the call was refused');
+        return answer.value;
+      }
+
+      function fail(message) {
+        error.hidden = false;
+        error.textContent = message;
+      }
+
+      start.addEventListener('click', async () => {
+        start.disabled = true;
+        error.hidden = true;
+        start.textContent = t('setup.starting');
+        try {
+          await callNode('system.settings', { language: picker.value });
+          await callNode('introduce.setup');
+          const done = { kind: 'node-agent:setup-complete' };
+          if (window.parent !== window) window.parent.postMessage(done, location.origin);
+          if (window.top === window) {
+            location.assign('/');
+            return;
+          }
+          start.textContent = t('setup.done');
+        } catch (failure) {
+          start.disabled = false;
+          start.textContent = t('setup.start');
+          fail(`${t('setup.failed')} ${failure instanceof Error ? failure.message : String(failure)}`);
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,74 @@
+{
+  "name": "node-agent-introduce",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The introduce node: the one-time setup, then the What's NodeAgent page that explains how to use node-agent and attach external nodes",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node ../../sdk/dist/serve.js .",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "node": {
+    "id": "introduce",
+    "i18n": "dist/i18n",
+    "desc": "What's NodeAgent：怎么使用 node-agent",
+    "entry": "dist/index.js",
+    "caps": {
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "What's NodeAgent：怎么使用 node-agent，以及怎么把 shell 等外部节点接进来",
+        "callers": [],
+        "allow_edit_permission": false,
+        "expose": false
+      },
+      "setup": {
+        "type": "object",
+        "properties": {},
+        "description": "Runtime-only one-time setup: seed the instruction, notes, heartbeat and system line",
+        "callers": [
+          "runtime-control"
+        ],
+        "allow_edit_permission": false
+      },
+      "status": {
+        "type": "object",
+        "properties": {},
+        "description": "Whether the stack has been set up, and the language it recorded (read-only)",
+        "callers": [],
+        "allow_edit_permission": false
+      }
+    },
+    "icon": "src/icon.svg"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/introduce"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

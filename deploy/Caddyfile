@@ -1,0 +1,34 @@
+# Caddy in front of the stack's built-in door: a certificate nobody renews by hand, one origin for the
+# page and the two long-lived connections hanging off it (`/bus` is a WebSocket, `/events` is SSE), and
+# a log that names no credentials.
+#
+#     docker compose -f deploy/docker-compose.yml --profile public up -d
+#
+# It proxies to the built-in door of the stack (NODE_AGENT_PROXY_PORT, 8080), so NODE_AGENT_ACCESS_TOKEN
+# has to be set in deploy/.env: without it that door does not listen and Caddy answers 502 rather than
+# serving the page to the internet. Caddy never sees the token — the browser types it at /login.
+
+{
+	# The admin API would let any process on this machine rewrite every route here over localhost:2019.
+	# The proxy is a file and a restart, nothing else.
+	admin off
+
+	# If NODE_AGENT_DOMAIN is `localhost`, Caddy signs it with its own local CA instead of asking a CA —
+	# which is why a try on one machine needs no DNS and no public ports.
+	email "{$ACME_EMAIL}"
+}
+
+{$NODE_AGENT_DOMAIN} {
+	encode zstd gzip
+
+	# The long-lived connections outlive a buffering proxy: hand them straight through.
+	reverse_proxy stack:8080 {
+		flush_interval -1
+	}
+
+	# No credentials in the access log: no cookies, no query strings.
+	log {
+		output stdout
+		format console
+	}
+}

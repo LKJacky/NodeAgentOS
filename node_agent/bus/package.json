@@ -1,0 +1,48 @@
+{
+  "name": "node-agent-bus",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The node agent bus package: the bus (Bus) + the wire protocol (wire) + the Node base class, with an entry that starts only the bus (bin: node-agent-bus)",
+  "bin": {
+    "node-agent-bus": "./dist/serve.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "node": {
+    "id": "bus",
+    "desc": "The bus itself: the WebSocket server every node joins (it registers no capability)",
+    "caps": [],
+    "bin": "node-agent-bus"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "scripts": {
+    "prepack": "node ../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json",
+    "pretest": "npm run build",
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/bus"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

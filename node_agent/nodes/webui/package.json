@@ -1,0 +1,52 @@
+{
+  "name": "node-agent-webui",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The webui node: the browser shell that assembles the nodes' pages (it registers no ability of its own)",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE"
+  ],
+  "node": {
+    "id": "webui",
+    "i18n": "dist/i18n",
+    "desc": "Generic browser front end: every node that declares a ui capability gets a panel",
+    "caps": {},
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1",
+    "node-agent-bus": "file:../../bus"
+  },
+  "publisher": "node-agent",
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/webui"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

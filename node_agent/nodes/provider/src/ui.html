@@ -1,0 +1,319 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <!-- node-agent:i18n-resource -->
+  <script type="module" src="/sdk/i18n-client.js"></script>
+  <script>if (self !== top) document.documentElement.classList.add('framed')</script>
+  <style>
+    :root { color-scheme: light dark; --surface:#fff; --soft:#f6f7f9; --text:#202124; --muted:#6b7280; --line:#d9dde5; --accent:#2563eb; --accent-fill:#2563eb; }
+    @media (prefers-color-scheme:dark) { :root { --surface:#17191d; --soft:#202329; --text:#eef0f4; --muted:#a5abb5; --line:#363b45; --accent:#70a5ff; --accent-fill:#2563eb; } }
+    * { box-sizing:border-box; }
+    html, body { width:100%; height:100%; margin:0; overflow:hidden; background:var(--soft); color:var(--text); font:14px system-ui,sans-serif; }
+    main { height:100%; overflow:auto; padding:24px clamp(14px,4vw,36px); }
+    .shell { display:grid; grid-template-columns:minmax(180px,260px) minmax(0,620px); gap:24px; max-width:920px; margin:auto; }
+    .card { padding:18px; border:1px solid var(--line); border-radius:14px; background:var(--surface); }
+    h1,h2 { margin:0 0 14px; font-size:17px; }
+    .list,.form { display:grid; gap:10px; }
+    .item { display:flex; justify-content:space-between; min-height:40px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--soft); color:var(--text); }
+    .item.selected { border-color:var(--accent); }
+    label { display:grid; gap:5px; color:var(--muted); font-size:12px; }
+    /* `hidden` is a UA rule and loses to the grid above, so hiding a field needs a say here. */
+    [hidden] { display:none !important; }
+    input, select { width:100%; min-height:40px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--soft); color:var(--text); font:inherit; }
+    .actions { display:flex; flex-wrap:wrap; gap:8px; }
+    button { min-height:36px; padding:0 13px; border:0; border-radius:9px; background:var(--accent-fill); color:white; cursor:pointer; }
+    button.secondary { border:1px solid var(--line); background:var(--soft); color:var(--text); }
+    button.danger { background:#c62f35; }
+    button:disabled { opacity:.5; cursor:default; }
+    .feedback { min-height:1.5em; font-size:12px; }
+    .error { color:#e5484d; }
+    .success { color:#16803a; }
+    .note { color:var(--muted); font-size:11px; }
+    @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+      body { height:100dvh; }
+      main { min-height:0; padding:12px 12px calc(12px + env(safe-area-inset-bottom)); }
+      .shell { grid-template-columns:1fr; gap:12px; }
+      button { min-height:44px; }
+      /* A field and a provider row are thumb targets too, not only the buttons. */
+      input, select, .item { min-height:44px; }
+    }
+    :root.framed body { height:100%; min-height:0; }
+  </style>
+</head>
+<body>
+<main>
+  <div class="shell">
+    <aside class="card">
+      <div id="provider-list" class="list"></div>
+      <button id="provider-new" class="secondary" type="button" data-text-key="new">New provider</button>
+    </aside>
+    <section class="card">
+      <h2 data-text-key="heading">LLM provider</h2>
+      <form id="provider-form" class="form" novalidate>
+        <label><span data-text-key="form.name">Name</span><input id="provider-name" required maxlength="64" autocomplete="off" /></label>
+        <label><span data-text-key="form.protocol">Protocol</span><select id="provider-type">
+          <option value="openai" data-text-key="type.openai">OpenAI-compatible</option>
+          <option value="anthropic" data-text-key="type.anthropic">Anthropic (Claude)</option>
+          <option value="responses" data-text-key="type.responses">OpenAI (Responses API)</option>
+        </select></label>
+        <label><span data-text-key="form.model">Model</span><input id="provider-model" required autocomplete="off" /></label>
+        <label><span data-text-key="form.baseUrl">Base URL</span><input id="provider-url" autocomplete="url" /></label>
+        <label><span data-text-key="form.apiKey">API key</span><input id="provider-key" type="password" autocomplete="new-password" placeholder="API key" data-text-placeholder-key="form.keyNew" /></label>
+        <label id="provider-organization-field"><span data-text-key="form.organization">Organization</span><input id="provider-organization" autocomplete="off" /></label>
+        <label><span data-text-key="form.timeout">Timeout (seconds)</span><input id="provider-timeout" type="number" min="0" step="any" /></label>
+        <label><span data-text-key="form.thinking">Thinking effort</span><select id="provider-thinking">
+          <option value="" data-text-key="thinking.default">Provider default</option>
+          <option value="none">none</option>
+          <option value="minimal">minimal</option>
+          <option value="low">low</option>
+          <option value="medium">medium</option>
+          <option value="high">high</option>
+          <option value="xhigh">xhigh</option>
+          <option value="max">max</option>
+          <option value="custom" data-text-key="thinking.custom">Custom…</option>
+        </select></label>
+        <label id="provider-thinking-custom-field" hidden><span data-text-key="form.thinkingCustom">Custom effort</span><input id="provider-thinking-custom" autocomplete="off" /></label>
+        <div id="provider-error" class="feedback error" role="alert"></div>
+        <div id="provider-status" class="feedback success" role="status" aria-live="polite"></div>
+        <div class="actions">
+          <button type="submit" data-text-key="form.save">Save</button>
+          <button id="provider-test" class="secondary" type="button" data-text-key="form.test">Test</button>
+          <button id="provider-delete" class="danger" type="button" data-text-key="form.delete">Delete</button>
+        </div>
+        <div id="provider-hint" class="note"></div>
+        <div id="provider-note" class="note"></div>
+      </form>
+    </section>
+  </div>
+</main>
+<script type="module">
+// The page's words live in its own files — src/i18n/en.json and src/i18n/zh-CN.json. The node that
+// draws the page embeds them as one JSON script tag, and the SDK turns each key into a `Text`, so
+// nothing here re-states a sentence: `data-text-key` marks the markup, and a sentence this script
+// builds itself goes through `t`.
+import { currentLocale, resourceFromDocument, resourceTexts } from '/sdk/i18n-client.js';
+
+const RESOURCE = resourceFromDocument();
+const T = RESOURCE === null ? {} : resourceTexts(RESOURCE);
+
+/** The sentence under one key, in the language the page is drawn in. */
+const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
+
+(() => {
+  const INJECTED = "__NODE__";
+  const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || 'provider' : INJECTED;
+  const byId = (id) => document.getElementById(id);
+  const list = byId('provider-list');
+  const form = byId('provider-form');
+  const name = byId('provider-name');
+  const model = byId('provider-model');
+  const url = byId('provider-url');
+  const key = byId('provider-key');
+  const type = byId('provider-type');
+  const organization = byId('provider-organization');
+  const organizationField = byId('provider-organization-field');
+  const hint = byId('provider-hint');
+  const timeout = byId('provider-timeout');
+  const thinking = byId('provider-thinking');
+  const thinkingCustom = byId('provider-thinking-custom');
+  const thinkingCustomField = byId('provider-thinking-custom-field');
+  const THINKING_PRESETS = ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  const CUSTOM_THINKING = 'custom';
+  const error = byId('provider-error');
+  const status = byId('provider-status');
+  const note = byId('provider-note');
+  const remove = byId('provider-delete');
+  let state = null;
+  let selected = null;
+
+  // What each protocol asks of the form: the endpoint somebody is most likely to have, and the
+  // sentence about it they would otherwise have to guess — a resource key, so it is drawn in the
+  // reader's language and redrawn when that language changes.
+  const TYPES = {
+    openai: {
+      url:'https://api.openai.com/v1',
+      hint:'hint.openai',
+    },
+    anthropic: {
+      url:'https://api.anthropic.com',
+      hint:'hint.anthropic',
+    },
+    responses: {
+      url:'https://api.openai.com/v1',
+      hint:'hint.responses',
+    },
+  };
+  const protocol = () => (TYPES[type.value] ? type.value : 'openai');
+
+  function applyThinking() {
+    thinkingCustomField.hidden = thinking.value !== CUSTOM_THINKING;
+  }
+
+  function applyType() {
+    organizationField.hidden = protocol() !== 'openai';
+    url.placeholder = TYPES[protocol()].url;
+    // The key travels on the element, so a language change redraws this sentence in place.
+    const hintKey = TYPES[protocol()].hint;
+    hint.dataset.textKey = hintKey;
+    hint.textContent = t(hintKey);
+  }
+
+  async function post(tool, args) {
+    const response = await fetch('/call', {
+      method:'POST', headers:{'content-type':'application/json'},
+      body:JSON.stringify({tool, args}),
+    });
+    return response.json();
+  }
+
+  async function call(args) {
+    error.textContent = '';
+    status.textContent = '';
+    const reply = await post(`${NODE}.providers`, args);
+    if (!reply.ok) { error.textContent = reply.error || t('error.call'); return null; }
+    state = reply.value;
+    return state;
+  }
+
+  function show(provider) {
+    selected = provider?.name ?? null;
+    const config = provider?.config ?? {};
+    name.value = provider?.name ?? '';
+    name.readOnly = Boolean(provider);
+    type.value = TYPES[config.type] ? config.type : 'openai';
+    model.value = config.model_name ?? '';
+    url.value = config.base_url ?? '';
+    key.value = '';
+    // Two sentences, one field: a saved key is kept by leaving the field blank, a new row needs one.
+    const keyKey = provider?.has_api_key ? 'form.keyKeep' : 'form.keyNew';
+    key.dataset.textPlaceholderKey = keyKey;
+    key.placeholder = t(keyKey);
+    organization.value = config.organization ?? '';
+    timeout.value = config.timeout ?? '';
+    const effort = config.thinking_effort ?? '';
+    if (THINKING_PRESETS.includes(effort)) {
+      thinking.value = effort;
+      thinkingCustom.value = '';
+    } else {
+      thinking.value = CUSTOM_THINKING;
+      thinkingCustom.value = effort;
+    }
+    applyThinking();
+    remove.disabled = !provider || (state?.providers.length ?? 0) <= 1;
+    applyType();
+    render();
+  }
+
+  function render() {
+    list.replaceChildren();
+    for (const provider of state?.providers ?? []) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = `item secondary${provider.name === selected ? ' selected' : ''}`;
+      button.textContent = provider.name;
+      button.addEventListener('click', () => show(provider));
+      list.append(button);
+    }
+    const noteKey = state?.persistent ? 'note.persistent' : 'note.volatile';
+    note.dataset.textKey = noteKey;
+    note.textContent = t(noteKey);
+  }
+
+  async function load() {
+    if (!(await call({action:'list'}))) return;
+    show(state.providers.find((item) => item.name === selected) ?? state.providers[0]);
+  }
+
+  byId('provider-new').addEventListener('click', () => show(null));
+  type.addEventListener('change', applyType);
+  thinking.addEventListener('change', applyThinking);
+  const save = form.querySelector('button[type="submit"]');
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const timeoutValue = timeout.value.trim();
+    const savedName = name.value.trim();
+    const savedModel = model.value.trim();
+    // Checked here rather than by the browser: `required` on a field the page did not fill blocks
+    // the submit event itself, so the button looks broken instead of saying what is missing.
+    if (!savedName || !savedModel) {
+      error.textContent = t('error.required');
+      return;
+    }
+    const savedUrl = url.value.trim();
+    // Checked here too: a scheme-less address is a gateway typed from memory, and the request it
+    // would produce fails later with something that does not name the field.
+    if (savedUrl && !/^https?:\/\//i.test(savedUrl)) {
+      error.textContent = t('error.baseUrl');
+      return;
+    }
+    save.disabled = true;
+    try {
+      const saved = await call({
+        action:'save', name:savedName,
+        config:{type:protocol(), model_name:savedModel, base_url:savedUrl || null,
+          api_key:key.value || null,
+          organization:protocol() === 'openai' ? organization.value.trim() || null : null,
+          timeout:timeoutValue === '' ? null : Number(timeoutValue),
+          thinking_effort:(thinking.value === CUSTOM_THINKING
+            ? thinkingCustom.value.trim()
+            : thinking.value) || null},
+      });
+      if (!saved) return;
+      show(state.providers.find((item) => item.name === savedName));
+      status.textContent = t('status.saved', { name: savedName });
+    } catch (failure) {
+      // A dropped request or a busy node: say so, or the click looks like it did nothing.
+      error.textContent = String(failure?.message || failure);
+    } finally {
+      save.disabled = false;
+    }
+  });
+  byId('provider-test').addEventListener('click', async (event) => {
+    error.textContent = '';
+    status.textContent = '';
+    if (!selected) {
+      error.textContent = t('error.selectFirst');
+      return;
+    }
+    const button = event.currentTarget;
+    button.disabled = true;
+    button.textContent = t('test.testing');
+    status.textContent = t('test.testing');
+    try {
+      // The saved row, not the form: an edit nobody saved is not what this button is asked about.
+      const reply = await post(`${NODE}.chat`, {
+        name: selected,
+        messages: [{role:'user', content:'Reply with the single word OK.'}],
+        max_completion_tokens: 512,
+      });
+      if (!reply.ok) {
+        error.textContent = reply.error || t('error.callFailed');
+        return;
+      }
+      const content = reply.value?.message?.content;
+      const text = typeof content === 'string' ? content.trim() : '';
+      const usage = reply.value?.usage;
+      const counts = usage
+        ? t('test.usage', { prompt: usage.prompt_tokens, completion: usage.completion_tokens })
+        : '';
+      status.textContent = text
+        ? t('test.ok', { reply: text, usage: counts, name: selected })
+        : t('test.empty', { usage: counts, name: selected });
+    } catch (failure) {
+      error.textContent = String(failure?.message || failure);
+    } finally {
+      button.disabled = false;
+      button.textContent = t('form.test');
+    }
+  });
+  remove.addEventListener('click', async () => {
+    if (!selected || !confirm(t('confirm.delete', { name: selected }))) return;
+    if (await call({action:'delete', name:selected})) show(state.providers[0]);
+  });
+  void load();
+})();
+</script>
+</body>
+</html>

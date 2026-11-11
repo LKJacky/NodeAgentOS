@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- The conversation, with the writing that opens it: a bubble in indigo, a plus in violet. -->
+  <path stroke="#4f46e5" d="M20 14.5a2.5 2.5 0 0 1-2.5 2.5H9.5L5 20.5V6.5A2.5 2.5 0 0 1 7.5 4h10A2.5 2.5 0 0 1 20 6.5z" />
+  <path stroke="#8b5cf6" d="M12.5 8.4v5.2M9.9 11h5.2" />
+</svg>

@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="zh-CN">
+  <!-- The introduce page: what node-agent is, and how to attach another node to this stack.
+
+       Every sentence of it is in `i18n/en.json` and `i18n/zh-CN.json`, and each one is marked here
+       with `data-text-key`: the node paints the words of the visit's language into those markers
+       before the page leaves it, and `/sdk/i18n-client.js` (which reads the same resource from the
+       script tag the node embeds below) redraws them if the reader changes language. The script this
+       page authors is only the copy-button helper: it writes the shown text to the clipboard and runs
+       no shell, reads no key and calls no node. The styles and the pictures are inline, so the browser
+       asks no other machine for anything, and the page still reads on a phone. -->
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <!-- The resource script, and the words of the visit's language, go here (see paintPage). -->
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">What's NodeAgent · node-agent</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f4f6fb;
+        --surface: #fff;
+        --soft: #f8f9fc;
+        --text: #171a23;
+        --muted: #5f6a7d;
+        --line: #e4e8f0;
+        --brand: #635bff;
+        --brand-soft: #eeecff;
+        --code: #161a24;
+        --code-text: #e8ecf6;
+        --shadow: 0 1px 2px #151b2b0a, 0 8px 30px #20294a12;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0f15;
+          --surface: #151820;
+          --soft: #1a1e28;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --line: #292e3a;
+          --brand: #8b83ff;
+          --brand-soft: #201f33;
+          --code: #0a0c11;
+          --code-text: #e8ecf6;
+          --shadow: 0 12px 36px #0004;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        background: var(--page);
+        color: var(--text);
+        font:
+          15px/1.65 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          'PingFang SC',
+          'Hiragino Sans GB',
+          'Microsoft YaHei',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+        -webkit-text-size-adjust: 100%;
+      }
+      .app {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 26px 14px calc(40px + env(safe-area-inset-bottom));
+      }
+      header.hero {
+        margin-bottom: 20px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 5px 11px 5px 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        letter-spacing: 0.02em;
+      }
+      .badge svg {
+        width: 14px;
+        height: 14px;
+        color: var(--brand);
+      }
+      h1 {
+        margin: 14px 0 6px;
+        font-size: 30px;
+        letter-spacing: -0.025em;
+        line-height: 1.2;
+      }
+      .tagline {
+        margin: 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 18px;
+        margin-bottom: 16px;
+      }
+      .card h2 {
+        margin: 0 0 6px;
+        font-size: 16px;
+        letter-spacing: -0.01em;
+      }
+      .card > p {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+      .grid {
+        display: grid;
+        gap: 12px;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+      }
+      .piece {
+        background: var(--soft);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 13px 14px;
+      }
+      .piece h3 {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 6px;
+        font-size: 14px;
+      }
+      .piece h3 .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--brand);
+        flex: none;
+      }
+      .piece p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .piece code {
+        color: var(--text);
+        font-size: 12.5px;
+      }
+      .label {
+        margin: 14px 0 6px;
+        font-size: 13.5px;
+        font-weight: 600;
+      }
+      .note {
+        margin: 6px 0;
+        color: var(--muted);
+        font-size: 12.5px;
+      }
+      pre {
+        margin: 0;
+        padding: 11px 13px;
+        background: var(--code);
+        color: var(--code-text);
+        border-radius: 10px;
+        overflow-x: auto;
+        font:
+          12.5px/1.6 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          Consolas,
+          'Liberation Mono',
+          monospace;
+      }
+      ul.plain {
+        margin: 0;
+        padding-left: 1.15em;
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+      ul.plain li + li {
+        margin-top: 7px;
+      }
+      ul.plain strong {
+        color: var(--text);
+        font-weight: 600;
+      }
+      .value {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin: 8px 0 0;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--soft);
+      }
+      .value code {
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      button.copy {
+        flex: 0 0 auto;
+        padding: 5px 9px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button.copy:hover {
+        border-color: var(--brand);
+      }
+      .warn {
+        margin: 10px 0 0;
+        padding: 10px 12px;
+        border: 1px solid #fec84b;
+        border-radius: 10px;
+        background: #fffaeb;
+        color: #b54708;
+        font-size: 12.5px;
+      }
+      @media (prefers-color-scheme: dark) {
+        .warn {
+          background: #2a2110;
+          color: #fec84b;
+        }
+      }
+      footer {
+        margin-top: 22px;
+        color: var(--muted);
+        font-size: 12.5px;
+        text-align: center;
+      }
+      @media (max-width: 420px) {
+        .app {
+          padding: 20px 11px calc(32px + env(safe-area-inset-bottom));
+        }
+        h1 {
+          font-size: 26px;
+        }
+        .card {
+          padding: 15px;
+          border-radius: 14px;
+        }
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <header class="hero">
+        <span class="badge"
+          ><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="3" />
+            <path d="M12 2v5M12 17v5M2 12h5M17 12h5" /></svg
+          ><span data-text-key="hero.badge">What's NodeAgent · 首次启动完成</span></span
+        >
+        <h1 data-text-key="hero.title">What's NodeAgent</h1>
+        <p class="tagline" data-text-key="hero.tagline">一个你自己运行的 agent：记得你、能做事，也能按你的时间表主动醒来。</p>
+      </header>
+
+      <section class="card" aria-labelledby="what">
+        <h2 id="what" data-text-key="what.title">你可以用它做什么</h2>
+        <div class="grid">
+          <div class="piece">
+            <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.chat">和它说话</span></h3>
+            <p data-text-key="what.chat.text">在左边的对话框里直接说。它保留完整历史，重启后还能接着聊。</p>
+          </div>
+          <div class="piece">
+            <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.remember">记住你</span></h3>
+            <p data-text-key="what.remember.text">把偏好、项目背景和重要事件写进 notes，下次不用从头解释。</p>
+          </div>
+          <div class="piece">
+            <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.schedule">安排事情</span></h3>
+            <p data-text-key="what.schedule.text">用 todo 记今天要做什么，用 timer 设提醒，也可以让它定时主动执行任务。</p>
+          </div>
+          <div class="piece">
+            <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.act">动手和查资料</span></h3>
+            <p data-text-key="what.act.text">让它运行命令、读写文件、搜索网页；能不能做、做到哪一步，由你在 system 页面里控制。</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" aria-labelledby="daily">
+        <h2 id="daily" data-text-key="daily.title">日常怎么用</h2>
+        <ul class="plain">
+          <li><strong data-text-key="daily.chat.lead">左边是对话。</strong><span data-text-key="daily.chat.text">输入问题或任务，Enter 发送；历史会一直保留。</span></li>
+          <li><strong data-text-key="daily.pages.lead">右边是功能页。</strong><span data-text-key="daily.pages.text">点 notes 看记住了什么，点 todo 安排今天，点 timer 设提醒，点 search 配搜索，点 shell 看命令权限。</span></li>
+          <li><strong data-text-key="daily.active.lead">让它主动做事。</strong><span data-text-key="daily.active.text">直接说“每天九点提醒我……”或“明天下午帮我查……”，它会创建 timer；到点后 agent 会收到消息并继续执行。</span></li>
+          <li><strong data-text-key="daily.permission.lead">控制权限。</strong><span data-text-key="daily.permission.text">shell 能运行命令，默认只允许当前工作目录；在 system 页面可以按能力关闭或收紧。</span></li>
+          <li><strong data-text-key="daily.stop.lead">停止与继续。</strong><span data-text-key="daily.stop.text">终端里 Ctrl-C 停止；下次用同一条命令启动，notes、todo、timer 和对话都还在。</span></li>
+        </ul>
+      </section>
+
+      <section class="card" aria-labelledby="connect">
+        <h2 id="connect" data-text-key="connect.title">连接外部节点</h2>
+        <p><span data-text-key="connect.intro1">把另一台电脑接到当前 stack。先接 </span><strong>shell</strong><span data-text-key="connect.intro2">，之后 agent 就能在你的电脑上读写文件和执行命令。</span><span data-text-key="connect.intro3">这是当前用户的 join token，只发给可信的电脑。直接用总线原始 token 加入的节点不会出现在这个用户的 UI 里。</span></p>
+        <div class="value"><code id="busUrl">{{busUrl}}</code><button class="copy" data-copy="busUrl" type="button" data-text-key="copy.busUrl">复制</button></div>
+        <div class="value"><code id="token">{{token}}</code><button class="copy" data-copy="token" type="button" data-text-key="copy.token">复制</button></div>
+        <p class="warn" data-text-key="{{loopbackKey}}">This bus is listening on loopback.</p>
+
+        <p class="label" data-text-key="connect.step1">1. 设置连接</p>
+        <p class="note" data-text-key="connect.notePosix">Linux / macOS：</p>
+        <pre id="env">export NODE_AGENT_BUS_URL="{{busUrl}}"
+export NODE_AGENT_TOKEN="{{token}}"</pre>
+        <button class="copy" data-copy="env" type="button" data-text-key="copy.env">复制环境变量</button>
+        <p class="note" data-text-key="connect.noteWindows">Windows PowerShell：</p>
+        <pre id="env-win">$env:NODE_AGENT_BUS_URL="{{busUrl}}"
+$env:NODE_AGENT_TOKEN="{{token}}"</pre>
+        <button class="copy" data-copy="env-win" type="button" data-text-key="copy.envWin">复制 PowerShell 版本</button>
+
+        <p class="label" data-text-key="connect.step2">2. 启动 shell 节点</p>
+        <p class="note" data-text-key="connect.noteRoot">在已部署的 node-agent 根目录运行。</p>
+        <pre id="start">node node_agent/nodes/shell/dist/serve.js --name computer</pre>
+        <button class="copy" data-copy="start" type="button" data-text-key="copy.start">复制启动命令</button>
+        <p class="note"><code>--name computer</code><span data-text-key="connect.name">是它在总线上的名字；接入多台电脑时给每台一个不同的名字。启动后 agent 会看到这些能力：</span><code>computer.read</code> <code>computer.exec</code></p>
+        <p class="note"><span data-text-key="connect.verify1">验证：回到 Web UI，节点列表里应出现</span><code>computer</code><span data-text-key="connect.verify2">；再让 agent 调用</span><code>list_nodes</code> <code>computer.exec</code> <code>computer.read</code><span data-text-key="connect.verify3">，能拿到结果就说明接好了。</span></p>
+        <p class="note"><span data-text-key="connect.others1">任何带</span><code>dist/serve.js</code><span data-text-key="connect.others2">的节点都这样接入，只换启动路径，例如 </span><code>node node_agent/nodes/provider/dist/serve.js</code></p>
+      </section>
+
+      <footer data-text-key="footer">这一页只介绍怎么用和怎么接入节点：页面里的复制按钮只写剪贴板，不执行命令。</footer>
+    </div>
+    <script>
+      // The words this page builds for itself come from the same resource the node embedded. Before
+      // the SDK's browser half has run there is no catalog, so `t` answers with the key -- which is
+      // why every sentence the first paint shows is painted into the markup by the node instead.
+      const t = (key, params) => globalThis.nodeAgentI18n?.t?.(key, params) ?? key;
+
+      async function copyText(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const area = document.createElement('textarea');
+        area.value = text;
+        area.style.position = 'fixed';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        document.execCommand('copy');
+        area.remove();
+      }
+      for (const button of document.querySelectorAll('button.copy')) {
+        button.addEventListener('click', async () => {
+          const target = document.getElementById(button.dataset.copy);
+          if (!target) return;
+          const before = button.textContent;
+          try {
+            await copyText(target.textContent || '');
+            button.textContent = t('copy.done');
+          } catch {
+            button.textContent = t('copy.failed');
+          }
+          setTimeout(() => {
+            // Back to the button's own words, through the resource when the browser half is there: a
+            // language change made while it says "copied" still restores the right label.
+            button.textContent = globalThis.nodeAgentI18n?.t?.(button.dataset.textKey) ?? before;
+          }, 1200);
+        });
+      }
+    </script>
+  </body>
+</html>

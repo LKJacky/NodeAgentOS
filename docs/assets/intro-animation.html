@@ -1,0 +1,260 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Node · 你的专属 Agent</title>
+<style>
+:root{color-scheme:dark;--purple:#7C5CFF;--accent:#7C5CFF;--muted:#92939f}*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden}body{background:#08090d;color:#f4f3f8;font-family:system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;display:grid;place-items:center}.film{width:min(100vw,177.7778vh,1440px);aspect-ratio:16/9;display:grid;grid-template-columns:62% 38%;background:#101116;border:1px solid #ffffff0c;overflow:hidden}.stage{position:relative;min-width:0;min-height:0;overflow:hidden;background:#101116;display:flex;flex-direction:column}.arena{position:relative;flex:1;min-height:0;overflow:hidden}canvas{position:absolute;inset:0;width:100%;height:100%;display:block}header{position:relative;flex:0 0 clamp(58px,6vw,80px);padding:0 7%;display:flex;align-items:center;justify-content:space-between;z-index:2;border-bottom:1px solid #ffffff08}.wordmark{display:flex;align-items:center;gap:10px;letter-spacing:.02em;font-size:clamp(15px,1.6vw,21px);font-weight:600;color:#f4f3f8}.wordmark svg{width:32px;height:32px;display:block}.edition{font-size:10px;letter-spacing:.18em;color:#777985}.narration{min-width:0;position:relative;display:flex;flex-direction:column;justify-content:center;padding:12% 12%;border-left:1px solid #ffffff12;background:#121318}.scene-meta{display:flex;align-items:center;gap:12px;color:var(--muted);font-size:11px;letter-spacing:.17em;margin-bottom:26px}.counter{color:var(--accent);font-size:clamp(28px,3.1vw,42px);font-weight:500;letter-spacing:-.04em;font-variant-numeric:tabular-nums}.total{font-size:12px;letter-spacing:.06em;color:#62636e}.caption{margin:0;min-height:4.6em;font-size:clamp(20px,2.65vw,36px);line-height:1.52;font-weight:500;letter-spacing:.01em;opacity:1;transition:opacity .25s ease;text-wrap:balance;overflow-wrap:anywhere}.caption.fading{opacity:0}.progress{display:flex;gap:6px;width:100%;height:3px;margin-top:30px}.progress i{height:3px;flex:1;background:#34313f;position:relative;overflow:hidden;border-radius:9px}.progress i:after{content:"";position:absolute;inset:0;background:var(--segment-color,var(--accent));transform:scaleX(var(--fill,0));transform-origin:left}.controls{position:absolute;left:12%;right:12%;bottom:8%;display:flex;justify-content:space-between;gap:8px}button{font:inherit;font-size:12px;color:#b2b1bc;background:transparent;border:1px solid #ffffff21;border-radius:99px;padding:9px 14px;cursor:pointer;transition:background .2s,color .2s}button:hover{background:#7c5cff16;color:#fff}button:focus-visible{outline:2px solid var(--purple);outline-offset:4px}.final-mark{position:absolute;left:50%;top:50%;width:clamp(140px,22vw,220px);aspect-ratio:1;transform:translate(-50%,-50%);opacity:0;pointer-events:none}.final-mark svg{display:block;width:100%;height:100%}.final-name{position:absolute;top:calc(100% + 12px);left:0;right:0;text-align:center;font-size:clamp(28px,3.3vw,44px);font-weight:550;letter-spacing:-.03em}.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:700px){.film{width:100vw;height:min(100svh,900px);aspect-ratio:auto;grid-template-columns:1fr;grid-template-rows:56% 44%}header{padding:0 8%;flex-basis:58px}.wordmark{font-size:18px}.wordmark svg{width:28px;height:28px}.edition{font-size:9px}.narration{border-left:0;border-top:1px solid #ffffff12;padding:7% 8%;justify-content:flex-start}.scene-meta{margin-bottom:14px;font-size:9px}.counter{font-size:28px}.caption{min-height:3em;font-size:clamp(21px,5.8vw,29px);line-height:1.45}.progress{margin-top:18px}.controls{left:8%;right:8%;bottom:7%}button{font-size:11px;padding:8px 13px}.final-mark{width:140px}.final-name{font-size:30px}}
+@media(min-width:701px) and (max-height:450px) and (min-aspect-ratio:1/1){.film{width:min(100vw,177.7778vh);height:auto;aspect-ratio:16/9;grid-template-columns:62% 38%;grid-template-rows:1fr}.narration{border-top:0;border-left:1px solid #ffffff12;padding:10%}.scene-meta{margin-bottom:8px;font-size:8px}.counter{font-size:20px}.caption{font-size:clamp(12px,2.7vw,20px);min-height:3.6em}.progress{margin-top:12px}.controls{left:10%;right:10%;bottom:6%}button{font-size:9px;padding:5px 8px}.edition{display:none}.wordmark{font-size:13px}.wordmark svg{width:22px;height:22px}.final-mark{width:100px}.final-name{font-size:22px;top:100%}}
+@media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}}
+</style>
+</head>
+<body>
+<main class="film" aria-label="Node 品牌介绍动画">
+<section class="stage" aria-label="动画舞台">
+<header><div class="wordmark"><svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="brand-t brand-d">
+  <title id="brand-t">node-agent colour mark</title>
+  <desc id="brand-d">The node-agent dandelion in a ten-colour spectrum.</desc>
+  <g>
+    <path d="M128.00 128.00 Q153.97 129.17 210.00 128.00" stroke="#F43F5E" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="210.00" cy="128.00" r="8.50" fill="#F43F5E"/>
+    <path d="M128.00 128.00 Q147.65 145.02 211.92 194.32" stroke="#FB923C" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="211.92" cy="194.32" r="6.80" fill="#FB923C"/>
+    <path d="M128.00 128.00 Q134.39 153.20 151.34 205.28" stroke="#FBBF24" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="151.34" cy="205.28" r="8.50" fill="#FBBF24"/>
+    <path d="M128.00 128.00 Q119.59 152.60 100.67 221.46" stroke="#34D399" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="100.67" cy="221.46" r="6.80" fill="#34D399"/>
+    <path d="M128.00 128.00 Q106.83 143.10 61.50 180.09" stroke="#22D3EE" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="61.50" cy="180.09" r="8.50" fill="#22D3EE"/>
+    <path d="M128.00 128.00 Q102.04 126.54 22.01 126.83" stroke="#38BDF8" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="22.01" cy="126.83" r="6.80" fill="#38BDF8"/>
+    <path d="M128.00 128.00 Q108.37 110.95 66.48 79.24" stroke="#6366F1" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="66.48" cy="79.24" r="8.50" fill="#6366F1"/>
+    <path d="M128.00 128.00 Q121.35 102.86 98.43 33.61" stroke="#8B5CF6" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="98.43" cy="33.61" r="6.80" fill="#8B5CF6"/>
+    <path d="M128.00 128.00 Q136.25 103.34 151.66 45.01" stroke="#D946EF" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="151.66" cy="45.01" r="8.50" fill="#D946EF"/>
+    <path d="M128.00 128.00 Q149.27 113.05 210.29 64.44" stroke="#EC4899" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="210.29" cy="64.44" r="6.80" fill="#EC4899"/>
+    <circle cx="128" cy="128" r="15.00" fill="#7C5CFF"/>
+  </g>
+</svg><span>node</span></div><span class="edition">INTRODUCTION</span></header>
+<div class="arena"><canvas aria-hidden="true"></canvas>
+<div class="final-mark" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" role="img" aria-labelledby="final-t final-d">
+  <title id="final-t">node-agent colour mark</title>
+  <desc id="final-d">The node-agent dandelion in a ten-colour spectrum.</desc>
+  <g>
+    <path d="M128.00 128.00 Q153.97 129.17 210.00 128.00" stroke="#F43F5E" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="210.00" cy="128.00" r="8.50" fill="#F43F5E"/>
+    <path d="M128.00 128.00 Q147.65 145.02 211.92 194.32" stroke="#FB923C" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="211.92" cy="194.32" r="6.80" fill="#FB923C"/>
+    <path d="M128.00 128.00 Q134.39 153.20 151.34 205.28" stroke="#FBBF24" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="151.34" cy="205.28" r="8.50" fill="#FBBF24"/>
+    <path d="M128.00 128.00 Q119.59 152.60 100.67 221.46" stroke="#34D399" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="100.67" cy="221.46" r="6.80" fill="#34D399"/>
+    <path d="M128.00 128.00 Q106.83 143.10 61.50 180.09" stroke="#22D3EE" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="61.50" cy="180.09" r="8.50" fill="#22D3EE"/>
+    <path d="M128.00 128.00 Q102.04 126.54 22.01 126.83" stroke="#38BDF8" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="22.01" cy="126.83" r="6.80" fill="#38BDF8"/>
+    <path d="M128.00 128.00 Q108.37 110.95 66.48 79.24" stroke="#6366F1" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="66.48" cy="79.24" r="8.50" fill="#6366F1"/>
+    <path d="M128.00 128.00 Q121.35 102.86 98.43 33.61" stroke="#8B5CF6" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="98.43" cy="33.61" r="6.80" fill="#8B5CF6"/>
+    <path d="M128.00 128.00 Q136.25 103.34 151.66 45.01" stroke="#D946EF" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="151.66" cy="45.01" r="8.50" fill="#D946EF"/>
+    <path d="M128.00 128.00 Q149.27 113.05 210.29 64.44" stroke="#EC4899" stroke-width="5.60" stroke-linecap="round"/>
+    <circle cx="210.29" cy="64.44" r="6.80" fill="#EC4899"/>
+    <circle cx="128" cy="128" r="15.00" fill="#7C5CFF"/>
+  </g>
+</svg><div class="final-name">Node</div></div>
+</div>
+</section>
+<aside class="narration" aria-label="场景旁白">
+<div class="scene-meta" aria-hidden="true"><span class="counter">01</span><span class="total">/ 05</span><span>INTRODUCTION</span></div>
+<p class="caption" aria-live="polite" aria-atomic="true">单一回合，做最懂你的 Agent</p>
+<div class="progress" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+<div class="controls"><button id="pause" type="button" aria-label="暂停动画">Ⅱ 暂停</button><button id="replay" type="button" aria-label="重新播放动画">↻ replay</button></div>
+</aside>
+<span class="sr-only">五幕介绍：单一回合，做最懂你的 Agent；云端在线，多端融合；连接应用，你的超级 Agent；应用扩展，无限可能；Node，你的专属 Agent。可暂停或重新播放。</span>
+</main>
+<script>
+/* Standalone. API scene numbers are 1–5. goTo() seeks without changing playback.
+   ?scene=1..5&still=1 selects a representative composition; still never autoplay.
+   The 32-second design timeline (6 + 6 + 6 + 7 + 7) plays at 8/7 speed:
+   28 seconds per loop. Reduced motion uses five
+   static compositions and a slow 50-second slideshow, without rotation/pulses. */
+(() => {
+'use strict';
+const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
+const caption=document.querySelector('.caption'),counter=document.querySelector('.counter');
+const bars=[...document.querySelectorAll('.progress i')],pauseButton=document.querySelector('#pause');
+const finalName=document.querySelector('.final-name'),replayButton=document.querySelector('#replay');
+const COPY={
+ 'zh-CN':{
+  captions:['单一回合，做最懂你的 Agent','云端在线，多端融合','连接应用，你的超级 Agent','应用扩展，无限可能','Node，你的专属 Agent'],
+  devices:['台式机','笔记本','手机'],apps:['备忘录','Todo','计时器'],agent:'Agent',node:'Node',introLabel:'介绍',
+  pause:'Ⅱ 暂停',play:'▷ 播放',replay:'↻ replay',pauseAria:'暂停动画',playAria:'播放动画',replayAria:'重新播放动画',
+  filmAria:'Node 品牌介绍动画',stageAria:'动画舞台',narrationAria:'场景旁白',
+  sr:'五幕介绍：单一回合，做最懂你的 Agent；云端在线，多端融合；连接应用，你的超级 Agent；应用扩展，无限可能；Node，你的专属 Agent。可暂停或重新播放。'
+ },
+ en:{
+  captions:['One turn. An agent that knows you.','Online in the cloud, across every device.','Connect your apps. Your super agent.','Apps expand. Infinite possibilities.','Node. Your own agent.'],
+  devices:['Desktop','Laptop','Phone'],apps:['Notes','Todo','Timer'],agent:'Agent',node:'Node',introLabel:'INTRODUCTION',
+  pause:'Ⅱ Pause',play:'▷ Play',replay:'↻ Replay',pauseAria:'Pause animation',playAria:'Play animation',replayAria:'Replay animation',
+  filmAria:'Node brand introduction animation',stageAria:'Animation stage',narrationAria:'Scene narration',
+  sr:'Five scenes: One turn. An agent that knows you. Online in the cloud, across every device. Connect your apps. Your super agent. Apps expand. Infinite possibilities. Node. Your own agent. Pause or replay at any time.'
+ }
+};
+function copy(){return COPY[lang]}
+const durations=[6,6,6,7,7],starts=[0,6,12,18,25],total=32;
+const playbackRate=total/28; // A modest 14.3% speed-up; reduced motion stays slow.
+const samples=[3,4.7,4.7,5.8,6.2];
+const motion=matchMedia('(prefers-reduced-motion: reduce)');
+const params=new URLSearchParams(location.search),requested=Number(params.get('scene'));
+let lang=(params.get('lang')||navigator.language||'zh-CN').toLowerCase().startsWith('zh')?'zh-CN':'en';let captions=COPY[lang].captions;
+let reduced=motion.matches,scene=Number.isInteger(requested)&&requested>=1&&requested<=5?requested-1:0;
+let time=starts[scene]+(params.get('still')==='1'?samples[scene]:0),playing=params.get('still')!=='1';
+let last=0,raf=0,width=0,height=0,dpr=1,captionTimer=0,shown=-1,completionSent=false;
+// Only the inline brand SVGs use Spectrum. All animated nodes interpolate
+// purple -> cyan -> mint by their actual radius, in linear-light RGB.
+const colors=['#7C5CFF','#22D3EE','#34D399'];
+const sceneAccents=[colors[0],colors[1],colors[2],colors[1],colors[0]];
+const toLinear=v=>v<=.04045?v/12.92:Math.pow((v+.055)/1.055,2.4);
+const toSrgb=v=>v<=.0031308?v*12.92:1.055*Math.pow(v,1/2.4)-.055;
+const stops=colors.map(hex=>[1,3,5].map(i=>toLinear(parseInt(hex.slice(i,i+2),16)/255)));
+function colorAtRadius(radius){
+ const position=Math.max(0,Math.min(1,radius/128))*2;
+ const segment=Math.min(1,Math.floor(position)),mix=position-segment;
+ const rgb=stops[segment].map((v,i)=>Math.round(255*toSrgb(v+(stops[segment+1][i]-v)*mix)));
+ return `rgb(${rgb.join(',')})`;
+}
+bars.forEach((bar,i)=>bar.style.setProperty('--segment-color',sceneAccents[i]));
+const finalMark=document.querySelector('.final-mark');
+const ease=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t)};
+const lerp=(a,b,t)=>a+(b-a)*t;
+function setCaption(n,instant=false){
+ if(shown===n)return;shown=n;clearTimeout(captionTimer);
+ counter.textContent=String(n+1).padStart(2,'0');
+ document.querySelector('.film').style.setProperty('--accent',sceneAccents[n]);
+ if(instant||reduced){caption.textContent=captions[n];caption.classList.remove('fading')}
+ else{caption.classList.add('fading');captionTimer=setTimeout(()=>{caption.textContent=captions[n];caption.classList.remove('fading')},220)}
+}
+function current(){let n=4;for(let i=0;i<5;i++)if(time<starts[i]+durations[i]){n=i;break}return [n,time-starts[n]]}
+function resize(){const r=canvas.getBoundingClientRect();width=r.width;height=r.height;dpr=Math.min(devicePixelRatio||1,3);canvas.width=Math.round(width*dpr);canvas.height=Math.round(height*dpr);render()}
+function line(x1,y1,x2,y2,color,alpha=.3){ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=3.2;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);ctx.stroke();ctx.globalAlpha=1}
+function dot(x,y,r,color,alpha=1){ctx.globalAlpha=alpha;ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1}
+
+function text(label,x,y,size=14,color='#9baeb4',alpha=1){ctx.globalAlpha=alpha;const scale=Math.min(width/640,height/540);ctx.font=`${Math.max(size,(size>=40?24:10)/scale)}px system-ui, "Microsoft YaHei", sans-serif`;ctx.textAlign='center';ctx.fillStyle=color;ctx.fillText(label,x,y);ctx.globalAlpha=1}
+function icon(kind,x,y,color,alpha){
+ ctx.save();ctx.translate(x,y);ctx.globalAlpha=alpha;ctx.strokeStyle=color;ctx.lineWidth=2.2;ctx.lineCap='round';ctx.lineJoin='round';ctx.beginPath();
+ if(kind===0){ctx.rect(-11,-8,22,15);ctx.moveTo(0,7);ctx.lineTo(0,12);ctx.moveTo(-6,12);ctx.lineTo(6,12)}
+ if(kind===1){ctx.rect(-10,-8,20,14);ctx.moveTo(-10,6);ctx.lineTo(-14,11);ctx.lineTo(14,11);ctx.lineTo(10,6)}
+ if(kind===2){ctx.roundRect(-6,-11,12,23,3);ctx.moveTo(-2,8);ctx.lineTo(2,8)}
+ if(kind===3){ctx.roundRect(-9,-11,18,23,2);for(let j=0;j<3;j++){ctx.moveTo(-5,-5+j*6);ctx.lineTo(5,-5+j*6)}}
+ if(kind===4){ctx.roundRect(-10,-10,20,21,3);ctx.moveTo(-5,0);ctx.lineTo(-1,4);ctx.lineTo(6,-4)}
+ if(kind===5){ctx.arc(0,1,10,0,Math.PI*2);ctx.moveTo(0,1);ctx.lineTo(0,-5);ctx.moveTo(-3,-13);ctx.lineTo(3,-13);ctx.moveTo(0,-13);ctx.lineTo(0,-9)}
+ ctx.stroke();ctx.restore();
+}
+const deviceAngles=[[-Math.PI/2,0],[Math.PI*5/6,1],[Math.PI/6,2]];
+const appAngles=[[-Math.PI/6,3],[Math.PI/2,4],[Math.PI*7/6,5]];
+function devices(){return deviceAngles.map(([a,k],i)=>[a,copy().devices[i],k])}
+function apps(){return appAngles.map(([a,k],i)=>[a,copy().apps[i],k])}
+// Inner content radius <=128. Outer label centres are fixed at radius 215.
+// Guides terminate at radius 168, before the icon/text boxes; they never enter them.
+function satellites(group,p,t,subtle=false){
+ group.forEach(([angle,label,kind],i)=>{const emerge=ease((p-i*.18)/1.5),r=115*emerge;
+ const ux=Math.cos(angle),uy=Math.sin(angle),x=ux*r,y=uy*r,c=colorAtRadius(r);
+ line(0,0,x,y,colors[0],.26*emerge*(subtle?.5:1));
+ if(!reduced&&playing&&emerge>.5){const f=(t*.3+i*.3)%1;dot(x*f,y*f,1.6,colorAtRadius(r*f),.65)}
+ dot(x,y,subtle?4:7,c,emerge*(subtle?.6:1));
+ if(!subtle){
+  const lx=ux*215,ly=uy*215;
+  line(ux*(r+12),uy*(r+12),ux*168,uy*168,colors[0],.2*emerge);
+  icon(kind,lx,ly-9,c,emerge);text(label,lx,ly+29,15,'#c4c3cd',emerge);
+ }
+ });
+}
+
+function cloud(p,t,fade=0,shrink=1){
+ const count=22,amount=ease(p/4.8),fit=1;const angle=reduced?0:t*(.08+Math.min(p,6)*.045);
+ const points=[];
+ for(let i=0;i<count;i++){
+ const birth=ease((amount*count-i)/5),a=i*2.399963+angle;
+ const radius=(i<12?128:lerp(68,100,(i-12)/10))*birth*shrink*fit;
+ const x=Math.cos(a)*radius,y=Math.sin(a)*radius;
+ if(birth===0)continue;points.push([x,y]);
+ const c=colorAtRadius(radius);line(0,0,x,y,colors[0],.22*birth*(1-fade));
+
+ dot(x,y,4+(i%3)*.6,c,birth*(1-fade));
+ }
+
+}
+function render(){
+ if(!width||!height)return;
+ const [n,local]=current(),p=reduced?samples[n]:local;
+ // Scene 5 crossfades directly from the circle to the supplied Spectrum logo over 1.35s.
+ // Only a gentle 12% scale-down is applied: endpoints never converge to a seed.
+ const t=reduced?0:n===4&&p>=1.35?26.35:time;
+ setCaption(n,!playing);bars.forEach((bar,i)=>bar.style.setProperty('--fill',i<n?1:i===n?local/durations[n]:0));
+ ctx.setTransform(dpr,0,0,dpr,0,0);ctx.clearRect(0,0,width,height);
+ const scale=Math.min(width/640,height/540),cx=width/2,cy=height*.5;
+ ctx.save();ctx.translate(cx,cy);ctx.scale(scale,scale);
+ // A restrained monochrome grid; no glow layers or detached ambient dust.
+ ctx.lineWidth=.5;
+ for(let x=-340;x<=340;x+=36){ctx.globalAlpha=.035;ctx.strokeStyle='#a2a1af';ctx.beginPath();ctx.moveTo(x,-300);ctx.lineTo(x,300);ctx.stroke()}
+ for(let y=-300;y<=300;y+=36){ctx.globalAlpha=.035;ctx.strokeStyle='#a2a1af';ctx.beginPath();ctx.moveTo(-340,y);ctx.lineTo(340,y);ctx.stroke()}ctx.globalAlpha=1;
+ if(n===1)satellites(devices(),p,t);
+ if(n===2){satellites(devices(),5,t,true);satellites(apps(),p,t)}
+ if(n===3)cloud(p,t);
+ const fade=n===4?ease(p/1.2):0;
+ if(n===4)cloud(6,t,fade,lerp(1,.88,fade));
+ const arrival=n===0?ease(p/1.1):1;
+ const brand=n===4?ease((p-.1)/1.25):0;
+ const pulse=reduced?1:1+.1*Math.sin(t*3.3);
+ const coreAlpha=arrival*(n===4?1-fade:1);
+ // Short, solid orbiting wisps keep the opening seed alive without a halo.
+ if(n===0&&!reduced&&brand<.98){for(let j=0;j<5;j++){const a=t*1.6-j*.18,x=Math.cos(a)*(17+j),y=Math.sin(a)*(12+j);dot(x,y,2-j*.25,colorAtRadius(Math.hypot(x,y)),arrival*(1-j/5)*.35)}}
+ dot(0,0,10*pulse,'#7C5CFF',coreAlpha);
+ if(n===0)text(copy().agent,0,238,17,'#cfced7',arrival);
+ // The resolved mark is the exact supplied SVG, not a canvas approximation.
+ finalMark.style.opacity=String(brand);
+ finalMark.style.transform=`translate(-50%,-50%) scale(${lerp(.94,1,brand)})`;
+
+ ctx.restore();
+}
+function setLanguage(next){
+ lang=String(next).toLowerCase().startsWith('zh')?'zh-CN':'en';captions=copy().captions;
+ document.documentElement.lang=lang;finalName.textContent=copy().node;
+ document.querySelector('.film').setAttribute('aria-label',copy().filmAria);
+ document.querySelector('.stage').setAttribute('aria-label',copy().stageAria);
+ document.querySelector('.narration').setAttribute('aria-label',copy().narrationAria);
+ document.querySelector('.scene-meta span:last-child').textContent=copy().introLabel;
+ replayButton.textContent=copy().replay;replayButton.setAttribute('aria-label',copy().replayAria);
+ document.querySelector('.sr-only').textContent=copy().sr;
+ const n=shown>=0?shown:scene;shown=-1;setCaption(n,true);syncButton();render();
+}
+function syncButton(){pauseButton.textContent=playing?copy().pause:copy().play;pauseButton.setAttribute('aria-label',playing?copy().pauseAria:copy().playAria)}
+function frame(now){raf=0;if(!playing)return;if(last){const delta=Math.min((now-last)/1000,.1);time+=delta*(reduced?total/50:playbackRate)}last=now;
+ if(time>=total){time%=total;completionSent=false}
+ if(time>=31.5&&!completionSent){completionSent=true;if(parent!==window)parent.postMessage({kind:'node-agent:intro-done'},'*')}
+ render();raf=requestAnimationFrame(frame);
+}
+function play(){if(playing&&raf)return;playing=true;last=0;syncButton();raf=requestAnimationFrame(frame)}
+function pause(){playing=false;cancelAnimationFrame(raf);raf=0;last=0;syncButton();render()}
+function replay(){time=0;completionSent=false;shown=-1;setCaption(0,true);render();play()}
+function goTo(value){const n=Number(value);if(!Number.isInteger(n)||n<1||n>5)throw new RangeError('scene must be an integer from 1 to 5');time=starts[n-1]+samples[n-1];completionSent=false;last=0;setCaption(n-1,true);render()}
+window.IntroAnimation={play,pause,replay,goTo,setLanguage};
+window.addEventListener('message',(event)=>{const data=event.data;if(data&&data.kind==='node-agent:intro-language')setLanguage(data.language)});
+function onMotion(e){reduced=e.matches;render()}
+if(motion.addEventListener)motion.addEventListener('change',onMotion);
+new ResizeObserver(resize).observe(canvas);
+pauseButton.addEventListener('click',()=>playing?pause():play());document.querySelector('#replay').addEventListener('click',replay);
+document.addEventListener('visibilitychange',()=>{last=0});
+setLanguage(lang);setCaption(scene,true);resize();if(playing)play();
+})();
+</script>
+</body>
+</html>

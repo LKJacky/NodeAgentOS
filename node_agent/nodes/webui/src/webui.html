@@ -1,0 +1,1505 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>node_agent</title>
+    <!-- Installable: the manifest carries the name, the colours, the start URL and `display:
+         standalone` (no browser chrome once it is on a home screen), and the picture the tile is made
+         of. `theme-color` paints the status bar on a phone. iOS has no `beforeinstallprompt` and no way
+         to be asked from script, so it reads the tags below instead — and the one line under the title
+         (below) is the whole install story on that platform. -->
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <!-- iOS ignores every icon in a manifest: the home-screen tile there is one square PNG named by this
+         tag, and 192 is the size it asks for (it scales the rest). The build draws it from src/icon.svg
+         (see scripts/png-icons.mjs), so a build on a machine without a rasterizer leaves the file out and
+         this 404s — which costs the tile and nothing else, the way a missing icon always has. -->
+    <link rel="apple-touch-icon" sizes="192x192" type="image/png" href="/icon-192.png" />
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="node_agent" />
+    <!-- The tab's icon, drawn inline: no .ico file to fetch and nothing to lose offline. The bus with
+         three nodes on it, and the tile draws them in colour. -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke-width='2' stroke-linecap='round'%3E%3Cpath stroke='%234f46e5' d='M11.2 7.7 6.4 15.3M12.8 7.7l4.8 7.6'/%3E%3Ccircle cx='12' cy='5.5' r='2.5' stroke='%23f59e0b'/%3E%3Ccircle cx='5.5' cy='17.5' r='2.5' stroke='%2314b8a6'/%3E%3Ccircle cx='18.5' cy='17.5' r='2.5' stroke='%23ec4899'/%3E%3C/svg%3E"
+    />
+    <script>
+      // Inside another frame this page has to fill the FRAME it was given rather than the window: the
+      // height chain below reads this class. It is set before the style is parsed, so nothing is ever
+      // laid out at the wrong height. `self !== top` is true for a frame and safe to ask anywhere.
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <!-- The shell's own words: src/i18n/en.json and zh-CN.json. webui replaces this exact comment on
+         every request with one JSON script tag, so the sentences below (their `data-text-key`) and
+         the script at the bottom of the page (`t(...)`) read from the same resource. The text written
+         on each marker is the English one: it is what a page with no resource still shows. -->
+    <!-- node-agent:i18n-resource -->
+    <!-- i18n: where the language of this visit and the SDK's browser half are dropped in (see
+         /sdk/i18n-client.js). webui replaces this exact comment on every request, so the shell is
+         drawn in the user's language, and follows a change afterwards, without this file knowing a
+         single sentence. It stays a comment rather than a tag so a build that lost the hand-off is
+         visible in a test instead of quietly serving an English page to a Chinese reader. -->
+    <!-- node-agent:i18n -->
+    <style>
+      :root {
+        color-scheme: light dark;
+        --line: #8884;
+        --dim: #8888;
+        --blue: #3b82f6;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      /* What the page fills: the viewport when it is the top document, the frame box when it is not.
+         Both are the initial containing block, which is what 100% means here. */
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        /* The left column's width: ONE number, read by the aside below (its width). Dragging the
+           splitter changes exactly this one variable. */
+        --left: clamp(300px, 33vw, 430px);
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      /* The two bars above the tab row: one line each, with the one control each needs. The first
+         says where the install item is on a phone (iOS has no beforeinstallprompt, so a line of text
+         is the only way to say it), the second says the page cannot reach the bus and offers to ask
+         again. Both are hidden until the script shows them, so a page with nothing wrong is
+         untouched. */
+      .bar {
+        flex: none;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        padding: 8px 14px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+      /* `display: flex` above would otherwise beat the `hidden` attribute, and a bar nobody asked for
+         would sit there saying nothing. */
+      .bar[hidden] {
+        display: none;
+      }
+      .bar span {
+        flex: 1;
+        min-width: 0;
+        overflow-wrap: anywhere;
+      }
+      .bar button {
+        flex: none;
+        padding: 4px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .bar button:hover {
+        border-color: var(--blue);
+      }
+      /* The tab bar, in TWO shapes from ONE markup — and which shape is on screen is decided by the
+         same media query that decides whether the columns are side by side (the narrow block below):
+         there is no second copy of the tabs and no second breakpoint.
+
+         A WIDE screen keeps the shape this page always had: two strips, each one over its own column
+         — the left column's pages (the sub-agents) over the aside, the main area's pages (the nodes)
+         over the frame. A reader looks from a page to the tabs that switch it, so a strip belongs
+         over the column it switches. Each strip is a container of its own: one group can never drag
+         the other along, and a strip whose tabs do not fit scrolls sideways in place. The scrollbar
+         is thin — a few pixels at the foot of the strip — because a wrapped name is a second row of
+         tabs and a clipped name is a page a reader cannot reach.
+
+         A NARROW screen has one column, so the two strips are ONE row: a single sideways scroller
+         (see the narrow block), group │ group, with a hairline at the seam. There is no title row
+         above the bar on any screen: the bar names every page already. */
+      .tabs {
+        flex: none;
+        display: grid;
+        /* TWO tracks: everything that can scroll, and the launcher. The launcher's width is its own
+           and it never leaves the right edge — the bar's third part, at every width, outside the
+           scroller below. */
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: stretch;
+        border-bottom: 1px solid var(--line);
+      }
+      /* The part that scrolls: on a wide screen it is over the two columns, the left strip exactly as
+         wide as the column under it (--left is the one number the splitter drags), and the 1px track
+         is where the seam would stand, so the right strip begins exactly where the main area's frame
+         begins. */
+      .strips {
+        display: grid;
+        grid-template-columns: var(--left) 1px minmax(0, 1fr);
+        align-items: stretch;
+        min-width: 0;
+      }
+      /* A group on a wide screen: its corner of the grid, and its own sideways scroller. A strip can
+         hold more tabs than its column has room for, so it scrolls on its own — never the page and
+         never the other group. The bar stays a thin, 6px-high scroller at the foot of the strip. */
+      .tabs nav {
+        min-width: 0;
+        overflow-x: auto;
+        overflow-y: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line) transparent;
+        overscroll-behavior-x: contain;
+        /* top, not centre: a strip that has a scrollbar is 6px shorter than its twin, and centring
+           would lift that strip's tabs a few pixels off the other column's. */
+        align-items: flex-start;
+      }
+      .tabs nav::-webkit-scrollbar {
+        height: 6px;
+      }
+      .tabs nav::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .tabs nav::-webkit-scrollbar-thumb {
+        background: var(--line);
+        border-radius: 3px;
+      }
+      #pinned-nav {
+        grid-column: 1;
+      }
+      #nav {
+        grid-column: 3;
+      }
+      /* With no left column there is one strip, and it takes the whole width. */
+      .tabs.no-left .strips {
+        grid-template-columns: minmax(0, 1fr);
+      }
+      .tabs.no-left #nav {
+        grid-column: 1;
+      }
+      .tabs.no-left #pinned-nav,
+      .tabs.no-left .sep {
+        display: none;
+      }
+      /* The seam belongs to the one-row shape only: on a wide screen the two columns already say
+         where one group's pages end, so the hairline is not drawn at all. Decorative, so not read
+         out either way. */
+      .sep {
+        display: none;
+        flex: none;
+        align-self: center;
+        width: 1px;
+        height: 1.4em;
+        margin: 0 6px;
+        background: var(--dim);
+        border-radius: 1px;
+      }
+      /* Two columns, and one page in each: the resident node's on the left, whatever the launcher has
+         opened on the right. The width is the variable --left (on the body, so the splitter writes one
+         place), and dragging the border changes exactly that. */
+      .split {
+        flex: 1;
+        display: flex;
+        min-height: 0;
+      }
+      aside {
+        flex: none;
+        width: var(--left);
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        border-right: 1px solid var(--line);
+      }
+      aside.off {
+        display: none;
+      }
+      aside.off + .splitter {
+        display: none;
+      }
+      /* The border itself: thin, but easy to grab (1px visually, 9px hit area). */
+      .splitter {
+        flex: none;
+        align-self: stretch;
+        width: 9px;
+        margin: 0 -4px;
+        z-index: 1;
+        background: transparent;
+        cursor: col-resize;
+      }
+      .splitter:hover,
+      .splitter:focus-visible,
+      body.dragging .splitter {
+        background: var(--blue);
+        outline: none;
+      }
+      body.dragging {
+        cursor: col-resize;
+        user-select: none;
+      }
+      /* While dragging, keep the pointer out of the iframes — otherwise pointermove stops firing. */
+      body.dragging iframe {
+        pointer-events: none;
+      }
+      .side {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      nav {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 8px 8px;
+      }
+      /* A tab is a `div`, not a `button`: it holds the x that closes it, and a button inside a button
+         is a control no browser will let a reader reach. It is still a tab to a reader (`role`,
+         `aria-selected`, and the tab order — see `markRight`), and it is entered with the keyboard the
+         way a button is (see the keydown in `makeTab`). */
+      .tab {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        min-height: 40px;
+        padding: 7px 12px;
+        border: 1px solid transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        text-align: left;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .tab:hover {
+        border-color: var(--line);
+      }
+      .tab.on {
+        border-color: var(--blue);
+        background: #3b82f622;
+      }
+      .tab .label {
+        display: flex;
+        gap: 6px;
+        align-items: center;
+        color: inherit;
+        font-size: inherit;
+      }
+      /* The tab's glyph: the node's manifest carries the whole <svg>, and the shell shows what it is
+         given, so a tab reads as a picture and a name. 16px both ways on
+         purpose — the label is a flex row inside a phone's 44px tab, and a drawing given only a
+         width is squashed by its neighbours instead of keeping its shape. The drawing arrives as an
+         <img> over a data: URL, so the SVG is never part of this document and never has the right
+         to run. */
+      .tab .ico {
+        display: inline-flex;
+        flex: none;
+        width: 16px;
+        height: 16px;
+      }
+      .tab .ico img {
+        display: block;
+        flex: none;
+        width: 16px;
+        height: 16px;
+      }
+      /* The launcher's tab is a glyph and no word: nine dots, which is the shape of the grid it
+         opens. Drawn with a box-shadow on one dot rather than an <svg>, because this page carries no
+         pictures of its own — the only drawings on it are the ones nodes hand over. The name is
+         kept as aria-label, so a reader still hears “launcher” and nobody has to read a word. */
+      .tab.launcher {
+        justify-content: center;
+        min-width: 40px;
+      }
+      /* The bar's third part: the launcher's tab is a direct child of `.tabs`, in the track after the
+         strips, so it sits at the right edge and the scroller beside it ends where it begins. */
+      .tabs > .tab.launcher {
+        grid-column: 2;
+        align-self: center;
+        flex: none;
+        margin: 0 4px;
+      }
+      .tab.launcher .ico {
+        position: relative;
+        width: 4px;
+        height: 4px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow:
+          -6px -6px 0 0 currentColor,
+          0 -6px 0 0 currentColor,
+          6px -6px 0 0 currentColor,
+          -6px 0 0 0 currentColor,
+          6px 0 0 0 currentColor,
+          -6px 6px 0 0 currentColor,
+          0 6px 0 0 currentColor,
+          6px 6px 0 0 currentColor;
+      }
+      /* The online dot: grey by default, green when the node reports online. */
+      .tab .dot {
+        width: 8px;
+        height: 8px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--dim);
+      }
+      .tab .dot.on {
+        background: #22c55e;
+      }
+      nav p {
+        margin: 0;
+        padding: 4px 2px;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      /* The x on a node's tab: the one way a page leaves the bar. It is always there and always the
+         same size, and it sits inside the tab rather than beside it. Two tabs carry none — the
+         launcher's, which is the way back, and the resident page's in the left column, which nobody
+         opened and so nobody closes. */
+      .tab .close {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        margin-left: 2px;
+        padding: 0;
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        font-size: 14px;
+        line-height: 1;
+        opacity: 0.55;
+        cursor: pointer;
+      }
+      .tab .close:hover,
+      .tab .close:focus-visible {
+        background: #8883;
+        opacity: 1;
+        outline: none;
+      }
+      /* --- The launcher: the shell's own page, the way a desktop's Launchpad is one. It is not a
+         node's page and not an iframe — the first tab of the main area's bar is `launcher`, it is
+         always there, and under it is a grid of the nodes that declared a page. Nothing opens by
+         itself, so this is what a reader is given first, and the only thing on screen until a card is
+         picked. The frame keeps whichever page it had while this is up (it is hidden, not unloaded). --- */
+      .launcher {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 24px 18px;
+        -webkit-overflow-scrolling: touch;
+      }
+      .launcher[hidden],
+      .side iframe[hidden] {
+        display: none;
+      }
+      .launcher-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+        gap: 14px 10px;
+        max-width: 960px;
+        margin: 0 auto;
+      }
+      .launcher p {
+        margin: 0;
+        padding: 24px 6px;
+        color: var(--dim);
+        font-size: 13px;
+        text-align: center;
+      }
+      /* One node: a tile with the drawing its manifest carries and its name under it — the same two
+         things its tab leads with, drawn bigger, because here it is the whole of the page. A node that
+         handed over no drawing keeps an empty tile: a stand-in would claim a picture it never made. */
+      .launcher .card {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 8px;
+        min-height: 44px;
+        padding: 10px 6px;
+        border: 1px solid transparent;
+        border-radius: 12px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .launcher .card:hover {
+        border-color: var(--line);
+      }
+      /* The card of a page that is open, drawn the way a chosen tab is: the launcher says what is
+         already on the bar, so a reader does not have to look at the bar to know. */
+      .launcher .card.on {
+        border-color: var(--blue);
+        background: #3b82f622;
+      }
+      .launcher .tile {
+        display: flex;
+        flex: none;
+        align-items: center;
+        justify-content: center;
+        width: 60px;
+        height: 60px;
+        border-radius: 14px;
+        background: #8881;
+      }
+      .launcher .tile .ico,
+      .launcher .tile .ico img {
+        display: block;
+        flex: none;
+        width: 34px;
+        height: 34px;
+      }
+      .launcher .name {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        max-width: 100%;
+        font-size: 12px;
+        line-height: 1.3;
+        text-align: center;
+        overflow-wrap: anywhere;
+      }
+      .launcher .name .dot {
+        flex: none;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--dim);
+      }
+      .launcher .name .dot.on {
+        background: #22c55e;
+      }
+      iframe {
+        flex: 1;
+        min-height: 0;
+        border: 0;
+      }
+      /* --- Narrow: ONE column, and the tab bar becomes ONE row here. This is the same query that puts
+         the two columns in one box (see below), and the same markup as the wide two-strip shape
+         above: the two navs and the seam are just re-laid out — the bar turns into a single
+         sideways scroller, the groups stop being containers of their own, and the hairline at the
+         seam is drawn. Stacking the columns was two piles of tabs and two frames on top of each
+         other, which left neither page any room and made the reader guess which frame a strip
+         belonged to. Instead the left column's pages and the main area's pages share the single
+         frame under the bar, and a tab picks which page is in it. A phone held sideways is wider
+         than 760px but far too short for two columns, so a short screen is narrow here too. --- */
+      @media (max-width: 760px), (orientation: landscape) and (max-height: 480px) {
+        /* ONE scroller, and it is the strips: a tab keeps its own width, the row overflows instead of
+           folding (flex-wrap: nowrap), and a long name widens the strips rather than being clipped by
+           a column that is not there any more. The launcher is not in here: the third part of the bar
+           keeps its place at the right edge, and no scroll moves it. */
+        .tabs {
+          padding: 0 2px;
+        }
+        .strips {
+          display: flex;
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
+          overscroll-behavior-x: contain;
+          /* A hair of scrollbar (3px, see below) says there is more without taking a thumb's row. */
+          scrollbar-width: thin;
+          scrollbar-color: var(--line) transparent;
+        }
+        .strips::-webkit-scrollbar {
+          height: 3px;
+        }
+        .strips::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        .strips::-webkit-scrollbar-thumb {
+          background: var(--line);
+          border-radius: 3px;
+        }
+        /* the groups inside it are runs of tabs, not containers of their own: the bar is the one
+           place a tab can be revealed, so nothing down here may clip or scroll. */
+        .tabs nav {
+          flex: none;
+          overflow: visible;
+        }
+        /* The seam is part of the one-row shape: a hairline between the two groups. */
+        .sep {
+          display: block;
+        }
+        #pinned-nav,
+        #nav {
+          padding: 5px 2px;
+        }
+        .tabs .tab {
+          flex: none;
+          min-height: 44px;
+        }
+        .sep {
+          margin: 0 4px;
+        }
+        /* The bar switches with the frame: the group whose page is NOT on screen keeps no tab marked,
+           so exactly one tab looks chosen. (A wide screen shows both columns, so it keeps both.) */
+        .tabs[data-view='left'] #.tab.on,
+        .tabs[data-view='right'] #pinned-.tab.on {
+          border-color: transparent;
+          background: transparent;
+        }
+        /* Both columns sit in the same box and only the chosen one is laid out — the split stays a row,
+           which is the whole point (a `column` direction here is the stack this page used to be). */
+        .splitter {
+          display: none;
+        }
+        aside {
+          flex: 1 1 auto;
+          width: auto;
+          height: auto;
+          min-height: 0;
+          border-right: 0;
+          border-bottom: 0;
+        }
+        .side {
+          flex: 1 1 auto;
+        }
+        .split[data-view='right'] aside,
+        .split[data-view='left'] .side {
+          display: none;
+        }
+      }
+      /* --- Mobile: the same one-column shell, plus the two things a phone itself asks for. The page
+         in a frame cannot feel the home indicator (env() is 0 inside an iframe), so the shell keeps
+         that inset instead, and the height follows a collapsing URL bar. The rest of the recipe —
+         viewport-fit=cover, safe-area padding, 44px targets, wrapping — is copied into each node's
+         page too (see the mobile note in doc/node_agent/README.md). --- */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        body {
+          height: 100dvh; /* a collapsing URL bar must not crop the frame holding the input */
+          /* The insets, all four of them: the home indicator at the bottom, the status bar at the
+             top (an installed app is drawn under it), and the notch on either side once the phone is
+             turned. A page that owns the whole viewport (viewport-fit=cover) is drawn UNDER the
+             hardware, so it has to keep its content out of it. */
+          padding-top: env(safe-area-inset-top);
+          padding-right: env(safe-area-inset-right);
+          padding-bottom: env(safe-area-inset-bottom);
+          padding-left: env(safe-area-inset-left);
+        }
+        .tab {
+          min-height: 44px;
+          padding: 8px 12px;
+        }
+        /* A bar's control is a thumb target on a phone too. */
+        .bar button {
+          min-height: 44px;
+        }
+      }
+      /* Inside another frame the box is the truth: 100% follows it, while `100dvh` is the frame's own
+         viewport in Chrome but may be the *window's* height elsewhere — a page taller than its frame
+         ends with a strip of blank under its composer. After the phone block on purpose: in a frame it
+         wins at every width. */
+      :root.framed body {
+        height: 100%;
+        min-height: 0;
+      }
+      /* First-time setup owns the viewport, independently of the shell's column layout. */
+      .onboarding {
+        position: fixed;
+        inset: 0;
+        z-index: 10000;
+        display: flex;
+        background: var(--bg, #fff);
+      }
+      .onboarding[hidden] { display: none; }
+      .onboarding iframe {
+        width: 100%;
+        height: 100%;
+        border: 0;
+        flex: 1;
+      }
+    </style>
+  </head>
+  <body>
+    <!-- One line, one control, each, above the bar that names the pages: the install line is iOS's
+         whole story (see the head), and the other one is what an offline page says for itself when
+         the worker has just kept the shell alive. Both are an addition to the layout, never a
+         replacement. -->
+    <div class="bar" id="install" hidden>
+      <!-- The words of every element below are a resource key with the English written on it; webui
+           paints them in the visit's language before the page leaves (see src/i18n), and the browser
+           half redraws them on a language change. -->
+      <span data-text-key="chrome.install">
+        Install on the home screen: Share → Add to Home Screen.
+      </span>
+      <button
+        id="install-close"
+        type="button"
+        aria-label="Close"
+        data-text-label-key="chrome.close"
+      >
+        ✕
+      </button>
+    </div>
+    <div class="bar" id="offline" hidden>
+      <span data-text-key="chrome.offline">Offline: cannot reach node_agent.</span>
+      <button id="retry" type="button" data-text-key="chrome.retry">Retry</button>
+    </div>
+    <!-- Three parts, left to right: the agent (the resident page), the other nodes' pages, and the
+         launcher. Only the first two move: they are the strips, and each scrolls on its own when it
+         holds more than its column has room for. The launcher is outside that scroller — fixed to the
+         right edge at every width, never scrolled away — and it is the one tab with no x. -->
+    <div class="tabs" id="tabs" data-view="left">
+      <div class="strips" id="strips">
+        <nav id="pinned-nav" role="tablist" aria-label="the left column's pages"
+          data-text-label-key="chrome.pinnedNav"></nav>
+        <span class="sep" aria-hidden="true"></span>
+        <!-- The main area's pages: a page is a tab here only once the reader opened it from a card on
+             the launcher. -->
+        <nav id="nav" role="tablist" aria-label="the main area's pages"
+          data-text-label-key="chrome.nav"></nav>
+      </div>
+      <!-- A glyph and no word: nine dots, the grid it opens, drawn in CSS (see `.tab.launcher`),
+           because this page carries no pictures of its own. Its name is kept as aria-label. -->
+      <div
+        class="tab launcher on"
+        id="launcher-tab"
+        role="tab"
+        aria-selected="true"
+        tabindex="0"
+        aria-label="launcher"
+        data-text-label-key="chrome.launcher"
+        title="Every node with a page"
+        data-text-title-key="chrome.launcherTitle"
+      >
+        <span class="ico" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="split" id="split" data-view="left">
+      <aside id="pinned" class="off">
+        <!-- An iframe's `title` is the frame's accessible name, so it is a sentence like any other:
+             the marker says which key, the attribute holds the English, and the script below fills
+             it from the page's resource (the SDK's markers fill text, placeholder and aria-label;
+             `title` is the one the shell paints for itself). -->
+        <iframe
+          id="pinned-view"
+          title="Pinned node page"
+          data-text-title-key="chrome.pinnedView"
+        ></iframe>
+      </aside>
+      <div
+        class="splitter"
+        id="splitter"
+        role="separator"
+        aria-orientation="vertical"
+        tabindex="0"
+        title="Drag to resize · double-click to reset"
+        data-text-title-key="chrome.splitter"
+      ></div>
+      <div class="side">
+        <!-- What the main area shows when the launcher tab is chosen: a grid of the nodes that have a
+             page, filled from GET /panels (see `renderLauncher`). The frame under it keeps its page
+             while this is up, so a card costs no round trip to go back to. -->
+        <div
+          class="launcher"
+          id="launcher"
+          role="tabpanel"
+          aria-label="the nodes with a page"
+          data-text-label-key="chrome.launcherPanel"
+        >
+          <div class="launcher-grid" id="launcher-grid"></div>
+          <p id="launcher-empty" hidden data-text-key="chrome.empty">
+            No node has a page yet: give a node a ui capability and it will.
+          </p>
+        </div>
+        <iframe id="view" title="Node page" data-text-title-key="chrome.view" hidden></iframe>
+      </div>
+    </div>
+    <div id="onboarding" class="onboarding" role="dialog" aria-modal="true" aria-label="Set up NodeAgent" hidden>
+      <iframe id="onboarding-frame" title="Set up NodeAgent" tabindex="0"></iframe>
+    </div>
+    <script src="/webui/events-client.js"></script>
+    <script src="/webui/events-broker.js"></script>
+    <script>
+      // The bar has three parts: the agent's strip, the other pages' strip, and the launcher — a glyph
+      // pinned to the right edge, outside the scroller, never closed. The launcher's own page is a grid
+      // of the nodes that have a page; a node's page becomes a tab only when a reader picks its card,
+      // so a shell that has just started shows the launcher and the agent's page, nothing else.
+      const LAUNCHER = 'launcher';
+      const split = document.getElementById('split');
+      const pinned = document.getElementById('pinned');
+      const pinnedNav = document.getElementById('pinned-nav');
+      const pinnedView = document.getElementById('pinned-view');
+      const splitter = document.getElementById('splitter');
+      const nav = document.getElementById('nav');
+      const view = document.getElementById('view');
+      const tabBar = document.getElementById('tabs');
+      const launcherTab = document.getElementById('launcher-tab');
+      const launcher = document.getElementById('launcher');
+      const grid = document.getElementById('launcher-grid');
+      const launcherEmpty = document.getElementById('launcher-empty');
+      const panels = new Map(); // node -> the row /panels last gave for it
+      const cards = new Map(); // node -> its card on the launcher
+      const pinnedItems = new Map(); // left: node -> its tab (one, ever)
+      const items = new Map(); // right: node -> its tab
+      const openRight = []; // the main area's tabs, in the order the reader opened them
+      let pinnedCurrent = ''; // the left column's page, '' when the resident is not on the bus
+      let current = LAUNCHER; // the main area's chosen tab: the launcher, or a node
+      let pinnedLoaded = ''; // what the left frame is showing
+      let loaded = ''; // what the right frame is showing, so a page is not reloaded for nothing
+      let lastKey = '';
+      let choseSide = false;
+
+      // The shell knows exactly ONE node name, and this is it: the resident node. Its page is the left
+      // column, permanently — nobody opens it, nobody closes it — and every other node is a card on the
+      // launcher and a tab on the right. Which column a page gets is therefore the shell's decision and
+      // no longer the page's: `ui` no longer carries a `slot` (see index.ts), and a node that still
+      // sends one is ignored, not obeyed.
+      //
+      // Apart from this name the page still holds none: the panel list comes from GET /panels — the
+      // nodes in the bus directory that declared `ui` — so a node that joins is a card, and a node that
+      // leaves takes its card with it.
+      const RESIDENT = 'agent';
+
+      // Each side uses one iframe and changes its source when a tab is selected.
+      // One tab is the chosen one per group: the `on` class draws it, and `aria-selected` says the
+      // same thing to a reader that never sees the border. Both are written here, in one place, so
+      // they cannot disagree.
+      function markChosen(map, node) {
+        for (const [id, item] of map) {
+          const on = id === node;
+          item.classList.toggle('on', on);
+          item.setAttribute('aria-selected', on ? 'true' : 'false');
+        }
+      }
+
+      // The main area's bar is the launcher plus the pages that were opened from it, so "chosen"
+      // there is one of two kinds: the launcher itself, or one node's tab. Both are written in one
+      // place for the same reason as above.
+      function markRight() {
+        const home = current === LAUNCHER;
+        launcherTab.classList.toggle('on', home);
+        launcherTab.setAttribute('aria-selected', home ? 'true' : 'false');
+        markChosen(items, current);
+      }
+
+      // The chosen tab has to be ON SCREEN. Two boxes can scroll sideways: the one-row bar on a phone,
+      // and each strip over its own column on a wide screen. Ask the tab's own parent first — if it
+      // scrolls, move only that strip, so the other column and the page do not move. On a phone the
+      // group is not a scroller (`overflow: visible`), so the bar handles it instead. Nothing is
+      // asked of a width copied into JS: the media query stays the ONE place the breakpoint lives.
+      // Bring a tab into view inside whatever actually scrolls it: on a wide screen that is its own
+      // strip, on a phone the strips together. Walk up rather than name the box, because the bar has
+      // three parts now — and the launcher, which no ancestor of it scrolls, needs no revealing: it is
+      // in view by construction. Moving the strip directly keeps the page still (no scrollIntoView).
+      function reveal(item) {
+        if (!item) return;
+        for (let strip = item.parentElement; strip; strip = strip.parentElement) {
+          const { overflowX } = getComputedStyle(strip);
+          if (overflowX !== 'auto' && overflowX !== 'scroll') continue;
+          const box = strip.getBoundingClientRect();
+          const tab = item.getBoundingClientRect();
+          if (tab.left < box.left) strip.scrollLeft -= box.left - tab.left + 8;
+          else if (tab.right > box.right) strip.scrollLeft += tab.right - box.right + 8;
+          return;
+        }
+      }
+
+      function showPinned(node) {
+        pinnedCurrent = node;
+        if (node !== pinnedLoaded) {
+          pinnedLoaded = node;
+          pinnedView.src = node === '' ? 'about:blank' : `/panel/${encodeURIComponent(node)}`;
+        }
+        markChosen(pinnedItems, node);
+        reveal(pinnedItems.get(node));
+      }
+
+      // What the main area shows: the launcher, or one open page's frame. The frame is HIDDEN under the
+      // launcher rather than unloaded — a page the bar still has a tab for is worth its state, and
+      // going back to it should cost no round trip. Closing its tab is what actually unloads it.
+      function activate(name) {
+        current = name;
+        const home = name === LAUNCHER;
+        if (!home && loaded !== name) {
+          loaded = name;
+          view.src = `/panel/${encodeURIComponent(name)}`;
+        }
+        launcher.hidden = !home;
+        view.hidden = home;
+        markRight();
+        reveal(home ? launcherTab : items.get(name));
+      }
+
+      // A page that has no tab any more has no business still running behind the launcher.
+      function unload() {
+        loaded = '';
+        view.src = 'about:blank';
+      }
+
+      // Which of the two groups is on screen. The wide layout shows both columns and ignores this;
+      // a narrow one shows a single frame, and the group a tab belongs to is what puts that page in
+      // it — a tab click says both things at once (see `pick`). The hairline in the bar is the seam
+      // between the groups, so "left" here is exactly "the tabs left of that line".
+      function showSide(side) {
+        split.dataset.view = side;
+        tabBar.dataset.view = side;
+      }
+
+      // Dragging the border changes one CSS variable and knows nothing else. Each side keeps a
+      // minimum width, and dragging past it just stops there.
+      const KEEP = 'node_agent.left';
+      const MIN = 240;
+      const ROOM = 320;
+
+      function setLeft(width) {
+        const most = Math.max(MIN, split.clientWidth - ROOM);
+        const w = Math.round(Math.min(Math.max(width, MIN), most));
+        // On the body, not on the split: one number, written in one place, read by the aside.
+        document.body.style.setProperty('--left', `${w}px`);
+        return w;
+      }
+
+      function resetLeft() {
+        document.body.style.removeProperty('--left'); // back to the default width from the CSS
+      }
+
+      function keep(width) {
+        try {
+          localStorage.setItem(KEEP, String(width));
+        } catch {
+          // Private mode cannot write it: then it only lasts for this page
+        }
+      }
+
+      let dragging = false;
+
+      splitter.addEventListener('pointerdown', (e) => {
+        dragging = true;
+        splitter.setPointerCapture(e.pointerId);
+        document.body.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      splitter.addEventListener('pointermove', (e) => {
+        if (dragging) keep(setLeft(e.clientX - split.getBoundingClientRect().left));
+      });
+
+      function stopDrag(e) {
+        if (!dragging) return;
+        dragging = false;
+        document.body.classList.remove('dragging');
+        if (splitter.hasPointerCapture(e.pointerId)) splitter.releasePointerCapture(e.pointerId);
+      }
+
+      splitter.addEventListener('pointerup', stopDrag);
+      splitter.addEventListener('pointercancel', stopDrag);
+      splitter.addEventListener('dblclick', resetLeft);
+
+      // Keyboard works too: left/right arrows ±16px, Shift ±48px. role/aria are already in place,
+      // so do not leave this to the mouse alone.
+      splitter.addEventListener('keydown', (e) => {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        e.preventDefault();
+        const step = (e.key === 'ArrowRight' ? 1 : -1) * (e.shiftKey ? 48 : 16);
+        keep(setLeft(pinned.getBoundingClientRect().width + step));
+      });
+
+      // Next time it opens at the width you dragged it to.
+      try {
+        const kept = Number(localStorage.getItem(KEEP));
+        if (Number.isFinite(kept) && kept > 0) setLeft(kept);
+      } catch {
+        // If it cannot be read, use the default width
+      }
+
+      // A tab leads with the drawing its node's manifest carries: the manifest icon is a whole <svg>,
+      // so the shell keeps no pictures of its own and learns no node's name. It is put
+      // in an <img> over a data: URL, never inlined into this document: an inlined SVG is part of the
+      // page, and one that runs is a script with the page's own rights, while an <img> is what the
+      // same file would be if it had been fetched — it draws and runs nothing. The string is checked
+      // as well, because a shape that is not one drawing is not worth showing: a node that hands over
+      // nothing (or something that is not a drawing) gets no glyph at all — a stand-in would claim a
+      // picture that node never made.
+      const IS_SVG = /^<svg[\s>]/;
+      const RUNS = /<script\b|[\s"'/]on[a-z]+\s*=|javascript:/i;
+
+      // The drawing's bytes, base64 as a data: URL carries them. Encoded to UTF-8 first, so a drawing
+      // with a non-ASCII label in it survives the trip — btoa alone only takes Latin-1.
+      function dataUrl(svg) {
+        let binary = '';
+        for (const byte of new TextEncoder().encode(svg)) binary += String.fromCharCode(byte);
+        return 'data:image/svg+xml;base64,' + btoa(binary);
+      }
+
+      // The language of this visit, known before any module runs: webui writes it into the page, and
+      // the SDK's browser half updates it on every change (the event carries the new tag).
+      let shellLanguage =
+        globalThis.__NODE_AGENT_LANGUAGE__ ?? document.documentElement.lang ?? 'en';
+
+      // The shell's own words. The markup marked every sentence with a resource key and webui put the
+      // resource in the page (src/i18n), so the text and the aria-labels are already right when they
+      // arrive; this is for the words a script writes — a tab's x, an online dot — and for the
+      // `title` attribute, which the SDK's markers do not fill.
+      //
+      // This is a classic script and the SDK's half is a module, so the module runs after this file:
+      // a sentence asked for too early falls back to the English written on the element, and never
+      // to a key a reader would have to read.
+      function t(key, english, params) {
+        const api = globalThis.nodeAgentI18n;
+        const text = api && typeof api.t === 'function' ? api.t(key, params) : null;
+        const template = typeof text === 'string' && text !== key ? text : english;
+        if (params === null || typeof params !== 'object') return template;
+        // The fallback is written with the same placeholders as the resource, and a translation that
+        // lost one is filled here rather than shown as {name}.
+        return template.replace(/\{([^}]+)\}/g, (whole, name) => {
+          const value = params[name];
+          return value === undefined ? whole : String(value);
+        });
+      }
+
+      // A frame's `title` is its accessible name, and a hover hint everywhere else: both are words a
+      // reader may need. The authored attribute is the English one, and the fallback.
+      function paintTitles() {
+        for (const element of document.querySelectorAll('[data-text-title-key]')) {
+          const key = element.getAttribute('data-text-title-key');
+          if (typeof key !== 'string' || key === '') continue;
+          element.title = t(key, element.title);
+        }
+      }
+      // Once the SDK's module has run — it is deferred, so it comes just before this event — and again
+      // whenever the reader's language changes.
+      if (document.readyState === 'loading')
+        document.addEventListener('DOMContentLoaded', paintTitles, { once: true });
+      else paintTitles();
+      document.addEventListener('node-agent:language', paintTitles);
+
+      // What a reader sees for a node: the name its manifest publishes in this language, else the
+      // canonical name the bus addresses. Nothing else in the shell ever needs the label: pages are
+      // opened by `panel.node`, and this is only what is written under the picture.
+      function nameOf(panel) {
+        const names = panel.names;
+        if (names === null || typeof names !== 'object') return panel.node;
+        const want = ['zh-CN', 'cn', 'zh'];
+        const order = String(shellLanguage).toLowerCase().startsWith('zh') ? want : ['en'];
+        for (const key of order) {
+          const text = names[key];
+          if (typeof text === 'string' && text !== '') return text;
+        }
+        for (const text of Object.values(names)) {
+          if (typeof text === 'string' && text !== '') return text;
+        }
+        return panel.node;
+      }
+
+      function glyph(drawing) {
+        if (typeof drawing !== 'string') return null;
+        const svg = drawing.trim();
+        if (!IS_SVG.test(svg) || RUNS.test(svg)) return null;
+        const box = document.createElement('span');
+        box.className = 'ico';
+        box.setAttribute('aria-hidden', 'true');
+        const picture = document.createElement('img');
+        picture.alt = '';
+        picture.src = dataUrl(svg);
+        box.append(picture);
+        return box;
+      }
+
+      // A tab, drawn from the row /panels gave: the node's drawing, its name, and — for a page the
+      // reader opened — the x that closes it. Bind once: a nodes event while the reader is clicking
+      // must not replace the element under the pointer, which would swallow the click until startup
+      // settles. The left column's tab is the one made with `closable: false`: the resident page is not
+      // something a reader opened, so it is not something a reader can close.
+      function makeTab(node, selection, closable = true) {
+        const tab = document.createElement('div');
+        tab.className = 'tab';
+        // A tab is a tab to a reader, chosen or not: `aria-selected` is kept in step with `.on` by
+        // `markChosen`, and the tab order is the bar's order (no tab is taken out of it).
+        tab.setAttribute('role', 'tab');
+        tab.setAttribute('aria-selected', 'false');
+        tab.tabIndex = 0;
+        tab.dataset.node = node;
+        tab.addEventListener('click', selection);
+        // Enter and space are what choosing a button is; the tab is a `div` only because it holds the
+        // x, so it has to answer them itself.
+        tab.addEventListener('keydown', (event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return;
+          event.preventDefault();
+          selection();
+        });
+        if (!closable) return tab;
+
+        const close = document.createElement('button');
+        close.type = 'button';
+        close.className = 'close';
+        close.textContent = '×';
+        // Its name and its hover hint are painted by `paintTab`, which runs for this tab the moment it
+        // is made and again on every language change: one place, so they cannot drift apart.
+        // Closing is not choosing: the click stops here, or the tab under it would open itself in the
+        // same breath and the page would come back a moment after it left.
+        close.addEventListener('click', (event) => {
+          event.stopPropagation();
+          closeTab(node);
+        });
+        tab.append(close);
+        return tab;
+      }
+
+      // Paint (or repaint) one tab from its row: the node may have changed the drawing, the name it
+      // gives its page, or the presence capability behind the online dot, and a tab is where all three
+      // show. The x is kept as it is — it is the same element, bound once.
+      function paintTab(tab, panel) {
+        if (!tab || !panel) return;
+        const label = document.createElement('span');
+        label.className = 'label';
+        const drawing = glyph(panel.icon);
+        if (drawing) label.append(drawing);
+        // A node that named a presence capability gets an online dot before its name; the shell
+        // polls that capability and never has to know which node it is.
+        if (panel.presence) {
+          const dot = document.createElement('i');
+          dot.className = 'dot';
+          label.append(dot);
+        }
+        label.append(document.createTextNode(nameOf(panel)));
+        // A tab is a picture and a name, not a sentence: what the node says its page is for is
+        // worth keeping, so it waits in the hover title instead of taking a second line.
+        tab.title = panel.desc;
+        // The x, where there is one, is the same element it has always been — bound once, at creation.
+        // The resident column's tab has none, so the label is the whole of it. Its name is what it
+        // closes: the phrase is a resource key, so a reader in either language hears it whole.
+        const closable = tab.querySelector('.close');
+        if (closable) {
+          closable.title = t('chrome.close', 'Close');
+          closable.setAttribute(
+            'aria-label',
+            t('chrome.closeNode', 'Close {node}', { node: panel.node }),
+          );
+        }
+        if (closable) tab.replaceChildren(label, closable);
+        else tab.replaceChildren(label);
+      }
+
+      // The card of one node on the launcher: the same drawing and name a tab leads with, drawn bigger
+      // because here they are the whole of the page. `label` is what a reader hears, and nothing on a
+      // card tells the shell who the node is at draw time — it asks `panels` when the card is clicked.
+      function paintCard(card, panel) {
+        const tile = document.createElement('span');
+        tile.className = 'tile';
+        const drawing = glyph(panel.icon);
+        if (drawing) tile.append(drawing);
+        const name = document.createElement('span');
+        name.className = 'name';
+        if (panel.presence) {
+          const dot = document.createElement('i');
+          dot.className = 'dot';
+          name.append(dot);
+        }
+        name.append(document.createTextNode(nameOf(panel)));
+        card.replaceChildren(tile, name);
+        card.title = panel.desc;
+        card.setAttribute('aria-label', nameOf(panel));
+        card.setAttribute('aria-description', panel.desc);
+      }
+
+      // The launcher's grid: one card per node that has a page and is not the resident one, in the
+      // order the bus lists them. The launcher looks after the RIGHT panel only — the agent is not a
+      // card, because it is already on screen, and it is not something a reader opens or closes. A card
+      // that is already there is repainted, never replaced: it holds the reader's click.
+      // A language change redraws every name this shell wrote. The labels come from the nodes'
+      // manifests; the canonical names do not move, so nothing has to be re-fetched or re-opened.
+      document.addEventListener('node-agent:language', (event) => {
+        const next = event?.detail?.language;
+        if (typeof next === 'string' && next !== '') shellLanguage = next;
+        for (const [node, panel] of panels) {
+          const tab = items.get(node) ?? pinnedItems.get(node);
+          if (tab) paintTab(tab, panel);
+          const card = cards.get(node);
+          if (card) paintCard(card, panel);
+        }
+        // The online dot's tooltip is a word too, and its next poll may be seconds away.
+        for (const dot of document.querySelectorAll('.dot.on'))
+          dot.title = t('chrome.online', 'online');
+        for (const dot of document.querySelectorAll('.dot:not(.on)'))
+          dot.title = t('chrome.offlineDot', 'offline');
+        renderLauncher();
+      });
+
+      function renderLauncher() {
+        for (const [node, card] of cards) {
+          if (panels.has(node) && node !== RESIDENT) continue;
+          card.remove();
+          cards.delete(node);
+        }
+        for (const panel of panels.values()) {
+          if (panel.node === RESIDENT) continue;
+          let card = cards.get(panel.node);
+          if (card === undefined) {
+            card = document.createElement('button');
+            card.type = 'button';
+            card.className = 'card';
+            card.dataset.node = panel.node;
+            // Ask `panels` again at click time: a row is replaced on every nodes event, and a card
+            // holding yesterday's row would open yesterday's description.
+            card.addEventListener('click', () => openFromCard(card.dataset.node));
+            cards.set(panel.node, card);
+            grid.append(card);
+          }
+          paintCard(card, panel);
+        }
+        launcherEmpty.hidden = cards.size > 0;
+        markCards();
+      }
+
+      // Which cards are open pages: the launcher says so the way a chosen tab does, so a reader does
+      // not have to look at the bar to learn what is already on it.
+      function markCards() {
+        for (const [node, card] of cards) card.classList.toggle('on', items.has(node));
+      }
+
+      function openFromCard(node) {
+        if (node === RESIDENT) return; // on screen already, and not the launcher's to open
+        open(node);
+      }
+
+      // Opening a page in the main area: a tab if there is not one yet, and in every case that tab
+      // chosen. Clicking a card that is already open is not a second page — it is the same page brought
+      // forward, which is the whole point of a launcher.
+      function open(node) {
+        const panel = panels.get(node);
+        if (!panel || node === RESIDENT) return;
+        let tab = items.get(node);
+        if (tab === undefined) {
+          tab = makeTab(node, () => open(node));
+          items.set(node, tab);
+          openRight.push(node);
+          nav.append(tab);
+        }
+        paintTab(tab, panel);
+        activate(node);
+        showSide('right');
+        markCards();
+      }
+
+      // Closing a tab: the page leaves the bar, and if it was the chosen one, the tab that took its
+      // place is chosen instead — else the one to its left, else the launcher. Closing a page the
+      // reader is not looking at changes nothing about what is on screen.
+      function closeTab(node) {
+        const at = openRight.indexOf(node);
+        if (at < 0) return;
+        openRight.splice(at, 1);
+        items.get(node)?.remove();
+        items.delete(node);
+        const neighbour = openRight[at] ?? openRight[at - 1] ?? '';
+        if (current === node) {
+          if (neighbour === '') {
+            unload();
+            activate(LAUNCHER);
+          } else {
+            activate(neighbour);
+          }
+        } else {
+          markRight();
+        }
+        markCards();
+      }
+
+      // The left column: the resident node's page, and nothing else. It is on screen whenever that node
+      // is on the bus — not opened by a reader, not closed by one — with one tab that carries no x. A
+      // bus without the resident node has no left column at all (see `.off` / `.no-left`).
+      function syncResident() {
+        const panel = panels.get(RESIDENT);
+        if (panel === undefined) {
+          pinnedItems.get(RESIDENT)?.remove();
+          pinnedItems.delete(RESIDENT);
+          showPinned('');
+          setAside(true);
+          return;
+        }
+        let tab = pinnedItems.get(RESIDENT);
+        if (tab === undefined) {
+          tab = makeTab(RESIDENT, () => showSide('left'), false);
+          pinnedItems.set(RESIDENT, tab);
+          pinnedNav.append(tab);
+        }
+        paintTab(tab, panel);
+        // Chosen, always: the left column shows one page, and this is it. No `x` and no way to unchoose
+        // it — `markChosen` is what keeps the border and `aria-selected` in step.
+        markChosen(pinnedItems, RESIDENT);
+        setAside(false);
+        showPinned(RESIDENT);
+      }
+
+      // A column with no page to show takes no room, and its tab group is not on the bar at all (see
+      // `.no-left`). For the left column that happens when the resident node is not on the bus.
+      function setAside(hidden) {
+        pinned.classList.toggle('off', hidden);
+        tabBar.classList.toggle('no-left', hidden);
+      }
+
+      // Whether the page can reach the bus at all. A shell that cannot is not a fault in its own
+      // state — the tabs it still shows are the last ones it knew — so one line says so and offers to
+      // ask again, instead of an empty strip and no explanation. This is also what an offline page
+      // says for itself: the worker can keep the shell, but only the page can say why it is empty.
+      const offlineBar = document.getElementById('offline');
+      const retry = document.getElementById('retry');
+      retry.addEventListener('click', () => void load());
+
+      function unreachable() {
+        offlineBar.hidden = false;
+      }
+
+      // One bounded, single-flight decision per document. SSE onopen/nodes events may call
+      // load() together: none may mount normal panels before the first-time setup decision.
+      const onboarding = document.getElementById('onboarding');
+      const onboardingFrame = document.getElementById('onboarding-frame');
+      let setupDecision = null;
+      function focusSetup() {
+        if (onboarding.hidden) return;
+        onboardingFrame.focus();
+        onboardingFrame.contentWindow?.focus();
+      }
+      onboardingFrame.addEventListener('load', focusSetup);
+      function showSetup() {
+        for (const id of ['tabs', 'split', 'install', 'offline']) document.getElementById(id).inert = true;
+        onboarding.hidden = false;
+        onboardingFrame.src = '/panel/introduce?onboarding=1';
+        focusSetup();
+      }
+      window.addEventListener('message', (event) => {
+        if (onboarding.hidden || event.origin !== location.origin ||
+            event.source !== onboardingFrame.contentWindow ||
+            event.data?.kind !== 'node-agent:setup-complete') return;
+        location.reload();
+      });
+      function needsSetup(rows) {
+        if (setupDecision !== null) return setupDecision;
+        setupDecision = (async () => {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 2000);
+          try {
+            const response = await fetch('/call', {
+              method: 'POST', headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ tool: 'introduce.status', args: {} }), signal: controller.signal,
+            });
+            if (!response.ok) throw new Error(`status HTTP ${response.status}`);
+            const reply = await response.json();
+            if (!reply.ok || typeof reply.value?.initialized !== 'boolean')
+              throw new Error(reply.error || 'invalid introduce.status reply');
+            if (reply.value.initialized) return false;
+            if (!rows.some((row) => row.node === 'introduce')) throw new Error('introduce panel is unavailable');
+            showSetup();
+            return true;
+          } catch (error) {
+            // Missing/old introduce nodes, network errors and timeouts must never lock out home.
+            console.warn('[webui] onboarding status unavailable; opening normal UI', error);
+            return false;
+          } finally { clearTimeout(timeout); }
+        })();
+        return setupDecision;
+      }
+
+      async function load() {
+        let rows;
+        try {
+          const res = await fetch('/panels');
+          if (!res.ok) return unreachable();
+          ({ panels: rows } = await res.json());
+        } catch {
+          // No answer at all: the network is gone, or the webui is not up yet. Either way the line,
+          // not a thrown promise nobody sees.
+          return unreachable();
+        }
+        // It answered, so whatever was wrong is over. The event stream calls this again on its own
+        // reconnect, which is how the bar goes away without anybody pressing retry.
+        offlineBar.hidden = true;
+        window.NodeAgentEventBroker.setPanels(rows);
+        if (await needsSetup(rows)) return;
+
+        // Cheap change check: the same list means leave the DOM (and the open pages) alone.
+        const key = JSON.stringify(rows);
+        if (key === lastKey) return;
+        lastKey = key;
+
+        panels.clear();
+        for (const row of rows) panels.set(row.node, row);
+
+        // A page that left the bus takes its tab with it: a tab for a node that is no longer there is
+        // a tab that cannot be shown. This is the ONE place a tab goes away without the reader
+        // closing it, and it is a node leaving, not a shell tidying up after itself.
+        for (const node of [...openRight]) if (!panels.has(node)) closeTab(node);
+
+        // What a nodes event changes is the launcher, the resident page and the tabs that are already
+        // open — never which page is on screen. A node that joins does not open itself: it gets a card,
+        // and a card is a thing the reader has to pick.
+        renderLauncher();
+        for (const node of openRight) paintTab(items.get(node), panels.get(node));
+        syncResident();
+        markRight();
+        markCards();
+
+        // The phone's first choice: the resident page if it is there (it has an input waiting), else
+        // the launcher. A group with no page in it is not on the bar at all (see `.no-left`).
+        if (!choseSide) {
+          choseSide = true;
+          showSide(panels.has(RESIDENT) ? 'left' : 'right');
+        }
+
+        syncPresence(rows);
+      }
+
+      // The launcher is the way back, so it is always ready to be chosen: by a click, or by the two
+      // keys a button answers. It has no x — see the CSS above.
+      const goHome = () => {
+        activate(LAUNCHER);
+        // On a phone the two columns share one frame, so choosing the launcher has to bring the main
+        // area forward as well — otherwise the tab would look chosen while the resident page stays on
+        // screen, which is the one thing a tab must never say.
+        showSide('right');
+      };
+      launcherTab.addEventListener('click', goHome);
+      launcherTab.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        goHome();
+      });
+
+      // A wheel scrolls the strips sideways. A strip that holds more tabs than its column has room for
+      // takes a thumb on a trackpad, and a mouse has a wheel — vertical there, horizontal here. Only
+      // where something can actually move: a strip that fits keeps its event, so nothing else on the
+      // page changes the way it scrolls. The launcher is outside every scroller, so no wheel reaches
+      // it and none can scroll it away.
+      function sideways(target) {
+        for (let el = target; el && el !== tabBar; el = el.parentElement) {
+          if (el.scrollWidth > el.clientWidth + 1) return el;
+        }
+        return null;
+      }
+      tabBar.addEventListener(
+        'wheel',
+        (event) => {
+          const strip = sideways(event.target);
+          if (strip === null) return;
+          const step = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+          if (step === 0) return;
+          strip.scrollLeft += step;
+          event.preventDefault();
+        },
+        { passive: false },
+      );
+
+      load();
+
+      // Online dots. A node that declared `presence` names a capability returning {online}; the
+      // shell polls it on a timer rather than listening, because going offline is the *absence* of a
+      // heartbeat — a lapse no event can announce — so a poll is the only thing that catches both
+      // directions. The shell still knows no node by name: it only calls what the panel told it to.
+      const presence = new Map(); // node -> presence capability name
+      async function callCap(tool) {
+        try {
+          const res = await fetch('/call', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ tool, args: {} }),
+          });
+          return await res.json();
+        } catch {
+          return { ok: false };
+        }
+      }
+      function syncPresence(rows) {
+        presence.clear();
+        for (const row of rows) if (row.presence) presence.set(row.node, row.presence);
+        void pollPresence();
+      }
+      async function pollPresence() {
+        for (const [node, cap] of presence) {
+          // Every place that node is drawn: its tab, its card on the launcher, its tab in the left
+          // column. The dot is the same fact in all of them, so it is written in all of them.
+          const dots = [
+            items.get(node)?.querySelector('.dot'),
+            pinnedItems.get(node)?.querySelector('.dot'),
+            cards.get(node)?.querySelector('.dot'),
+          ].filter(Boolean);
+          if (dots.length === 0) continue;
+          const reply = await callCap(`${node}.${cap}`);
+          const online = reply.ok && reply.value && reply.value.online === true;
+          for (const dot of dots) {
+            dot.classList.toggle('on', !!online);
+            dot.title = online
+              ? t('chrome.online', 'online')
+              : t('chrome.offlineDot', 'offline');
+          }
+        }
+      }
+      // Poll a little faster than a typical heartbeat window so the dot is current without being chatty.
+      setInterval(() => void pollPresence(), 5000);
+
+      // The bus announces nodes coming and going on the nodes topic: no need to ask every two
+      // seconds — who joined and who left is known here at once. EventSource reconnects on its
+      // own after a drop, and the first load after that catches up on what was missed.
+      const feed = window.NodeAgentEventBroker.connect('/events?node=bus&topic=nodes');
+      function tellPanels() {
+        for (const frame of [pinnedView, view]) {
+          try {
+            frame.contentWindow?.postMessage({ topic: 'nodes' }, location.origin);
+          } catch {
+            // A frame that has not loaded yet has nothing to tell; its own load() catches up.
+          }
+        }
+      }
+      feed.onmessage = () => {
+        void load();
+        tellPanels();
+      };
+      feed.onopen = () => {
+        void load();
+        tellPanels();
+      };
+
+      // Installing it. A browser that supports `beforeinstallprompt` decides for itself when to offer
+      // that, out of the manifest alone, so nothing here asks. iOS Safari has no such event and no way
+      // to be asked from script: there the honest thing is one line saying where the item lives,
+      // offered once per browser, closable, and never shown to an app that is already installed.
+      const INSTALL = 'node_agent.installed';
+      const apple = /iPad|iPhone|iPod/.test(navigator.userAgent);
+      const installed =
+        navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+
+      function offerInstall() {
+        if (!apple || installed) return;
+        const bar = document.getElementById('install');
+        try {
+          if (localStorage.getItem(INSTALL)) return;
+        } catch {
+          // Storage refused (private mode): offer it anyway, once per visit
+        }
+        bar.hidden = false;
+        document.getElementById('install-close').addEventListener('click', () => {
+          bar.hidden = true;
+          try {
+            localStorage.setItem(INSTALL, '1');
+          } catch {
+            // Nothing to remember it with: the line comes back next time
+          }
+        });
+      }
+
+      offerInstall();
+
+      // The worker is what makes the page installable and what keeps the shell for a moment when
+      // nothing answers. It is an addition, never a requirement: no worker (an older browser, a
+      // private window, a page served over plain http on a phone) leaves this page exactly as it was,
+      // so a failure here is dropped and nothing else depends on it.
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('/sw.js').catch(() => {
+          // No worker: the page is what it always was
+        });
+      }
+    </script>
+  </body>
+</html>

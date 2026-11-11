@@ -1,0 +1,128 @@
+{
+  "title": "To-do · node_agent",
+  "today": {
+    "title": "Today",
+    "empty": "Nothing yet",
+    "noButtons": "No buttons yet",
+    "updated": "Updated {at}"
+  },
+  "sync": {
+    "title": "Live updates",
+    "connecting": "Connecting",
+    "live": "Live sync",
+    "reconnecting": "Reconnecting"
+  },
+  "sort": {
+    "label": "Sort",
+    "manual": "Hand order (as written)",
+    "manualTitle": "Sort by hand order",
+    "updated": "By update time",
+    "updatedTitle": "Sort by update time"
+  },
+  "summary": {
+    "none": "Nothing yet",
+    "open": "{count} open",
+    "openDone": "{open} open · {done} done"
+  },
+  "list": {
+    "title": "Your list",
+    "placeholder": "Add a todo…",
+    "newLabel": "New todo title",
+    "add": "Add",
+    "emptyTitle": "Nothing on the list yet",
+    "emptyHint": "Type above and press Enter."
+  },
+  "presses": {
+    "summary": "Recent presses"
+  },
+  "row": {
+    "done": "Done {at}",
+    "edit": "Edit {title}",
+    "delete": "Delete {title}",
+    "moveUp": "Move up {title}",
+    "moveDown": "Move down {title}",
+    "dragLabel": "Drag to reorder",
+    "drag": "Drag to reorder {title}",
+    "frozen": "Finish editing to drag this row",
+    "needManual": "Switch to hand order to drag rows",
+    "reopen": "Reopen {title}",
+    "checkOff": "Check off {title}"
+  },
+  "editor": {
+    "titleLabel": "Todo title",
+    "notesLabel": "Todo notes",
+    "notesPlaceholder": "Notes",
+    "cancel": "Cancel",
+    "save": "Save"
+  },
+  "confirm": {
+    "delete": "Delete this todo? This cannot be undone."
+  },
+  "toast": {
+    "added": "Todo added",
+    "movedUp": "Moved up",
+    "movedDown": "Moved down",
+    "moved": "Moved",
+    "deleted": "Todo deleted",
+    "saved": "Changes saved",
+    "needTitle": "A todo needs a title"
+  },
+  "note": {
+    "sending": "Sending \"{label}\"…",
+    "sent": "Sent \"{label}\" to {target}",
+    "notSent": "Not sent: {reason}",
+    "cancelled": "Move cancelled",
+    "lifted": "Row lifted: arrow up or down to move it, Enter to drop, Esc to cancel",
+    "noNeighbour": "could not move: there is no row next to it to move against",
+    "moveFailed": "could not move: {reason}"
+  },
+  "label": {
+    "node": "To-do",
+    "caps": {
+      "today": "Today",
+      "set-today": "Set today",
+      "press": "Press a button",
+      "presses": "Presses",
+      "list": "List",
+      "add": "Add",
+      "update": "Update",
+      "toggle": "Toggle done",
+      "remove": "Remove",
+      "move": "Move",
+      "ui": "To-do page"
+    },
+    "args": {
+      "set-today": {
+        "text": "Text",
+        "buttons": "Buttons"
+      },
+      "press": {
+        "index": "Index"
+      },
+      "list": {
+        "filter": "Filter"
+      },
+      "add": {
+        "title": "Title",
+        "text": "Text"
+      },
+      "update": {
+        "id": "Id",
+        "title": "Title",
+        "text": "Text"
+      },
+      "toggle": {
+        "id": "Id",
+        "done": "Done"
+      },
+      "remove": {
+        "id": "Id"
+      },
+      "move": {
+        "id": "Id",
+        "before": "Before",
+        "after": "After"
+      }
+    }
+  }
+}

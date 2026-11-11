@@ -1,0 +1,95 @@
+{
+  "new": "New provider",
+  "heading": "LLM provider",
+  "form": {
+    "name": "Name",
+    "protocol": "Protocol",
+    "model": "Model",
+    "baseUrl": "Base URL",
+    "apiKey": "API key",
+    "organization": "Organization",
+    "timeout": "Timeout (seconds)",
+    "thinking": "Thinking effort",
+    "thinkingCustom": "Custom effort",
+    "keyNew": "API key",
+    "keyKeep": "Leave blank to keep the current key",
+    "save": "Save",
+    "test": "Test",
+    "delete": "Delete"
+  },
+  "type": {
+    "openai": "OpenAI-compatible",
+    "anthropic": "Anthropic (Claude)",
+    "responses": "OpenAI (Responses API)"
+  },
+  "hint": {
+    "openai": "OpenAI-compatible: any server that speaks /v1/chat/completions, a gateway included.",
+    "anthropic": "Anthropic (Claude): the native Messages API. A gateway that routes Claude only there needs its own address (what comes before /v1/messages) and a model id as that gateway lists it.",
+    "responses": "OpenAI (Responses API): posts to /responses instead of /chat/completions, for a deployment or gateway that serves a model there (e.g. MIOFFICE azure_openai/gpt-5.6-sol). The base URL is what comes before /responses."
+  },
+  "thinking": {
+    "default": "Provider default",
+    "custom": "Custom…"
+  },
+  "note": {
+    "persistent": "Provider settings are saved in history.",
+    "volatile": "Provider settings are kept until this node stops."
+  },
+  "error": {
+    "call": "Provider operation failed",
+    "callFailed": "Provider call failed",
+    "required": "A name and a model are both required.",
+    "baseUrl": "The base URL starts with http:// or https://.",
+    "selectFirst": "Save or select a provider first."
+  },
+  "status": {
+    "saved": "Saved provider “{name}”."
+  },
+  "test": {
+    "testing": "Testing…",
+    "usage": " ({prompt} in / {completion} out)",
+    "ok": "{reply}{usage} — tested “{name}” with its saved config.",
+    "empty": "Provider call succeeded (empty reply).{usage} Tested “{name}” with its saved config."
+  },
+  "confirm": {
+    "delete": "Delete provider “{name}”?"
+  },
+  "label": {
+    "node": "Provider",
+    "caps": {
+      "providers": "Providers",
+      "chat": "Chat",
+      "start_stream": "Start a stream",
+      "stream_ready": "Stream ready",
+      "cancel_stream": "Cancel a stream",
+      "ui": "Providers page"
+    },
+    "args": {
+      "providers": {
+        "action": "Action",
+        "name": "Name",
+        "config": "Configuration"
+      },
+      "chat": {
+        "name": "Provider",
+        "messages": "Messages",
+        "tools": "Tools",
+        "max_completion_tokens": "Max reply tokens",
+        "previous_response_id": "Previous response id"
+      },
+      "start_stream": {
+        "name": "Provider",
+        "messages": "Messages",
+        "tools": "Tools",
+        "max_completion_tokens": "Max reply tokens",
+        "previous_response_id": "Previous response id"
+      },
+      "stream_ready": {
+        "stream_id": "Stream id"
+      },
+      "cancel_stream": {
+        "stream_id": "Stream id"
+      }
+    }
+  }
+}

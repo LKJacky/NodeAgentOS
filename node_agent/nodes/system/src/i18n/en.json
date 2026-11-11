@@ -1,0 +1,102 @@
+{
+  "title": "System · node_agent",
+  "heading": "System",
+  "sub": "Language, timezone, and the timers waiting right now.",
+  "settings": {
+    "heading": "User settings",
+    "language": "Language",
+    "languageZh": "中文",
+    "languageEn": "English",
+    "timezone": "Timezone",
+    "save": "Save settings",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "failed": "Could not save: {error}"
+  },
+  "timers": {
+    "heading": "Timers",
+    "refresh": "Refresh",
+    "count": {
+      "none": "none",
+      "waiting": "{count} waiting"
+    },
+    "empty": "Nothing scheduled right now.",
+    "retried": "retried {count}×"
+  },
+  "permissions": {
+    "heading": "Capability permissions",
+    "refresh": "Refresh",
+    "hint": "Grouped by target node. Each capability can allow everyone (*), nobody, or the caller nodes listed.",
+    "reset": "Reset to default",
+    "resetDone": "Reset to the default",
+    "allowAll": "Allow everyone (*)",
+    "allowNone": "Allow nobody",
+    "save": "Save this node",
+    "unchanged": "Nothing changed",
+    "saved": "Saved {count} caps",
+    "summary": "{nodes} nodes · {caps} caps",
+    "caps": "{count} caps",
+    "args": "Arguments: {args}",
+    "argsSeparator": ", "
+  },
+  "label": {
+    "node": "System",
+    "caps": {
+      "settings": "Settings",
+      "timers": "Timers",
+      "language": "Language",
+      "timezone": "Timezone",
+      "add_timer": "Add timer",
+      "cancel_timer": "Cancel timer",
+      "ui": "Settings page",
+      "locale": "Locale",
+      "ensure_language": "Ensure language",
+      "authorize": "Authorize a call",
+      "permissions": "Node permissions",
+      "set_permission": "Set permission",
+      "clear_permission": "Clear permission",
+      "set_own_permission": "Set own permission",
+      "clear_own_permission": "Clear own permission"
+    },
+    "args": {
+      "settings": {
+        "language": "Language",
+        "timezone": "Timezone"
+      },
+      "add_timer": {
+        "id": "Timer id",
+        "at": "Fires at",
+        "callpayload": "Call payload"
+      },
+      "cancel_timer": {
+        "id": "Timer id"
+      },
+      "ensure_language": {
+        "browser": "Browser language"
+      },
+      "authorize": {
+        "caller": "Caller",
+        "target": "Target node",
+        "cap": "Capability",
+        "tenant": "Tenant",
+        "defaultCallers": "Default callers"
+      },
+      "set_permission": {
+        "target": "Target node",
+        "cap": "Capability",
+        "callers": "Callers"
+      },
+      "clear_permission": {
+        "target": "Target node",
+        "cap": "Capability"
+      },
+      "set_own_permission": {
+        "cap": "Capability",
+        "callers": "Callers"
+      },
+      "clear_own_permission": {
+        "cap": "Capability"
+      }
+    }
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "label": {
+    "node": "History",
+    "caps": {
+      "load": "Load",
+      "save": "Save",
+      "delete": "Delete",
+      "list": "List"
+    },
+    "args": {
+      "load": {
+        "unitId": "Unit id"
+      },
+      "save": {
+        "unitId": "Unit id",
+        "meta": "Metadata",
+        "expectedRevision": "Expected revision"
+      },
+      "delete": {
+        "unitId": "Unit id",
+        "expectedRevision": "Expected revision"
+      }
+    }
+  }
+}

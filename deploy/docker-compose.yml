@@ -1,0 +1,59 @@
+# One stack, two ways to start it.
+#
+#     cp deploy/env.example deploy/.env        # token, and the model if you have one
+#     docker compose -f deploy/docker-compose.yml up -d --build
+#
+# That starts `stack` alone: one container, the page on 127.0.0.1:8790, no TLS, nothing else public.
+#
+# To put the same stack on the internet, add the `public` profile. Caddy takes 80/443, gets a
+# certificate for NODE_AGENT_DOMAIN, and proxies to the stack's built-in door on 8080 (which only opens
+# when NODE_AGENT_ACCESS_TOKEN is set):
+#
+#     docker compose -f deploy/docker-compose.yml --profile public up -d
+#
+# `caddy` is the only service in the profile, so a plain `up` never starts it.
+
+services:
+  stack:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: node-agent:local
+    env_file:
+      - .env
+    environment:
+      NODE_AGENT_BUS_BIND: 0.0.0.0
+      NODE_AGENT_WEBUI_BIND: 0.0.0.0
+      # Inside the network only: the door listens where Caddy can reach it, and no port is published
+      # for it. Unset NODE_AGENT_ACCESS_TOKEN and nothing listens at all.
+      NODE_AGENT_PROXY_BIND: 0.0.0.0
+    ports:
+      # loopback only: to reach the page from the LAN, publish it deliberately (`0.0.0.0:8790:8790`)
+      # and set NODE_AGENT_TOKEN first.
+      - "127.0.0.1:8790:8790"
+    volumes:
+      - data:/data
+    restart: unless-stopped
+
+  caddy:
+    profiles: ["public"]
+    image: caddy:2-alpine
+    environment:
+      # Needed only for this profile; defaulted so a local `up` does not care.
+      NODE_AGENT_DOMAIN: ${NODE_AGENT_DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - stack
+    restart: unless-stopped
+
+volumes:
+  data:
+  caddy-data:
+  caddy-config:

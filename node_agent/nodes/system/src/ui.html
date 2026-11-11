@@ -1,0 +1,791 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title data-text-key="title">System · node_agent</title>
+    <script>
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <!-- node-agent:i18n-resource -->
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f4f6fb;
+        --surface: #fff;
+        --soft: #f8f9fc;
+        --text: #171a23;
+        --muted: #5f6a7d;
+        --line: #e4e8f0;
+        --brand: #635bff;
+        --brand-dark: #5148e5;
+        --danger: #d92d4b;
+        --shadow: 0 1px 2px #151b2b0a, 0 8px 30px #20294a12;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0f15;
+          --surface: #151820;
+          --soft: #1a1e28;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --line: #292e3a;
+          --brand: #8b83ff;
+          --brand-dark: #5b52e8;
+          --danger: #ff6b85;
+          --shadow: 0 12px 36px #0004;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        overflow: auto;
+        background: var(--page);
+        color: var(--text);
+        font:
+          14px/1.55 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      .app {
+        max-width: 760px;
+        margin: 0 auto;
+        padding: 18px 14px 40px;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 24px;
+        letter-spacing: -0.02em;
+      }
+      .sub {
+        margin: 0 0 18px;
+        color: var(--muted);
+      }
+      .card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        box-shadow: var(--shadow);
+        padding: 18px;
+        margin-bottom: 16px;
+      }
+      .card h2 {
+        margin: 0 0 12px;
+        font-size: 16px;
+      }
+      label {
+        display: block;
+        color: var(--muted);
+        font-size: 13px;
+        margin: 0 0 4px;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      input,
+      select {
+        width: 100%;
+        min-height: 42px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--soft);
+        color: var(--text);
+        font: inherit;
+      }
+      button {
+        min-height: 42px;
+        padding: 0 16px;
+        border: 0;
+        border-radius: 10px;
+        background: var(--brand);
+        color: #fff;
+        font: inherit;
+        font-weight: 650;
+        cursor: pointer;
+      }
+      button:hover {
+        background: var(--brand-dark);
+      }
+      button.ghost {
+        background: transparent;
+        color: var(--muted);
+        border: 1px solid var(--line);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 14px;
+      }
+      .state {
+        min-height: 20px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .state.bad {
+        color: var(--danger);
+      }
+      .list-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+      }
+      .count {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .timer {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        padding: 12px;
+        margin-top: 10px;
+        background: var(--soft);
+      }
+      .timer-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: baseline;
+      }
+      .timer-id {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .timer-at {
+        color: var(--muted);
+        white-space: nowrap;
+        font-size: 12px;
+      }
+      .timer-meta {
+        color: var(--muted);
+        margin-top: 4px;
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      code {
+        background: #0000000a;
+        padding: 1px 5px;
+        border-radius: 5px;
+      }
+      .perm-group {
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+        margin-top: 12px;
+        background: var(--surface);
+      }
+      .perm-group-head {
+        margin: 0;
+        padding: 10px 12px;
+        background: var(--soft);
+        border-bottom: 1px solid var(--line);
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        cursor: pointer;
+        list-style: none;
+      }
+      .perm-group-head::-webkit-details-marker {
+        display: none;
+      }
+      .perm-group-head .count {
+        margin-left: auto;
+      }
+      .perm-group-head::after {
+        content: '▸';
+        color: var(--muted);
+        font-size: 12px;
+        align-self: center;
+      }
+      .perm-group[open] .perm-group-head::after {
+        content: '▾';
+      }
+      .perm-group:not([open]) .perm-group-head {
+        border-bottom: 0;
+      }
+      .perm-cap {
+        padding: 12px;
+        border-top: 1px solid var(--line);
+      }
+      .perm-cap:first-of-type {
+        border-top: 0;
+      }
+      .perm-cap-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .perm-title {
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+      .perm-reset {
+        min-height: 30px;
+        padding: 0 10px;
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .perm-controls {
+        margin-top: 8px;
+      }
+      .perm-nodes {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        margin-top: 8px;
+      }
+      .perm-node {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        color: var(--text);
+        font-size: 13px;
+      }
+      .perm-node input {
+        width: auto;
+        min-height: auto;
+        margin: 0;
+      }
+      .perm-empty {
+        color: var(--muted);
+        font-size: 13px;
+        margin-top: 6px;
+      }
+      .perm-group-actions {
+        padding: 12px;
+        border-top: 1px solid var(--line);
+      }
+      .empty {
+        color: var(--muted);
+        padding: 14px 0 4px;
+      }
+      @media (prefers-color-scheme: dark) {
+        code {
+          background: #ffffff10;
+        }
+      }
+      @media (max-width: 560px) {
+        .row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <h1 data-text-key="heading">System</h1>
+      <p class="sub" data-text-key="sub">用户语言、时区，以及当前等待中的计时器。</p>
+
+      <section class="card">
+        <h2 data-text-key="settings.heading">用户设置</h2>
+        <div class="row">
+          <div>
+            <label for="language" data-text-key="settings.language">语言</label>
+            <select id="language">
+              <option value="zh-CN" data-text-key="settings.languageZh">中文</option>
+              <option value="en" data-text-key="settings.languageEn">English</option>
+            </select>
+          </div>
+          <div>
+            <label for="timezone" data-text-key="settings.timezone">时区</label>
+            <select id="timezone"></select>
+          </div>
+        </div>
+        <div class="actions">
+          <button id="save" type="button" data-text-key="settings.save">保存设置</button>
+          <span class="state" id="settingsState"></span>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="list-head">
+          <h2 style="margin: 0" data-text-key="timers.heading">计时器</h2>
+          <div class="actions" style="margin: 0">
+            <span class="count" id="count"></span>
+            <button class="ghost" id="refresh" type="button" data-text-key="timers.refresh">刷新</button>
+          </div>
+        </div>
+        <div id="timers"></div>
+      </section>
+
+      <section class="card">
+        <div class="list-head">
+          <h2 style="margin: 0" data-text-key="permissions.heading">节点权限</h2>
+          <div class="actions" style="margin: 0">
+            <span class="count" id="permissionCount"></span>
+            <button class="ghost" id="refreshPermissions" type="button" data-text-key="permissions.refresh">刷新</button>
+          </div>
+        </div>
+        <p class="sub" style="margin: 8px 0 0" data-text-key="permissions.hint">
+          按目标节点分组。每个能力可以选择全部允许（*）、全部不允许，或指定具体的 caller 节点。
+        </p>
+        <div id="permissions"></div>
+      </section>
+    </main>
+
+        <script type="module">
+      // This page's words live in its own files — src/i18n/en.json and src/i18n/zh-CN.json. The node
+      // that draws the page embeds them as one JSON script tag; the SDK turns each key into a `Text`
+      // (and draws every `data-text-key` element), so nothing here re-states a sentence and the SDK
+      // holds none of them.
+      import {
+        applyTranslations,
+        currentLocale,
+        resourceFromDocument,
+        resourceTexts,
+      } from '/sdk/i18n-client.js';
+
+      const RESOURCE = resourceFromDocument();
+      const T = RESOURCE === null ? {} : resourceTexts(RESOURCE);
+
+      /** The sentence under one key, in the language the page is drawn in. */
+      const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
+
+      /** Mark an element with its key, so the SDK's client redraws it when the user's language changes. */
+      const mark = (element, key) => {
+        element.dataset.textKey = key;
+        element.textContent = t(key);
+        return element;
+      };
+
+      const INJECTED = '__SYSTEM_NODE__';
+      const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+      const $ = (id) => document.getElementById(id);
+
+      async function call(tool, args) {
+        const res = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        });
+        return await res.json();
+      }
+
+      // The settings box says one of four things. What was said is kept, so a language switch can say
+      // the same thing in the other language instead of losing an error.
+      let said = null;
+
+      function show(kind, detail) {
+        said = { kind, detail };
+        paintState();
+      }
+
+      function paintState() {
+        const box = $('settingsState');
+        box.classList.remove('bad');
+        if (said === null) {
+          box.textContent = '';
+          return;
+        }
+        if (said.kind === 'saving') box.textContent = t('settings.saving');
+        else if (said.kind === 'saved') box.textContent = t('settings.saved');
+        else if (said.kind === 'failed') {
+          box.classList.add('bad');
+          box.textContent = t('settings.failed', { error: said.detail ?? '' });
+        } else {
+          // What the node answered: already a sentence, just not necessarily in this language.
+          box.classList.add('bad');
+          box.textContent = said.detail;
+        }
+      }
+
+      function atText(iso) {
+        const date = new Date(iso);
+        return Number.isNaN(date.getTime())
+          ? iso
+          : date.toLocaleString(currentLocale(), { hour12: false });
+      }
+
+      function render(timers) {
+        const host = $('timers');
+        host.replaceChildren();
+        $('count').textContent =
+          timers.length === 0 ? t('timers.count.none') : t('timers.count.waiting', { count: timers.length });
+        if (timers.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty';
+          empty.textContent = t('timers.empty');
+          host.append(empty);
+          return;
+        }
+        for (const timer of timers) {
+          const card = document.createElement('div');
+          card.className = 'timer';
+
+          const top = document.createElement('div');
+          top.className = 'timer-top';
+          const id = document.createElement('div');
+          id.className = 'timer-id';
+          id.textContent = timer.id;
+          const at = document.createElement('div');
+          at.className = 'timer-at';
+          at.textContent = atText(timer.at);
+          top.append(id, at);
+
+          const meta = document.createElement('div');
+          meta.className = 'timer-meta';
+          meta.textContent = `${timer.target} · ${timer.callpayload.cap} · ${JSON.stringify(timer.callpayload.args ?? {})}`;
+          card.append(top, meta);
+
+          if (timer.attempts > 0) {
+            const failure = document.createElement('div');
+            failure.className = 'timer-meta';
+            const retried = t('timers.retried', { count: timer.attempts });
+            failure.textContent = timer.lastError ? `${retried} · ${timer.lastError}` : retried;
+            card.append(failure);
+          }
+          host.append(card);
+        }
+      }
+
+      async function loadTimers() {
+        const reply = await call(`${NODE}.timers`, {});
+        if (!reply.ok) {
+          $('timers').textContent = reply.error;
+          return;
+        }
+        render(reply.value);
+      }
+
+      function fillTimezones(current) {
+        const fallback = [
+          'UTC',
+          'Asia/Shanghai',
+          'Asia/Tokyo',
+          'Asia/Singapore',
+          'Europe/London',
+          'Europe/Paris',
+          'America/New_York',
+          'America/Los_Angeles',
+          'Australia/Sydney',
+        ];
+        let zones = fallback;
+        try {
+          if (typeof Intl.supportedValuesOf === 'function')
+            zones = Intl.supportedValuesOf('timeZone');
+        } catch {}
+        if (current && !zones.includes(current)) zones = [current, ...zones];
+        const select = $('timezone');
+        select.replaceChildren(
+          ...zones.map((zone) => {
+            const option = document.createElement('option');
+            option.value = zone;
+            option.textContent = zone.replaceAll('_', ' ');
+            return option;
+          }),
+        );
+        if (current) select.value = current;
+      }
+
+      async function loadSettings() {
+        const reply = await call(`${NODE}.settings`, {});
+        if (!reply.ok) {
+          show('error', reply.error);
+          return;
+        }
+        fillTimezones(reply.value.timezone);
+        // The node already selected these in the markup it sent; this only confirms them. A profile
+        // nobody has chosen yet stores null, and the page is drawn in the language in force then.
+        $('language').value = reply.value.language ?? currentLocale();
+        $('timezone').value = reply.value.timezone;
+      }
+
+      $('save').addEventListener('click', async () => {
+        const button = $('save');
+        button.disabled = true;
+        show('saving');
+        try {
+          const reply = await call(`${NODE}.settings`, {
+            language: $('language').value.trim(),
+            timezone: $('timezone').value.trim(),
+          });
+          if (!reply.ok) {
+            show('error', reply.error);
+            return;
+          }
+          show('saved');
+        } catch (error) {
+          show('failed', error.message);
+        } finally {
+          button.disabled = false;
+        }
+      });
+
+      function permissionNodes(rows) {
+        const names = new Set(rows.map((row) => row.target));
+        for (const row of rows)
+          for (const caller of [
+            ...row.callers,
+            ...row.defaultCallers,
+            ...(row.overrideCallers ?? []),
+          ])
+            if (caller !== '*') names.add(caller);
+        return [...names].sort((a, b) => a.localeCompare(b));
+      }
+
+      /** Every checkbox set on the page, so an un-saved edit can be noticed before a redraw. */
+      let controllers = [];
+
+      function dirty() {
+        const key = (callers) => [...callers].sort().join('|');
+        return controllers.some(({ row, callersNow }) => key(callersNow()) !== key(row.callers));
+      }
+
+      function renderPermissions(rows) {
+        const host = $('permissions');
+        host.replaceChildren();
+        const allControllers = [];
+        // `allow_edit_permission: false` is a manifest policy, not an editable table entry.
+        const editableRows = rows.filter((row) => row.editable);
+        const nodeNames = permissionNodes(editableRows);
+        const groups = new Map();
+        for (const row of editableRows) {
+          const caps = groups.get(row.target) ?? [];
+          caps.push(row);
+          groups.set(row.target, caps);
+        }
+        $('permissionCount').textContent = t('permissions.summary', {
+          nodes: groups.size,
+          caps: editableRows.length,
+        });
+
+        for (const [target, caps] of [...groups].sort(([a], [b]) => a.localeCompare(b))) {
+          const group = document.createElement('details');
+          group.className = 'perm-group';
+          const head = document.createElement('summary');
+          head.className = 'perm-group-head';
+          const name = document.createElement('span');
+          // The display name the manifest publishes, else the name the bus addresses. The canonical
+          // one stays on the element, so hovering still tells you what a call would say.
+          const labelled = caps.find((row) => row.nodeLabel)?.nodeLabel;
+          name.textContent = labelled ?? target;
+          name.title = target;
+          const count = document.createElement('span');
+          count.className = 'count';
+          count.textContent = t('permissions.caps', { count: caps.length });
+          head.append(name, count);
+          group.append(head);
+
+          const groupState = document.createElement('span');
+          groupState.className = 'state';
+          const tell = (kind, detail) => {
+            groupState.classList.toggle('bad', kind === 'bad');
+            if (kind === 'saved') groupState.textContent = t('permissions.saved', { count: detail });
+            else if (kind === 'reset') groupState.textContent = t('permissions.resetDone');
+            else if (kind === 'unchanged') groupState.textContent = t('permissions.unchanged');
+            else if (kind === 'saving') groupState.textContent = t('settings.saving');
+            else groupState.textContent = detail;
+          };
+          const groupControllers = [];
+
+          for (const row of caps) {
+            const card = document.createElement('div');
+            card.className = 'perm-cap';
+            const capHead = document.createElement('div');
+            capHead.className = 'perm-cap-head';
+            const title = document.createElement('div');
+            title.className = 'perm-title';
+            title.textContent = row.capLabel ?? row.cap;
+            title.title = row.cap;
+            if (row.argLabels) {
+              const args = document.createElement('div');
+              args.className = 'sub perm-args';
+              args.textContent = t('permissions.args', {
+                args: Object.values(row.argLabels).join(t('permissions.argsSeparator')),
+              });
+              title.append(args);
+            }
+            const reset = document.createElement('button');
+            reset.type = 'button';
+            reset.className = 'ghost perm-reset';
+            mark(reset, 'permissions.reset');
+            capHead.append(title, reset);
+
+            const controls = document.createElement('div');
+            controls.className = 'perm-controls';
+            const choices = document.createElement('div');
+            choices.className = 'perm-nodes';
+
+            const choice = (key, box) => {
+              const label = document.createElement('label');
+              label.className = 'perm-node';
+              const words = document.createElement('span');
+              mark(words, key);
+              label.append(box, words);
+              return label;
+            };
+
+            const allBox = document.createElement('input');
+            allBox.type = 'checkbox';
+            allBox.value = '*';
+            const allLabel = choice('permissions.allowAll', allBox);
+            const noneBox = document.createElement('input');
+            noneBox.type = 'checkbox';
+            const noneLabel = choice('permissions.allowNone', noneBox);
+            choices.append(allLabel, noneLabel);
+
+            const nodeBoxes = [];
+            for (const node of nodeNames.filter((one) => one !== row.target)) {
+              const box = document.createElement('input');
+              box.type = 'checkbox';
+              box.value = node;
+              nodeBoxes.push(box);
+              const label = document.createElement('label');
+              label.className = 'perm-node';
+              label.append(box, document.createTextNode(node));
+              choices.append(label);
+            }
+
+            const callersNow = () => {
+              if (allBox.checked) return ['*'];
+              return nodeBoxes.filter((box) => box.checked).map((box) => box.value);
+            };
+
+            const apply = (callers) => {
+              allBox.checked = callers.includes('*');
+              noneBox.checked = callers.length === 0;
+              for (const box of nodeBoxes) box.checked = callers.includes(box.value);
+            };
+
+            const sync = () => {
+              if (noneBox.checked) {
+                allBox.checked = false;
+                for (const box of nodeBoxes) box.checked = false;
+              } else if (allBox.checked) {
+                noneBox.checked = false;
+                for (const box of nodeBoxes) box.checked = false;
+              }
+            };
+            allBox.addEventListener('change', sync);
+            noneBox.addEventListener('change', sync);
+            for (const box of nodeBoxes) box.addEventListener('change', sync);
+
+            apply(row.callers);
+            controls.append(choices);
+
+            reset.addEventListener('click', async () => {
+              reset.disabled = true;
+              try {
+                const reply = await call(`${NODE}.clear_permission`, {
+                  target: row.target,
+                  cap: row.cap,
+                });
+                if (!reply.ok) {
+                  tell('bad', reply.error);
+                  return;
+                }
+                row.callers = [...row.defaultCallers];
+                row.source = 'default';
+                delete row.overrideCallers;
+                apply(row.callers);
+                tell('reset');
+              } finally {
+                reset.disabled = false;
+              }
+            });
+
+            groupControllers.push({ row, callersNow });
+            card.append(capHead, controls);
+            group.append(card);
+          }
+
+          const groupActions = document.createElement('div');
+          groupActions.className = 'actions perm-group-actions';
+          const save = document.createElement('button');
+          save.type = 'button';
+          mark(save, 'permissions.save');
+          save.addEventListener('click', async () => {
+            const key = (callers) => [...callers].sort().join('|');
+            const changed = groupControllers
+              .map((controller) => ({ ...controller, callers: controller.callersNow() }))
+              .filter(({ row, callers }) => key(callers) !== key(row.callers));
+            if (changed.length === 0) {
+              tell('unchanged');
+              return;
+            }
+            save.disabled = true;
+            tell('saving');
+            try {
+              const results = await Promise.allSettled(
+                changed.map(async ({ row, callers }) => {
+                  const reply = await call(`${NODE}.set_permission`, {
+                    target: row.target,
+                    cap: row.cap,
+                    callers,
+                  });
+                  if (!reply.ok) throw new Error(reply.error);
+                  row.callers = callers;
+                  row.source = 'override';
+                  row.overrideCallers = callers;
+                }),
+              );
+              const failed = results.find((result) => result.status === 'rejected');
+              if (failed !== undefined) throw failed.reason;
+              tell('saved', changed.length);
+            } catch (error) {
+              tell('bad', error.message);
+            } finally {
+              save.disabled = false;
+            }
+          });
+          groupActions.append(save, groupState);
+          group.append(groupActions);
+          host.append(group);
+          allControllers.push(...groupControllers);
+        }
+
+        controllers = allControllers;
+        // The labels above were marked, not written: draw them in the language in force right now.
+        applyTranslations(host);
+      }
+
+      async function loadPermissions() {
+        const reply = await call(`${NODE}.permissions`, {});
+        if (!reply.ok) {
+          $('permissions').textContent = reply.error;
+          return;
+        }
+        renderPermissions(reply.value);
+      }
+
+      /** The user's language changed: say everything this page built in the new one. */
+      function repaint() {
+        // A change made elsewhere (another tab, the agent) moves the selector too.
+        $('language').value = currentLocale();
+        paintState();
+        void loadTimers();
+        // Un-saved permission edits win: the table stays as it is until the user saves or reloads.
+        if (!dirty()) void loadPermissions();
+      }
+
+      document.addEventListener('node-agent:language', repaint);
+      $('refresh').addEventListener('click', loadTimers);
+      $('refreshPermissions').addEventListener('click', loadPermissions);
+      void Promise.all([loadSettings(), loadTimers(), loadPermissions()]);
+      setInterval(loadTimers, 15_000);
+    </script>
+  </body>
+</html>

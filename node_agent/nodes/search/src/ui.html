@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">Web search · node_agent</title>
+    <script>
+      // Inside the webui shell this page is an iframe, and then it has to fill the FRAME it was given
+      // rather than the window: the height chain below reads this class. Set before the style is
+      // parsed, so nothing is ever laid out at the wrong height. `self !== top` never throws.
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --line: #8884;
+        --dim: #8888;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      /* What the page fills: the viewport as the top document, the frame box inside the webui shell. */
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 14px;
+      }
+      #state {
+        font-size: 15px;
+      }
+      form {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      input {
+        flex: 1 1 16em;
+        min-width: 0;
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font:
+          13px/1.6 ui-monospace,
+          monospace;
+      }
+      button {
+        padding: 9px 16px;
+        border: 0;
+        border-radius: 8px;
+        background: #2563eb;
+        color: #fff;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.secondary {
+        border: 1px solid var(--line);
+        background: transparent;
+        color: inherit;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #feedback {
+        min-height: 1.5em;
+        font-size: 12px;
+      }
+      #feedback.bad {
+        color: #ef4444;
+      }
+      p {
+        margin: 0;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      /* --- Mobile: a phone is one column read with a thumb, and the bottom of the screen belongs to
+         the home indicator. The same block, with the same comment, is on every page of the web UI
+         (README.md, "Mobile"). --- */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        body {
+          height: 100dvh; /* a collapsing URL bar must not crop the page */
+        }
+        main {
+          padding: 12px;
+          padding-bottom: calc(12px + env(safe-area-inset-bottom));
+        }
+        input {
+          flex: 1 1 100%;
+          font-size: 16px; /* 16px stops iOS Safari from zooming in on focus */
+        }
+        /* 44px is the smallest target a thumb hits reliably; the buttons are 36px for a pointer. */
+        button {
+          flex: 1 1 auto;
+          min-height: 44px;
+        }
+      }
+      /* Inside another frame the box is the truth: 100% follows it, while `100dvh` may be the window's
+         height in engines that do not shrink viewport units to the frame. After the phone block on
+         purpose, so in a frame it wins at every width. */
+      :root.framed body {
+        height: 100%;
+        min-height: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div id="state">…</div>
+      <form id="save">
+        <input
+          id="key"
+          type="password"
+          autocomplete="new-password"
+          spellcheck="false"
+          placeholder="DeepSeek API key" data-text-placeholder-key="key.placeholder"
+          aria-label="DeepSeek API key" data-text-label-key="key.placeholder"
+        />
+        <button id="submit" data-text-key="key.save">Save</button>
+        <button id="clear" class="secondary" type="button" data-text-key="key.clear">Clear</button>
+      </form>
+      <div id="feedback" role="status" aria-live="polite"></div>
+      <p id="note"></p>
+    </main>
+    <script>
+      // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing here
+      // may assume it is called "search". The node fills its own name in where it hands the page out
+      // (index.ts); a page opened unfilled falls back to the path, which is where a panel is served:
+      // /panel/<node>.
+      // prettier-ignore
+      const INJECTED = "__NODE__";
+      const NODE = INJECTED.startsWith('__')
+        ? location.pathname.split('/')[2] || 'search'
+        : INJECTED;
+
+      // Same as every other page: it only knows webui's generic POST /call, not who forwards it.
+      async function call(args) {
+        const res = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool: `${NODE}.key`, args }),
+        });
+        return await res.json();
+      }
+
+      const state = document.getElementById('state');
+      const note = document.getElementById('note');
+      const feedback = document.getElementById('feedback');
+      const key = document.getElementById('key');
+      const submit = document.getElementById('submit');
+
+      // The words of a sentence this page builds itself. Until the SDK's browser half has run there
+      // is no catalog to read, and `t` then shows the key rather than nothing — which is why every
+      // sentence the first paint shows is painted into the markup by the node instead.
+      const t = (key, params) => globalThis.nodeAgentI18n?.t?.(key, params) ?? key;
+
+      function say(text, bad = false) {
+        feedback.textContent = text;
+        feedback.classList.toggle('bad', bad);
+      }
+
+      function show(answer) {
+        state.textContent = !answer.configured
+          ? t('key.none')
+          : answer.source === 'page'
+            ? t('key.saved')
+            : t('key.environment');
+        note.textContent = answer.persistent ? t('key.persistent') : t('key.volatile');
+      }
+
+      async function refresh() {
+        const reply = await call({ action: 'status' });
+        if (!reply.ok) {
+          say(t('key.readFailed', { error: reply.error }), true);
+          return;
+        }
+        show(reply.value);
+      }
+
+      document.getElementById('save').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const secret = key.value.trim();
+        // Said here rather than by the browser: `required` on an empty field blocks the submit event
+        // itself, so the button would look broken instead of saying what is missing.
+        if (secret === '') {
+          say(t('key.pasteFirst'), true);
+          return;
+        }
+        submit.disabled = true;
+        try {
+          const reply = await call({ action: 'save', api_key: secret });
+          if (!reply.ok) {
+            // The node's own words are English on the bus; the sentence around them is this page's.
+            say(t('key.saveFailed', { error: reply.error }), true);
+            return;
+          }
+          // Never keep it in the page either: the field is emptied the moment it is saved.
+          key.value = '';
+          show(reply.value);
+          say(t('key.savedNow'));
+        } catch (failure) {
+          // A dropped request or a busy node: say so, or the click looks like it did nothing.
+          say(t('key.saveFailed', { error: String(failure?.message || failure) }), true);
+        } finally {
+          submit.disabled = false;
+        }
+      });
+
+      document.getElementById('clear').addEventListener('click', async () => {
+        const reply = await call({ action: 'clear' });
+        if (!reply.ok) {
+          say(t('key.clearFailed', { error: reply.error }), true);
+          return;
+        }
+        show(reply.value);
+        say(t('key.cleared'));
+      });
+
+      // A change of language redraws the sentences this page built; the markup is already the
+      // visit's language, and the SDK has redrawn its own markers before this runs.
+      document.addEventListener('node-agent:language', () => void refresh());
+
+      void refresh();
+    </script>
+  </body>
+</html>

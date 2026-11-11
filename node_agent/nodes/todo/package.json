@@ -1,0 +1,218 @@
+{
+  "name": "node-agent-todo",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "The todo node: a Today card of free text with model-written buttons, plus a tickable list",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node ../../sdk/dist/serve.js .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "node": {
+    "id": "todo",
+    "i18n": "dist/i18n",
+    "desc": "Today card with free text and model-written buttons, plus a tickable list",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "today": {
+        "type": "object",
+        "properties": {},
+        "description": "Read Today: { text, buttons, updatedAt }"
+      },
+      "set-today": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "the free text on the Today card (may be empty)"
+          },
+          "buttons": {
+            "type": "array",
+            "description": "up to 8 action buttons; each press sends its message to the agent",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "description": "button label, 1-40 characters"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "the user message a press sends, 1-500 characters"
+                }
+              },
+              "required": [
+                "label",
+                "message"
+              ]
+            }
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "description": "Write the free text on Today, and optionally its buttons; returns confirmation text"
+      },
+      "press": {
+        "type": "object",
+        "properties": {
+          "index": {
+            "type": "number",
+            "description": "which button, numbered from 1"
+          }
+        },
+        "required": [
+          "index"
+        ],
+        "description": "Send one Today button's message to the agent as a chat turn; returns a receipt"
+      },
+      "presses": {
+        "type": "object",
+        "properties": {},
+        "description": "Read the last presses this node sent: a rejected message is in here too"
+      },
+      "list": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "all (default), open or done"
+          }
+        },
+        "description": "Read the list; returns todos (id, title, text, done, at, doneAt, order) - the open ones first, then the done ones, in the order a human put them (order) or the newest id first"
+      },
+      "add": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "what to do"
+          },
+          "text": {
+            "type": "string",
+            "description": "notes, optional"
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "description": "Add one; returns confirmation text (with id and title)"
+      },
+      "update": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which todo to update"
+          },
+          "title": {
+            "type": "string",
+            "description": "new title"
+          },
+          "text": {
+            "type": "string",
+            "description": "new notes"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Update the title or the notes by id; returns confirmation text"
+      },
+      "toggle": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which todo to check or uncheck"
+          },
+          "done": {
+            "type": "boolean",
+            "description": "true checks it off, false reopens it; left out it flips"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Check a todo off or reopen it; returns confirmation text (with id and title)"
+      },
+      "remove": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which todo to remove"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Remove by id; returns confirmation text (with id and title)"
+      },
+      "move": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "number",
+            "description": "which todo to move"
+          },
+          "before": {
+            "type": "number",
+            "description": "the id of the todo to sit in front of (one of before / after)"
+          },
+          "after": {
+            "type": "number",
+            "description": "the id of the todo to sit behind (one of before / after)"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "description": "Put a todo in front of or behind another one of its own group (open ones before done ones); returns confirmation text"
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "Today card with free text and model-written buttons, plus a tickable list",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- Lines in indigo, the tick in green: a list with something already done on it. -->\n  <path stroke=\"#4f46e5\" d=\"M4 6.5h8.5M4 12h8.5M4 17.5h5.5\" />\n  <path stroke=\"#22c55e\" d=\"m15 15.5 2.2 2.2 4-4.2\" />\n</svg>\n"
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/todo"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

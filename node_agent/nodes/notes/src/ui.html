@@ -1,0 +1,2321 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script src="/webui/events-client.js"></script>
+    <script src="/webui/events-broker.js"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">Notes · node_agent</title>
+    <script>
+      // Inside the webui shell this page is an iframe, and then it has to fill the FRAME it was given
+      // rather than the window: the height chain below reads this class. Set before the style is
+      // parsed, so nothing is ever laid out at the wrong height. `self !== top` never throws.
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --page: #f4f6fb;
+        --surface: #ffffff;
+        --surface-soft: #f8f9fc;
+        --surface-hover: #f1f4fa;
+        --text: #171a23;
+        --muted: #596374;
+        --faint: #6f7888;
+        --line: #e4e8f0;
+        --line-strong: #d4d9e4;
+        --brand: #635bff;
+        --brand-fill: #635bff;
+        --brand-dark: #5148e5;
+        --brand-soft: #eeecff;
+        --danger: #d92d4b;
+        --danger-soft: #fff0f3;
+        --success: #15956f;
+        --shadow-sm: 0 1px 2px #151b2b0a, 0 1px 5px #151b2b0d;
+        --shadow-md: 0 8px 30px #20294a12, 0 2px 8px #20294a0a;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --page: #0d0f15;
+          --surface: #151820;
+          --surface-soft: #1a1e28;
+          --surface-hover: #202531;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --faint: #7d8798;
+          --line: #292e3a;
+          --line-strong: #39404f;
+          --brand: #8b83ff;
+          --brand-fill: #5b52e8;
+          --brand-dark: #4f46e5;
+          --brand-soft: #29254d;
+          --danger: #ff6b85;
+          --danger-soft: #3a2029;
+          --success: #4bd2a7;
+          --shadow-sm: 0 1px 3px #0003;
+          --shadow-md: 0 12px 36px #0004;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--page);
+        color: var(--text);
+        font:
+          14px/1.5 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          'Segoe UI',
+          sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+      button,
+      .memo {
+        -webkit-tap-highlight-color: transparent;
+      }
+      .app {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+      /* The connection state is a chip in the list's own toolbar, beside the filters it describes:
+         nothing above the panels is a bar of its own any more. */
+      .sync {
+        display: flex;
+        flex: none;
+        align-items: center;
+        gap: 7px;
+        margin-left: auto;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .sync-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--faint);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--faint) 16%, transparent);
+      }
+      .sync.live .sync-dot {
+        background: var(--success);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--success) 16%, transparent);
+      }
+      /* Two panes when there is room: the library on the left is the index, the editor on the
+         right is the page it opens. Each pane scrolls inside itself, the page never does. */
+      .workspace {
+        flex: 1;
+        min-height: 0;
+        display: grid;
+        grid-template-columns: minmax(280px, 34%) minmax(0, 1fr);
+        grid-template-rows: minmax(0, 1fr);
+        grid-template-areas: 'library editor';
+        gap: 18px;
+        padding: 18px;
+      }
+      .panel {
+        min-height: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--surface);
+        box-shadow: var(--shadow-sm);
+      }
+      .library {
+        grid-area: library;
+        display: flex;
+        flex-direction: column;
+      }
+      .library-head {
+        flex: none;
+        padding: 14px 18px;
+      }
+      .count {
+        min-width: 26px;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: var(--surface-hover);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 600;
+        text-align: center;
+      }
+      .search {
+        position: relative;
+      }
+      .search svg {
+        position: absolute;
+        top: 50%;
+        left: 12px;
+        width: 17px;
+        height: 17px;
+        transform: translateY(-50%);
+        color: var(--faint);
+        pointer-events: none;
+      }
+      .search input {
+        width: 100%;
+        height: 40px;
+        padding: 0 36px 0 38px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        outline: none;
+        background: var(--surface-soft);
+        color: var(--text);
+        transition:
+          border-color 0.15s,
+          box-shadow 0.15s,
+          background 0.15s;
+      }
+      .search input::placeholder,
+      .editor input::placeholder,
+      .editor textarea::placeholder {
+        color: var(--faint);
+      }
+      .search input:focus {
+        border-color: var(--brand);
+        background: var(--surface);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+      }
+      /* One tag at a time: the select sits beside the search box, so "search inside work" is one
+         glance rather than a choice made somewhere else. Its labels are the node's own tags,
+         rebuilt after every refresh because a tag exists only while a document carries it. */
+      .library-tools {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 10px;
+      }
+      .library-tools .search {
+        flex: 1;
+        min-width: 0;
+      }
+      .tag-filter {
+        flex: none;
+        max-width: 45%;
+        height: 40px;
+        padding: 0 8px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .search-clear {
+        position: absolute;
+        top: 50%;
+        right: 8px;
+        width: 25px;
+        height: 25px;
+        display: none;
+        place-items: center;
+        padding: 0;
+        transform: translateY(-50%);
+        border: 0;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+      .search-clear.on {
+        display: grid;
+      }
+      .search-clear:hover {
+        background: var(--surface-hover);
+      }
+      .list {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 2px 10px 12px;
+        scrollbar-width: thin;
+        scrollbar-color: var(--line-strong) transparent;
+      }
+      .memo {
+        position: relative;
+        width: 100%;
+        display: block;
+        margin: 0 0 6px;
+        padding: 13px 14px 12px;
+        overflow: hidden;
+        border: 1px solid transparent;
+        border-radius: 11px;
+        outline: none;
+        background: transparent;
+        color: inherit;
+        text-align: left;
+        cursor: pointer;
+        transition:
+          background 0.14s,
+          border-color 0.14s,
+          transform 0.14s;
+      }
+      .memo:hover {
+        background: var(--surface-hover);
+      }
+      .memo:focus-visible {
+        border-color: var(--brand);
+        box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 14%, transparent);
+      }
+      .memo.on {
+        border-color: color-mix(in srgb, var(--brand) 30%, var(--line));
+        background: var(--brand-soft);
+      }
+      .memo.on::before {
+        position: absolute;
+        inset: 11px auto 11px 0;
+        width: 3px;
+        border-radius: 0 3px 3px 0;
+        background: var(--brand-fill);
+        content: '';
+      }
+      .memo b {
+        display: block;
+        margin-bottom: 4px;
+        overflow: hidden;
+        font-size: 13px;
+        font-weight: 650;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .memo p {
+        display: -webkit-box;
+        min-height: 38px;
+        margin: 0;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.55;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+      .memo time {
+        display: block;
+        margin-top: 8px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+      }
+      /* A search hit: the document's own line, with the match marked, and the line number in front
+         so a hit can be asked for again (`read {offset: line}`). It is a `p` like the preview the
+         cards used to carry, but it is not clamped to two lines — a hit that is cut off says
+         nothing. */
+      .memo p.hit {
+        display: block;
+        min-height: 0;
+        margin-top: 6px;
+        overflow: visible;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.5;
+        overflow-wrap: anywhere;
+        -webkit-line-clamp: none;
+      }
+      .memo .hit-line {
+        margin-right: 6px;
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+      .memo mark {
+        border-radius: 3px;
+        background: color-mix(in srgb, var(--brand) 26%, transparent);
+        color: var(--text);
+      }
+      .memo .hit-more,
+      .list .note {
+        display: block;
+        margin-top: 6px;
+        color: var(--faint);
+        font-size: 11px;
+      }
+      .list .note {
+        margin: 0 0 6px;
+        padding: 6px 14px;
+      }
+      .empty {
+        display: grid;
+        place-items: center;
+        min-height: 220px;
+        padding: 30px;
+        color: var(--muted);
+        text-align: center;
+      }
+      .empty-mark {
+        width: 48px;
+        height: 48px;
+        display: grid;
+        place-items: center;
+        margin: 0 auto 12px;
+        border-radius: 14px;
+        background: var(--surface-hover);
+        color: var(--faint);
+      }
+      .empty-mark svg {
+        width: 22px;
+        height: 22px;
+      }
+      .empty strong {
+        display: block;
+        margin-bottom: 3px;
+        color: var(--text);
+        font-size: 13px;
+      }
+      .empty span {
+        display: block;
+        max-width: 210px;
+        font-size: 12px;
+      }
+      .editor {
+        grid-area: editor;
+        display: flex;
+        flex-direction: column;
+      }
+      .editor-head {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 68px;
+        padding: 14px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      .editor-heading {
+        min-width: 0;
+      }
+      .editor-heading h2 {
+        margin: 0;
+        font-size: 15px;
+        line-height: 1.3;
+        letter-spacing: -0.015em;
+      }
+      .meta {
+        min-height: 18px;
+        margin-top: 2px;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .new-button,
+      .primary,
+      .secondary,
+      .danger {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 7px;
+        border-radius: 9px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          transform 0.12s,
+          background 0.15s,
+          border-color 0.15s,
+          box-shadow 0.15s;
+      }
+      .new-button {
+        flex: none;
+        height: 38px;
+        padding: 0 14px;
+        border: 0;
+        background: var(--brand-fill);
+        color: white;
+        box-shadow: 0 5px 12px color-mix(in srgb, var(--brand) 22%, transparent);
+      }
+      .new-button:hover,
+      .primary:hover {
+        background: var(--brand-dark);
+      }
+      .new-button:active,
+      .primary:active,
+      .secondary:active,
+      .danger:active {
+        transform: translateY(1px);
+      }
+      .new-button svg,
+      .primary svg,
+      .secondary svg,
+      .danger svg {
+        width: 15px;
+        height: 15px;
+      }
+      /* The narrow screen opens a memo as a page of its own; this is the only way back to the
+         index. On a wide screen both panes are already visible, so it stays out of the way. */
+      .back {
+        display: none;
+        flex: none;
+        align-items: center;
+        gap: 6px;
+        min-height: 34px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .back:hover {
+        background: var(--surface-hover);
+        color: var(--text);
+      }
+      .back:focus-visible {
+        outline: 2px solid var(--brand-fill);
+        outline-offset: 2px;
+      }
+      .document {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        padding: clamp(22px, 4vw, 48px);
+        overflow-y: auto;
+        background:
+          radial-gradient(
+            circle at 90% 0%,
+            color-mix(in srgb, var(--brand) 7%, transparent),
+            transparent 30%
+          ),
+          var(--surface);
+      }
+      .document-inner {
+        width: min(100%, 820px);
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        margin: 0 auto;
+      }
+      .field-label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+      .editor input {
+        width: 100%;
+        padding: 0 0 15px;
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        outline: none;
+        background: transparent;
+        color: var(--text);
+        font-size: clamp(22px, 3vw, 30px);
+        font-weight: 700;
+        line-height: 1.25;
+        letter-spacing: -0.035em;
+      }
+      .body-label {
+        margin-top: 28px;
+      }
+      /* A tag is a label, not the document's name: small and boxed, beside its own label, while the
+         big borderless input above stays the title. The suggestion list is the node's tag list. */
+      .tag-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 20px;
+      }
+      .tag-row .field-label {
+        flex: none;
+        margin: 0;
+      }
+      .editor .tag-input {
+        flex: 1;
+        min-width: 0;
+        height: 36px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        outline: none;
+        background: var(--surface-soft);
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 500;
+        letter-spacing: 0;
+      }
+      .editor .tag-input:focus {
+        border-color: var(--brand);
+        background: var(--surface);
+      }
+      .editor textarea {
+        width: 100%;
+        flex: 1;
+        min-height: 220px;
+        padding: 0;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--text);
+        font-size: 15px;
+        line-height: 1.75;
+        resize: none;
+      }
+      /* The label and the switch that swaps the textarea for what that text looks like as Markdown. */
+      .body-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-top: 28px;
+      }
+      .body-head .body-label {
+        margin: 0;
+      }
+      .preview-toggle {
+        flex: none;
+        height: 27px;
+        padding: 0 11px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .preview-toggle[aria-pressed='true'] {
+        border-color: var(--brand);
+        background: var(--brand-soft);
+        color: var(--text);
+      }
+      /* A note drawn as Markdown. Raw HTML is disabled in the renderer, so these rules are the only
+         thing that shapes the text — nothing in a note becomes markup this page then styles. */
+      .markdown {
+        flex: 1;
+        min-height: 220px;
+        overflow-wrap: anywhere;
+      }
+      .markdown > :first-child {
+        margin-top: 0;
+      }
+      .markdown > :last-child {
+        margin-bottom: 0;
+      }
+      .markdown p {
+        margin: 0.6em 0;
+      }
+      .markdown h1,
+      .markdown h2,
+      .markdown h3,
+      .markdown h4,
+      .markdown h5,
+      .markdown h6 {
+        margin: 1em 0 0.4em;
+        font-size: 1.15em;
+        line-height: 1.35;
+        letter-spacing: -0.01em;
+      }
+      .markdown h1 {
+        font-size: 1.45em;
+      }
+      .markdown h2 {
+        font-size: 1.25em;
+      }
+      .markdown h3 {
+        font-size: 1.1em;
+      }
+      .markdown ul,
+      .markdown ol {
+        margin: 0.5em 0;
+        padding-left: 1.4em;
+      }
+      .markdown li + li {
+        margin-top: 0.22em;
+      }
+      .markdown blockquote {
+        margin: 0.7em 0;
+        padding-left: 12px;
+        border-left: 3px solid var(--line-strong);
+        color: var(--muted);
+      }
+      .markdown code {
+        padding: 1px 5px;
+        border-radius: 5px;
+        background: var(--surface-soft);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.92em;
+      }
+      .markdown pre {
+        margin: 0.7em 0;
+        padding: 12px 14px;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-soft);
+      }
+      .markdown pre code {
+        padding: 0;
+        background: transparent;
+      }
+      .markdown a {
+        color: var(--brand);
+        text-underline-offset: 2px;
+      }
+      .markdown img {
+        max-width: 100%;
+        border-radius: 8px;
+      }
+      .markdown table {
+        margin: 0.7em 0;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .markdown th,
+      .markdown td {
+        padding: 6px 9px;
+        border: 1px solid var(--line);
+        text-align: left;
+      }
+      .markdown th {
+        background: var(--surface-soft);
+      }
+      .markdown hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+      }
+      .editor-foot {
+        flex: none;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        min-height: 70px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--line);
+        background: var(--surface-soft);
+      }
+      .char-count {
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .foot-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        min-width: 0;
+        flex-wrap: wrap;
+      }
+      /* The one line that says whether what is on screen is stored. Saving, saved and not saved are
+         the three states that matter; the dot carries the same news at a glance. */
+      .state {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        color: var(--faint);
+        font-size: 11px;
+        white-space: nowrap;
+      }
+      .state-dot {
+        width: 7px;
+        height: 7px;
+        flex: none;
+        border-radius: 50%;
+        background: var(--faint);
+      }
+      .state[data-state='editing'] {
+        color: var(--muted);
+      }
+      .state[data-state='editing'] .state-dot {
+        background: var(--muted);
+      }
+      .state[data-state='saving'] {
+        color: var(--brand);
+      }
+      .state[data-state='saving'] .state-dot {
+        background: var(--brand-fill);
+        animation: state-pulse 1s ease-in-out infinite;
+      }
+      .state[data-state='saved'] {
+        color: var(--success);
+      }
+      .state[data-state='saved'] .state-dot {
+        background: var(--success);
+      }
+      .state[data-state='failed'],
+      .state[data-state='conflict'],
+      .state[data-state='gone'] {
+        color: var(--danger);
+      }
+      .state[data-state='failed'] .state-dot,
+      .state[data-state='conflict'] .state-dot,
+      .state[data-state='gone'] .state-dot {
+        background: var(--danger);
+      }
+      @keyframes state-pulse {
+        50% {
+          opacity: 0.3;
+        }
+      }
+      /* A change from elsewhere, or a conflict: the reader's text stays where it is, and this bar is
+         the decision — take the node's copy, or keep theirs. */
+      .notice {
+        flex: none;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 20px 12px;
+        padding: 10px 12px;
+        border: 1px solid color-mix(in srgb, var(--brand) 30%, var(--line));
+        border-radius: 10px;
+        background: var(--brand-soft);
+        color: var(--text);
+        font-size: 12px;
+      }
+      .notice[hidden] {
+        display: none;
+      }
+      .notice-text {
+        flex: 1;
+        min-width: 0;
+      }
+      .notice-actions {
+        display: flex;
+        flex: none;
+        gap: 8px;
+      }
+      .notice-button {
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid var(--line-strong);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .notice-button:hover {
+        background: var(--surface-hover);
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .primary,
+      .secondary,
+      .danger {
+        height: 38px;
+        padding: 0 14px;
+      }
+      .primary {
+        min-width: 92px;
+        border: 0;
+        background: var(--brand-fill);
+        color: white;
+      }
+      .secondary {
+        border: 1px solid var(--line-strong);
+        background: var(--surface);
+        color: var(--text);
+      }
+      .secondary:hover {
+        background: var(--surface-hover);
+      }
+      .danger {
+        border: 1px solid transparent;
+        background: transparent;
+        color: var(--danger);
+      }
+      .danger:hover {
+        border-color: color-mix(in srgb, var(--danger) 18%, transparent);
+        background: var(--danger-soft);
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      .toast {
+        position: fixed;
+        bottom: 24px;
+        left: 50%;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        max-width: min(420px, calc(100vw - 32px));
+        padding: 10px 15px;
+        transform: translate(-50%, 12px);
+        border: 1px solid #ffffff1f;
+        border-radius: 10px;
+        background: #171a23ed;
+        box-shadow: var(--shadow-md);
+        color: white;
+        font-size: 12px;
+        opacity: 0;
+        transition:
+          opacity 0.18s,
+          transform 0.18s;
+        pointer-events: none;
+      }
+      .toast.on {
+        transform: translate(-50%, 0);
+        opacity: 1;
+      }
+      .toast::before {
+        width: 6px;
+        height: 6px;
+        flex: none;
+        border-radius: 50%;
+        background: #6ce1ba;
+        content: '';
+      }
+      /* The phone's panel switcher (see the mobile block below). The memo list and the editor cannot
+         both be on a phone screen, and the editor's fields must not sit below a long list; the bar is
+         hidden while the two panels fit side by side, the same shape as the webui shell's column bar. */
+      .tabs {
+        display: none;
+        flex: none;
+        gap: 6px;
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+      }
+      .tabs button {
+        flex: 1;
+        min-height: 44px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .tabs button.on {
+        border-color: var(--brand);
+        background: var(--brand-soft);
+        color: var(--text);
+      }
+      @media (max-width: 760px) {
+        body {
+          overflow: hidden; /* each panel scrolls inside itself, the page never does */
+        }
+        .app {
+          height: 100dvh;
+          min-height: 0;
+          padding-bottom: env(safe-area-inset-bottom);
+        }
+        .tabs {
+          display: none;
+        }
+        .back {
+          display: inline-flex;
+        }
+        .workspace {
+          min-height: 0;
+          height: auto;
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr;
+          grid-template-areas: 'single';
+          gap: 0;
+          padding: 10px;
+        }
+        /* One named area, one visible pane: without this the panels keep their wide grid-area names
+           and land in implicit tracks beside the area the template declares. */
+        .workspace > .panel {
+          grid-area: single;
+        }
+        .workspace[data-panel='library'] .editor,
+        .workspace[data-panel='editor'] .library {
+          display: none;
+        }
+        .document {
+          padding: 18px 14px;
+        }
+      }
+      @media (max-width: 480px) {
+        .sync-label {
+          display: none;
+        }
+        .editor-head,
+        .editor-foot {
+          padding-right: 14px;
+          padding-left: 14px;
+        }
+        .editor-foot {
+          align-items: flex-end;
+          flex-direction: column;
+        }
+        .actions {
+          width: 100%;
+        }
+        .actions button {
+          flex: 1;
+          padding: 0 10px;
+        }
+      }
+      /* --- Mobile: a phone is one column read with a thumb, and the bottom of the screen belongs to
+         the home indicator. The same block, with the same comment, is on every page of the web UI
+         (README.md, "Mobile"): viewport-fit=cover in the meta, this media query, 44px targets,
+         safe-area padding, and wrapping for long titles and paths. --- */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        .editor-head,
+        .editor-foot {
+          padding-right: 12px;
+          padding-left: 12px;
+        }
+        .document {
+          padding: 18px 14px;
+        }
+        /* 44px is the smallest target a thumb hits reliably; these are 40px and 38px for a pointer. */
+        .search input,
+        .new-button,
+        .actions button,
+        .tag-filter,
+        .tag-input {
+          min-height: 44px;
+        }
+        /* 16px stops iOS Safari from zooming the page in when a field takes focus. */
+        .search input,
+        .tag-filter,
+        .editor input,
+        .editor textarea {
+          font-size: 16px;
+        }
+        /* A long title or a path in a note must break, not push the panel sideways. */
+        .editor input,
+        .editor textarea {
+          overflow-wrap: anywhere;
+        }
+      }
+      /* Inside the shell's frame the box is the truth: 100% follows it, while `100dvh` may be the
+         window's height in engines that do not shrink viewport units to the frame. After the phone
+         block on purpose, so in a frame it wins at every width. */
+      :root.framed .app {
+        height: 100%;
+        min-height: 0;
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <nav
+        class="tabs"
+        id="tabs"
+        aria-label="which panel is on screen"
+        data-text-label-key="tabs.label"
+      >
+        <button id="tab-library" type="button" aria-pressed="true" data-text-key="tabs.memos">
+          Memos
+        </button>
+        <button id="tab-editor" type="button" aria-pressed="false" data-text-key="tabs.editor">
+          Editor
+        </button>
+      </nav>
+
+      <main class="workspace" id="workspace" data-panel="library">
+        <section class="panel library" aria-label="Memo library" data-text-label-key="library.label">
+          <div class="library-head">
+            <div class="library-tools">
+              <div class="search">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <circle cx="11" cy="11" r="6.5" />
+                  <path d="m16 16 4 4" />
+                </svg>
+                <input
+                  id="query"
+                  type="search"
+                  placeholder="Search your memos…"
+                  data-text-placeholder-key="search.placeholder"
+                  autocomplete="off"
+                  aria-label="Search memos"
+                  data-text-label-key="search.label"
+                />
+                <button
+                  class="search-clear"
+                  id="clear"
+                  type="button"
+                  aria-label="Clear search"
+                  data-text-label-key="search.clear"
+                >
+                  ×
+                </button>
+              </div>
+              <select
+                class="tag-filter"
+                id="tagFilter"
+                aria-label="Only this tag"
+                data-text-label-key="search.tagFilter"
+              ></select>
+              <span class="count" id="count">0</span>
+              <button class="new-button" id="newMemo" type="button" data-text-key="button.new">
+                + New
+              </button>
+              <div
+                class="sync"
+                id="sync"
+                aria-label="Live updates"
+                data-text-label-key="sync.label"
+              >
+                <i class="sync-dot"></i>
+                <span class="sync-label" id="syncLabel" data-text-key="sync.connecting">
+                  Connecting
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="list" id="list" aria-live="polite"></div>
+        </section>
+
+        <section class="panel editor" aria-label="Memo editor" data-text-label-key="editor.label">
+          <div class="editor-head">
+            <button
+              class="back"
+              id="back"
+              type="button"
+              aria-label="Back to memos"
+              data-text-label-key="back.label"
+              data-text-key="back.text"
+            >
+              ← Memos
+            </button>
+            <div class="editor-heading">
+              <h2 id="editorTitle" data-text-key="editor.createTitle">Create a memo</h2>
+              <div class="meta" id="editorMeta" data-text-key="editor.newMeta">
+                Capture something worth remembering
+              </div>
+            </div>
+            <button class="new-button" id="add" type="button">
+              <svg
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.2"
+                aria-hidden="true"
+              >
+                <path d="M12 5v14M5 12h14" />
+              </svg>
+              <span data-text-key="button.newMemo">New memo</span>
+            </button>
+          </div>
+          <div class="document">
+            <div class="document-inner">
+              <label class="field-label" for="title" data-text-key="field.title">Title</label>
+              <input
+                id="title"
+                placeholder="Give this memo a name"
+                data-text-placeholder-key="field.titlePlaceholder"
+                autocomplete="off"
+                maxlength="200"
+              />
+              <div class="tag-row">
+                <label class="field-label" for="tag" data-text-key="field.tag">Tag</label>
+                <input
+                  class="tag-input"
+                  id="tag"
+                  list="tagNames"
+                  placeholder="e.g. work"
+                  data-text-placeholder-key="field.tagPlaceholder"
+                  autocomplete="off"
+                />
+                <datalist id="tagNames"></datalist>
+              </div>
+              <div class="body-head">
+                <label class="field-label body-label" for="text" data-text-key="field.note">Note</label>
+                <button
+                  class="preview-toggle"
+                  id="previewToggle"
+                  type="button"
+                  aria-pressed="false"
+                  aria-label="Show this note as Markdown"
+                  data-text-label-key="preview.hint"
+                  data-text-key="preview.show"
+                >
+                  Preview
+                </button>
+              </div>
+              <textarea
+                id="text"
+                placeholder="Write down an idea, preference, decision, or anything useful…"
+                data-text-placeholder-key="field.notePlaceholder"
+              ></textarea>
+              <div class="preview markdown" id="preview" hidden></div>
+            </div>
+          </div>
+          <div class="notice" id="notice" hidden>
+            <span class="notice-text" id="noticeText"></span>
+            <span class="notice-actions" id="noticeActions"></span>
+          </div>
+          <div class="editor-foot">
+            <span class="foot-left">
+              <span class="state" id="state" data-state="idle" role="status" aria-live="polite">
+                <i class="state-dot" aria-hidden="true"></i>
+                <span id="stateLabel"></span>
+              </span>
+              <span
+                class="char-count"
+                id="charCount"
+                data-text-key="editor.countEmpty"
+              >
+                0 characters
+              </span>
+            </span>
+            <div class="actions">
+              <button class="danger" id="del" type="button" hidden>
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5" />
+                </svg>
+                <span data-text-key="button.delete">Delete</span>
+              </button>
+              <button class="secondary" id="cancel" type="button" data-text-key="button.reset">
+                Reset
+              </button>
+              <button class="primary" id="save" type="button">
+                <svg
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  aria-hidden="true"
+                >
+                  <path d="M5 4h12l2 2v14H5zM8 4v6h8V4M8 16h8" />
+                </svg>
+                <span id="saveLabel" data-text-key="button.save">Save now</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status"></div>
+
+    <!-- The Markdown renderer, embedded on the node's way out (index.ts): markdown-it's browser build
+         travels in this page, so the preview needs no network, no CDN and no second route. A page
+         saved by hand keeps this placeholder and draws notes as plain text instead of not at all. -->
+    <script>/*__MARKDOWN_IT__*/</script>
+    <script>
+      // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing
+      // here may assume it is called "notes". The node fills its own name in where it hands the page
+      // out (index.ts / ui.py); a page opened unfilled falls back to the path, which is where a panel
+      // is served: /panel/<node>.
+      const INJECTED = "__NODE__";
+      const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+
+      async function call(tool, args) {
+        try {
+          const res = await fetch('/call', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ tool, args }),
+          });
+          return await res.json();
+        } catch {
+          // A bus that is not there is an answer too, in the shape every caller already handles: a
+          // save that cannot reach the node is a failed save (the draft stays), not a dead page.
+          const unreachable = t('error.unreachable', undefined, 'the node could not be reached');
+          return { ok: false, error: unreachable };
+        }
+      }
+
+      const $ = (id) => document.getElementById(id);
+
+      /** One sentence of this page's own, in the reader's language.
+       *
+       * The words are the node's resource files (`src/i18n/*.json`), which the SDK's browser half —
+       * `/sdk/i18n-client.js`, in the head — holds and reads for the language the page was drawn
+       * in. Every call site also writes the English beside the key, so a page running without that
+       * half (a stand-in DOM in a test, a copy of this HTML saved by hand) still shows a sentence
+       * rather than a key, and the first paint of a sentence this script builds is never blank. */
+      function t(key, params, english) {
+        const said = globalThis.nodeAgentI18n?.t?.(key, params);
+        return typeof said === 'string' ? said : (english ?? key);
+      }
+
+      /** One sentence kept as `{ key, en }` — the shape the status line, the notice bar and the sync
+       *  label hold their words in — said in the reader's language. */
+      function say(words, params) {
+        return t(words.key, params, words.en);
+      }
+
+      // The value of the "All tags" option. The empty string is taken — it means "documents with no
+      // tag" — and a tag can be any text, so the sentinel has to be a value no tag can be. A NUL
+      // cannot come from a field or from a tag the menu offers; refresh() turns it into "no argument".
+      const ANY = '\u0000all';
+      const workspace = $('workspace');
+      let current = null; // the memo the editor is showing; null while it is a memo not saved yet
+      let revision = 0; // the revision the fields are based on: what a save sends back
+      let base = { title: '', text: '', tag: '' }; // what the node holds, as last read or written
+      let local = false; // the fields hold text the node does not have yet
+      let shown = [];
+      let typing = 0;
+      let toasting = 0;
+      let noticed = null; // the notice bar on screen, rebuilt when the language changes
+
+      // ---- live saving ------------------------------------------------------------- //
+      // There is no Save step to forget. An edit is written 500 ms after the typing stops, and the // status beside the character count says which of the three states the document is in: saving, // saved, not saved. What the fields are *based on* is a revision, and every write sends it back // as `expectedRevision` — so a document that moved on in the meantime is a conflict this page // puts in front of the reader (reload, or keep mine), never an overwrite behind their back.
+      //
+      // Two rules hold the rest together: a write is only ever sent from `flush()`, and the text is // kept in this browser before it is sent, not after. A closed tab, a dead bus or a conflict // therefore costs the reader nothing but a decision.
+      const QUIET = 500; // ms of silence that mean "the reader stopped typing"
+      const RETRY = 4000; // ms a failed save waits before trying again on its own
+      const ATTEMPTS = 6; // how many times it does that before leaving it to the reader
+      const DRAFT = `notes.draft.${NODE}`; // one local copy per memo, kept across reloads
+      const OPENED = `notes.open.${NODE}`; // which memo the reader was in when they left
+      // What those two keys were called while this node was still named `memory`. They are only
+      // ever read: a draft or an open memo the old page left behind is still the reader's, and
+      // every write from now on goes to the keys above.
+      const DRAFT_BEFORE = [`memory.draft.${NODE}`, 'memory.draft.memory'];
+      const OPENED_BEFORE = [`memory.open.${NODE}`, 'memory.open.memory'];
+      let holder = null; // the running quiet timer
+      let waiting = null; // the running retry timer
+      let saving = false; // a write is on its way — one at a time, in order
+      let again = false; // something was typed while that write was on its way
+      let tries = 0; // failed attempts in a row
+      let held = 0; // the revision of a copy from elsewhere this editor is holding back
+      let state = 'idle'; // what the status line is saying
+      let savedAt = ''; // when the last write landed, for the status line
+
+      /** localStorage, kept quiet: a browser that refuses it (a private window, a full quota) costs
+       *  this page its drafts, not its working. */
+      function keep(key, value) {
+        try {
+          localStorage.setItem(key, value);
+        } catch {
+          // no drafts here, and the page still saves through the node
+        }
+      }
+
+      function kept(key) {
+        try {
+          return localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      }
+
+      function forget(key) {
+        try {
+          localStorage.removeItem(key);
+        } catch {
+          // nothing to forget
+        }
+      }
+
+      /** What the fields hold, exactly as typed — a draft keeps even the spaces the node's trim
+       *  would take, so nothing the reader wrote is lost while it is still unsaved. */
+      function fields() {
+        return { title: $('title').value, text: $('text').value, tag: $('tag').value };
+      }
+
+      /** What a write would send, trimmed the way `notes.update` trims it — so "the fields are what
+       *  the node holds" is a comparison that can come out true, and a trailing space the node would
+       *  cut is not a document this page saves again every 500 ms. */
+      function staged() {
+        return {
+          title: $('title').value.trim() || t('editor.untitled', undefined, 'Untitled'),
+          text: $('text').value.trim(),
+          tag: $('tag').value.trim(),
+        };
+      }
+
+      function dirty() {
+        const want = staged();
+        if (current === null)
+          return $('title').value.trim() !== '' || want.text !== '' || want.tag !== '';
+        return want.title !== base.title || want.text !== base.text || want.tag !== base.tag;
+      }
+
+      /** Where this tab keeps a memo's unsaved text: one key per memo, so moving to another document
+       *  (or closing the tab) cannot cost the one that was being written. An unsaved memo is "new". */
+      function draftKey(id = current) {
+        return id === null ? `${DRAFT}.new` : `${DRAFT}.${id}`;
+      }
+
+      function keepDraft() {
+        keep(
+          draftKey(),
+          JSON.stringify({ id: current, revision, ...fields(), at: new Date().toISOString() }),
+        );
+      }
+
+      /** The draft as this browser holds it: under the current key, or under one of the keys the
+       *  page used before the node was renamed — a draft written by either page is still read, and
+       *  is moved to the current key on the way, so the save that follows forgets the one copy that
+       *  is left instead of leaving the old one to come back on the next visit. */
+      function keptDraft(id) {
+        const suffix = id === null ? '.new' : `.${id}`;
+        const raw = kept(`${DRAFT}${suffix}`);
+        if (raw !== null) return raw;
+
+        for (const key of DRAFT_BEFORE) {
+          const before = kept(`${key}${suffix}`);
+          if (before === null) continue;
+          keep(`${DRAFT}${suffix}`, before);
+          forget(`${key}${suffix}`);
+          return before;
+        }
+        return null;
+      }
+
+      /** Which memo the reader was in, the same way: the current key first, then the old ones. */
+      function keptOpen() {
+        const value = kept(OPENED);
+        if (value !== null) return value;
+
+        for (const key of OPENED_BEFORE) {
+          const before = kept(key);
+          if (before === null) continue;
+          keep(OPENED, before);
+          forget(key);
+          return before;
+        }
+        return null;
+      }
+
+      function draftOf(id) {
+        const raw = keptDraft(id);
+        if (raw === null) return null;
+        try {
+          const draft = JSON.parse(raw);
+          if (
+            typeof draft !== 'object' ||
+            draft === null ||
+            typeof draft.title !== 'string' ||
+            typeof draft.text !== 'string' ||
+            typeof draft.tag !== 'string'
+          )
+            return null;
+          return draft;
+        } catch {
+          return null;
+        }
+      }
+
+      /** The clock the status line shows, in the same shape the cards use. */
+      function clock() {
+        return new Date().toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+      }
+
+      /** The sentence each state shows: the key in the node's resource, and the English this page
+       *  shows when there is no resource to read. `idle` has nothing to say, so it is null. */
+      const WORDS = {
+        idle: null,
+        editing: { key: 'state.editing', en: 'Unsaved changes…' },
+        saving: { key: 'state.saving', en: 'Saving…' },
+        saved: { key: 'state.saved', en: 'Saved' },
+        failed: { key: 'state.failed', en: 'Not saved — retrying' },
+        held: { key: 'state.held', en: 'Changed elsewhere' },
+        conflict: { key: 'state.conflict', en: 'Changed elsewhere — not saved' },
+        gone: { key: 'state.gone', en: 'Deleted elsewhere — not saved' },
+      };
+
+      /** What the feed is doing, in the same shape: the words beside the sync dot follow the
+       *  reader's language as well, without waiting for the next connect. */
+      const SYNC = {
+        connecting: { key: 'sync.connecting', en: 'Connecting' },
+        live: { key: 'sync.live', en: 'Live sync' },
+        reconnecting: { key: 'sync.reconnecting', en: 'Reconnecting' },
+      };
+      let reaching = 'connecting';
+
+      function drawSync() {
+        $('sync').classList.toggle('live', reaching === 'live');
+        $('syncLabel').textContent = say(SYNC[reaching]);
+      }
+
+      function setState(next) {
+        state = next;
+        $('state').dataset.state = next;
+        const words = WORDS[next];
+        $('stateLabel').textContent =
+          next === 'saved' && savedAt !== ''
+            ? t('state.savedAt', { when: savedAt }, `Saved · ${savedAt}`)
+            : words === null || words === undefined
+              ? ''
+              : say(words);
+        $('save').disabled = next === 'saving';
+      }
+
+      /** The editor's heading: the title over the fields and the sentence under it, kept as the key
+       *  and its English so a change of language redraws them without reopening the memo. */
+      let heading = {
+        title: { key: 'editor.createTitle', en: 'Create a memo' },
+        meta: { key: 'editor.newMeta', en: 'Capture something worth remembering' },
+        params: undefined,
+      };
+
+      function setHeading(title, meta, params) {
+        heading = { title, meta, params };
+        drawHeading();
+      }
+
+      function drawHeading() {
+        $('editorTitle').textContent = say(heading.title);
+        $('editorMeta').textContent = say(heading.meta, heading.params);
+      }
+
+      /** The bar over the editor's foot: the one thing the reader has to settle, and the buttons that
+       *  settle it. Nothing here is decided for them. Its words come in as a key and its English, so
+       *  a change of language can say the same thing again — the bar stays up until it is settled. */
+      function notice(words, buttons) {
+        noticed = () => notice(words, buttons);
+        $('noticeText').textContent = say(words);
+        $('noticeActions').replaceChildren(
+          ...buttons.map(({ words: label, run }) => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'notice-button';
+            button.textContent = say(label);
+            button.addEventListener('click', () => {
+              hideNotice();
+              void run();
+            });
+            return button;
+          }),
+        );
+        $('notice').hidden = false;
+      }
+
+      function hideNotice() {
+        held = 0;
+        noticed = null;
+        $('notice').hidden = true;
+        $('noticeActions').replaceChildren();
+      }
+
+      function toast(text) {
+        const box = $('toast');
+        box.textContent = text;
+        box.classList.add('on');
+        clearTimeout(toasting);
+        toasting = setTimeout(() => box.classList.remove('on'), 2400);
+      }
+
+      // Which panel a phone shows. The media query obeys this attribute and nothing else, and on a
+      // wider screen neither panel is hidden — so the desktop never notices it changed.
+      function showPanel(panel) {
+        workspace.dataset.panel = panel;
+        for (const name of ['library', 'editor']) {
+          const button = $(`tab-${name}`);
+          button.classList.toggle('on', name === panel);
+          button.setAttribute('aria-pressed', String(name === panel));
+        }
+      }
+
+      function when(iso) {
+        const date = new Date(iso);
+        const today = new Date();
+        const sameDay = date.toDateString() === today.toDateString();
+        return new Intl.DateTimeFormat(undefined, {
+          ...(sameDay ? {} : { month: 'short', day: 'numeric' }),
+          hour: 'numeric',
+          minute: '2-digit',
+        }).format(date);
+      }
+
+      // ---- Markdown, drawn in the page -------------------------------------------------------- //
+      // The note is written as Markdown and can be read as Markdown: the switch beside "Note" swaps
+      // the textarea for the same text rendered. Raw HTML stays disabled and markdown-it already
+      // refuses unsafe link protocols, so a note is text the reader typed, never markup this page
+      // runs — the same rule the search hits follow.
+      const markdown =
+        typeof window.markdownit === 'function'
+          ? window.markdownit({ html: false, breaks: true, linkify: true })
+          : null;
+      let previewing = false;
+
+      /** The note as Markdown — the textarea's own text, drawn. A page that came without the bundle * (someone saved the HTML by hand) shows that text unrendered rather than showing nothing. */
+      function renderPreview() {
+        const box = $('preview');
+        const source = $('text').value;
+        if (markdown === null) {
+          box.textContent = source;
+          return;
+        }
+        box.innerHTML = markdown.render(source);
+        for (const link of box.querySelectorAll('a')) {
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+        }
+      }
+
+      /** Preview on, or off: one of the note's two views is on screen at a time, never both. */
+      function showPreview(on) {
+        previewing = on;
+        const toggle = $('previewToggle');
+        toggle.textContent = on
+          ? t('preview.edit', undefined, 'Edit')
+          : t('preview.show', undefined, 'Preview');
+        toggle.setAttribute('aria-pressed', String(on));
+        $('preview').hidden = !on;
+        $('text').hidden = on;
+        if (on) renderPreview();
+      }
+
+      function updateCount() {
+        const count = $('title').value.length + $('text').value.length;
+        $('charCount').textContent = t(
+          'editor.count',
+          { count },
+          `${count} characters`,
+        );
+        // The preview is the same text, drawn, so it follows the fields wherever they are set from —
+        // a keystroke, a memo opened, a draft restored — with no second call site to forget.
+        if (previewing) renderPreview();
+      }
+
+      /** 812 B, 1.2 KB — the node's own byte count, shown the way a person reads it. */
+      function size(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+      }
+
+      /** The card's one line: `work · #7 · 1.2 KB · 12 lines`. A summary carries no body to
+       *  preview — what is worth showing is where it is filed, how big it is and how long — and the
+       *  text itself is one tap away, which is what `get` is for. */
+      function meta(entry) {
+        const where = entry.tag === '' ? t('tag.none', undefined, 'No tag') : entry.tag;
+        const lines =
+          entry.lines === 1
+            ? t('list.line', { count: entry.lines }, '1 line')
+            : t('list.lines', { count: entry.lines }, `${entry.lines} lines`);
+        return `${where} · #${entry.id} · ${size(entry.bytes)} · ${lines}`;
+      }
+
+      /** One place a query appears: the line it is on, and the document's own text around it with
+       *  the match marked. Everything goes in as text — no HTML from the store is ever parsed. */
+      function context(match) {
+        const line = document.createElement('p');
+        line.className = 'hit';
+        const number = document.createElement('span');
+        number.className = 'hit-line';
+        number.textContent = `${match.line}:`;
+        const mark = document.createElement('mark');
+        mark.textContent = match.match;
+        line.append(
+          number,
+          document.createTextNode(match.before),
+          mark,
+          document.createTextNode(match.after),
+        );
+        return line;
+      }
+
+      function card(entry) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = entry.id === current ? 'memo on' : 'memo';
+        item.setAttribute('aria-label', t('list.open', { title: entry.title }, `Open ${entry.title}`));
+
+        const title = document.createElement('b');
+        title.textContent = entry.title;
+        const at = document.createElement('time');
+        at.dateTime = entry.at;
+        at.title = when(entry.at);
+        at.textContent = meta(entry);
+        item.append(title, at);
+
+        // A search answer carries its places: the same card, with what was found under it. A tap
+        // opens the document on the line the hit is on, so the search said where and the editor
+        // shows it — no scrolling to guess the spot.
+        const places = entry.matches ?? [];
+        for (const match of places) item.append(context(match));
+        if (entry.matchCount > places.length) {
+          const more = document.createElement('span');
+          more.className = 'hit-more';
+          more.textContent = t(
+            'list.morePlaces',
+            { shown: places.length, total: entry.matchCount },
+            `showing ${places.length} of ${entry.matchCount} places`,
+          );
+          item.append(more);
+        }
+        const line = places[0]?.line;
+        item.addEventListener('click', () => void open(entry.id, line));
+        return item;
+      }
+
+      /** What the answer had to leave out, said out loud instead of dropped in silence. */
+      function noteLine(text) {
+        const note = document.createElement('p');
+        note.className = 'note';
+        note.textContent = text;
+        return note;
+      }
+
+      function emptyState(searching) {
+        const empty = document.createElement('div');
+        empty.className = 'empty';
+        const content = document.createElement('div');
+        content.innerHTML = `
+          <div class="empty-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+              ${searching ? '<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>' : '<path d="M7 4.5h8.5L19 8v11.5H7z"/><path d="M15 4.5V8h4"/>'}
+            </svg>
+          </div>
+          <strong>${
+            searching
+              ? t('empty.searchTitle', undefined, 'No results found')
+              : t('empty.libraryTitle', undefined, 'Your memo library is empty')
+          }</strong>
+          <span>${
+            searching
+              ? t('empty.searchText', undefined, 'Try another word or clear your search.')
+              : t(
+                  'empty.libraryText',
+                  undefined,
+                  'Create your first memo to keep useful context close.',
+                )
+          }</span>`;
+        empty.append(content);
+        return empty;
+      }
+
+      function render(entries, note) {
+        $('count').textContent = entries.length;
+        const searching = $('query').value.trim() !== '';
+        const parts = entries.map(card);
+        if (note !== '' && entries.length > 0) parts.push(noteLine(note));
+        $('list').replaceChildren(...(parts.length ? parts : [emptyState(searching)]));
+      }
+
+      let lastList = '';
+      let lastNote = '';
+      function paint(entries, note = '') {
+        shown = entries;
+        lastNote = note;
+        const key = JSON.stringify([entries, note]);
+        if (key === lastList) return;
+        lastList = key;
+        render(entries, note);
+      }
+
+      async function refresh() {
+        const query = $('query').value.trim();
+        $('clear').classList.toggle('on', query !== '');
+        const chosen = $('tagFilter').value;
+        const tag = chosen === ANY ? undefined : chosen;
+        const reply =
+          query === ''
+            ? await call(`${NODE}.list`, { tag })
+            : await call(`${NODE}.search`, { query, tag });
+        if (!reply.ok) return toast(reply.error);
+        if (query === '') paint(reply.value);
+        else {
+          const found = reply.value;
+          paint(
+            found.hits,
+            found.more
+              ? t(
+                  'list.moreDocs',
+                  { shown: found.docs, total: found.totalDocs },
+                  `showing ${found.docs} of ${found.totalDocs} documents`,
+                )
+              : '',
+          );
+        }
+        void loadTags(); // the tags can change with every write, so they are asked again here
+      }
+
+      /** One `<option>`, for the two places this page offers tag names. */
+      function option(value, label) {
+        const item = document.createElement('option');
+        item.value = value;
+        item.textContent = label;
+        return item;
+      }
+
+      /** The tags as the node has them: `{tag, count}[]`, counted from the documents. Nothing is
+       *  stored for a tag — it exists because a document carries it — so the only way to know them
+       *  is to ask. Both the select beside the search box and the suggestion list under the editor's
+       *  tag field come from this one answer; a tag the user was filtering on that no longer exists
+       *  falls back to All tags instead of showing nothing. */
+      async function loadTags() {
+        const reply = await call(`${NODE}.tags`, {});
+        if (!reply.ok) return;
+
+        const named = reply.value;
+        const chosen = $('tagFilter').value;
+
+        // `''` is a real scope here ("documents with no tag"), so "All tags" needs a value of its
+        // own: ANY is a sentinel no tag can equal, and refresh() turns it into "no tag argument".
+        $('tagFilter').replaceChildren(
+          option(ANY, t('tag.all', undefined, 'All tags')),
+          option('', t('tag.none', undefined, 'No tag')),
+          ...named
+            .filter((entry) => entry.tag !== '')
+            .map((entry) =>
+              option(
+                entry.tag,
+                t('tag.count', { tag: entry.tag, count: entry.count }, `${entry.tag} (${entry.count})`),
+              ),
+            ),
+        );
+        // A tag the user was filtering on that no longer exists falls back to **All tags** — the
+        // empty string is a real scope here ("documents with no tag"), so it would be the wrong
+        // place to land: the library would jump from an emptied tag to the untagged documents.
+        const kept = [ANY, '', ...named.map((entry) => entry.tag)].includes(chosen) ? chosen : ANY;
+        $('tagFilter').value = kept;
+        // The scope moved on its own (the tag the library was showing has no documents left), so
+        // the list has to follow it: a fallback to All tags that leaves the old, empty list on
+        // screen reads as "there is nothing here". One extra refresh, and the value is settled.
+        if (kept !== chosen) void refresh();
+        $('tagNames').replaceChildren(
+          ...[...new Set([...named.map((entry) => entry.tag), ...shown.map((entry) => entry.tag)])]
+            .filter((tag) => tag !== '')
+            .sort()
+            .map((tag) => option(tag, tag)),
+        );
+      }
+
+      /** One document as the node has it. `null` when it is not there any more — which the caller
+       *  says out loud, because a document that vanished is not a document that failed to load. */
+      async function fetchMemo(id) {
+        const reply = await call(`${NODE}.get`, { id });
+        if (!reply.ok) {
+          toast(reply.error);
+          return null;
+        }
+        return reply.value;
+      }
+
+      /** Put one document into the editor. A draft this tab wrote and never got saved wins over the
+       *  stored copy: what the reader typed is not something a reload may throw away, and the next
+       *  save says so to the node as a conflict rather than quietly losing either side. */
+      function apply(memo) {
+        const draft = draftOf(memo.id);
+        // Compared the way a write would send it: a draft that only differs in the whitespace the
+        // node trims is the same document, and saying "unsaved" about it would be a lie told every
+        // time the page is opened.
+        const restored =
+          draft !== null &&
+          ((draft.title.trim() || t('editor.untitled', undefined, 'Untitled')) !== memo.title ||
+            draft.text.trim() !== memo.text ||
+            draft.tag.trim() !== memo.tag);
+        const caret = $('text').selectionStart;
+
+        current = memo.id;
+        // A restored draft is based on the revision *it* was written against, not on the one the
+        // document is at now: if the document moved on in the meantime, the save that follows is a
+        // conflict the reader settles, instead of their old text landing on top of the new one.
+        revision = restored && typeof draft.revision === 'number' ? draft.revision : memo.revision;
+        base = { title: memo.title, text: memo.text, tag: memo.tag };
+        $('title').value = restored ? draft.title : memo.title;
+        $('tag').value = restored ? draft.tag : memo.tag;
+        $('text').value = restored ? draft.text : memo.text;
+        if (!restored) forget(draftKey());
+
+        local = restored;
+        setHeading(
+          { key: 'editor.editTitle', en: 'Edit memo' },
+          {
+            key: 'editor.updated',
+            en: `Last updated ${when(memo.at)} · Memo #${memo.id}`,
+          },
+          { when: when(memo.at), id: memo.id },
+        );
+        $('del').hidden = false;
+        keep(OPENED, String(memo.id));
+        updateCount();
+        setState(restored ? 'editing' : 'saved');
+
+        // The text may be the same one this tab was already showing: the caret stays where the
+        // reader left it instead of jumping to the top of the document.
+        if (!restored && typeof caret === 'number') {
+          const end = $('text').value.length;
+          $('text').setSelectionRange(Math.min(caret, end), Math.min(caret, end));
+        }
+        // Unfinished work is put away by itself: a draft that comes back is saved like anything
+        // else that is on screen and not in the node — it just needed the tab to be open again.
+        if (restored) schedule();
+        return restored;
+      }
+
+      /** The node's copy of one document, made the editor's copy. `null` when it is gone. */
+      async function load(id) {
+        const memo = await fetchMemo(id);
+        if (memo === null) return null;
+        apply(memo);
+        render(shown, lastNote);
+        return memo;
+      }
+
+      async function open(id, line) {
+        if ((await load(id)) === null) return;
+
+        showPanel('editor'); // a tap in the list has to land on the memo that was tapped
+        if (line === undefined) {
+          $('title').focus();
+        } else {
+          // A hit says which line it is on; put the caret there so the editor opens on the text
+          // that was searched for, not at the top of the memo.
+          const start = $('text')
+            .value.split('\n')
+            .slice(0, line - 1)
+            .reduce((sum, part) => sum + part.length + 1, 0);
+          $('text').setSelectionRange(start, start);
+          $('text').focus();
+        }
+      }
+
+      /** A memo that does not exist yet. `restore` brings back a draft of a new memo this tab never
+       *  got saved — what "leave and come back" has to mean if it is to mean anything. */
+      function compose(restore = true) {
+        const draft = restore ? draftOf(null) : null;
+        if (!restore) forget(draftKey(null));
+
+        current = null;
+        revision = 0;
+        base = { title: '', text: '', tag: '' };
+        $('title').value = draft === null ? '' : draft.title;
+        // A new memo lands where the library is looking: "new memo" inside work means in work,
+        // and a library showing every tag files an untagged memo.
+        const chosen = $('tagFilter').value;
+        $('tag').value = draft === null ? (chosen === ANY ? '' : chosen) : draft.tag;
+        $('text').value = draft === null ? '' : draft.text;
+        local = draft !== null;
+        setHeading(
+          { key: 'editor.createTitle', en: 'Create a memo' },
+          { key: 'editor.newMeta', en: 'Capture something worth remembering' },
+        );
+        $('del').hidden = true;
+        keep(OPENED, 'new');
+        updateCount();
+        setState(draft === null ? 'idle' : 'editing');
+        render(shown, lastNote);
+        showPanel('editor');
+        $('title').focus();
+        if (draft !== null) schedule(); // a new memo's unsaved text lands the same way
+      }
+
+      /** Reset: throw away what has not been saved and go back to the node's copy. The one place a
+       *  draft is dropped on purpose, which is why nobody else drops one. */
+      async function cancel() {
+        clearTimeout(holder);
+        holder = null;
+        if (current === null) {
+          compose(false);
+          return;
+        }
+
+        forget(draftKey());
+        hideNotice();
+        await load(current);
+      }
+
+      /** Schedule a write for after the typing stops — the whole of the "no button" part. */
+      function schedule(ms = QUIET) {
+        clearTimeout(holder);
+        holder = setTimeout(() => {
+          holder = null;
+          void flush();
+        }, ms);
+      }
+
+      /** A keystroke. The draft goes to this browser on every one of them — that is what makes a
+       *  closed tab or a dead bus cost nothing — while the write itself waits for a pause. */
+      function edited() {
+        local = true;
+        updateCount();
+        keepDraft();
+        if (state === 'idle' || state === 'saved') setState(dirty() ? 'editing' : 'idle');
+        if (dirty()) schedule();
+        else {
+          clearTimeout(holder);
+          holder = null;
+        }
+      }
+
+      /** Save what the fields hold, if anything changed. The quiet timer, the Save button, Ctrl+S, a
+       *  reconnect and the retry timer all come through here, so all of them behave the same way. */
+      async function flush() {
+        clearTimeout(holder);
+        holder = null;
+        if (saving) {
+          again = true;
+          return;
+        }
+        if (!dirty()) {
+          forget(draftKey());
+          if (state === 'editing') setState('saved');
+          return;
+        }
+
+        const creating = current === null;
+        const want = staged();
+        const from = revision;
+        const key = draftKey();
+        saving = true;
+        setState('saving');
+
+        let reply;
+        try {
+          reply = creating
+            ? await call(`${NODE}.add`, want)
+            : await call(`${NODE}.update`, { id: current, ...want, expectedRevision: from });
+        } catch {
+          // The bus or the network is gone. The draft is already on disk, so nothing is lost and
+          // the status says exactly that instead of pretending the text was saved.
+          saving = false;
+          return failed('the node could not be reached');
+        }
+        saving = false;
+
+        if (!reply.ok) return refused(reply.error);
+
+        const made = /id=(\d+) rev=(\d+)/.exec(String(reply.value));
+        const written = /rev=(\d+)/.exec(String(reply.value));
+        if (creating) {
+          if (made === null)
+            return failed(
+              t(
+                'error.noId',
+                undefined,
+                'the answer did not say which memo it made',
+              ),
+            );
+          current = Number(made[1]);
+          revision = Number(made[2]);
+          setHeading({ key: 'editor.editTitle', en: 'Edit memo' }, heading.meta, heading.params);
+          $('del').hidden = false;
+        } else if (written !== null) revision = Number(written[1]);
+
+        base = want;
+        local = false;
+        tries = 0;
+        savedAt = clock();
+        forget(key);
+        // The heading follows the document: it is saved, so it says so and is not a draft.
+        setHeading(
+          { key: 'editor.editTitle', en: 'Edit memo' },
+          { key: 'editor.live', en: `Live · Memo #${current}` },
+          { id: current },
+        );
+        keep(OPENED, String(current));
+        setState('saved');
+        if (held !== 0 && held <= revision) hideNotice();
+        void refresh();
+
+        // Typed while this write was on its way: the next pause saves that too.
+        if (again) {
+          again = false;
+          if (dirty()) schedule();
+        }
+      }
+
+      /** A save that did not land. The text stays in the fields, the draft stays on disk, and the
+       *  page says so; a few attempts happen on their own, after that the Save button is the way. */
+      function failed(reason) {
+        local = true;
+        tries += 1;
+        setState('failed');
+        toast(t('toast.notSaved', { reason }, `Not saved: ${reason}`));
+        clearTimeout(waiting);
+        waiting = null;
+        if (tries <= ATTEMPTS) {
+          waiting = setTimeout(() => {
+            waiting = null;
+            void flush();
+          }, RETRY);
+        }
+      }
+
+      /** The node answered with a refusal. Two of them are not "try again": a conflict, which the
+       *  reader has to settle, and a document that is gone. Everything else is a failed save. */
+      function refused(error) {
+        const text = String(error ?? '');
+        if (text.startsWith('conflict:')) {
+          const found = /found (\d+)/.exec(text);
+          return conflict(found === null ? null : Number(found[1]));
+        }
+        if (text.startsWith('no memo with id=')) return gone();
+        return failed(text);
+      }
+
+      /** Two writers, one document. Nothing is overwritten and nothing is thrown away: the reader's
+       *  text stays on screen, and the two ways out are offered — take the node's copy, or send ours
+       *  over it on purpose. `found` is the revision the node reported. */
+      function conflict(found) {
+        local = true;
+        setState('conflict');
+        notice(
+          {
+            key: 'notice.conflict',
+            en: 'This memo was changed elsewhere — your text is still here, unsaved.',
+          },
+          [
+            { words: { key: 'button.reload', en: 'Reload' }, run: () => reload() },
+            { words: { key: 'button.keepMine', en: 'Keep mine' }, run: () => overwrite(found) },
+          ],
+        );
+        toast(t('toast.conflict', undefined, 'Changed elsewhere — not saved'));
+      }
+
+      /** Take the node's copy: fields, revision and status all follow it, and the draft goes. */
+      async function reload() {
+        if (current === null) return compose(false);
+        forget(draftKey());
+        hideNotice();
+        await load(current);
+      }
+
+      /** Send ours over theirs, naming the revision the conflict reported: the overwrite is this
+       *  reader's decision, taken by pressing this button — never by a timer. */
+      async function overwrite(found) {
+        if (found === null) {
+          const latest = current === null ? null : await fetchMemo(current);
+          if (latest === null) return gone();
+          found = latest.revision;
+        }
+        revision = found;
+        tries = 0;
+        await flush();
+      }
+
+      /** The memo was deleted elsewhere. The reader's text is still here, so the offer is: let it go,
+       *  or make it a new memo. */
+      function gone() {
+        local = true;
+        setState('gone');
+        notice(
+          {
+            key: 'notice.gone',
+            en: 'This memo was deleted elsewhere — your text is still here.',
+          },
+          [
+            { words: { key: 'button.discard', en: 'Discard' }, run: () => compose(false) },
+            { words: { key: 'button.saveAsNew', en: 'Save as new' }, run: () => saveAsNew() },
+          ],
+        );
+        toast(t('toast.gone', undefined, 'Deleted elsewhere — not saved'));
+      }
+
+      async function saveAsNew() {
+        const old = draftKey();
+        current = null;
+        revision = 0;
+        base = { title: '', text: '', tag: '' };
+        if (old !== draftKey()) forget(old);
+        keep(OPENED, 'new');
+        keepDraft();
+        await flush();
+      }
+
+      /** The other half of live: a document that moves on without this tab. The event carries the
+       *  revision of every document, so the only question is whether the copy on screen is behind —
+       *  and while the reader is mid-sentence the answer is "hold it", not "replace it". */
+      async function follow(entries) {
+        if (current === null || !Array.isArray(entries)) return;
+        const now = entries.find((entry) => entry.id === current);
+        if (now === undefined) {
+          if (state !== 'gone') gone();
+          return;
+        }
+        if (now.revision <= revision || now.revision <= held) return;
+
+        if (dirty() || saving) {
+          held = now.revision;
+          setState('held');
+          notice(
+            {
+              key: 'notice.held',
+              en: 'This memo was updated elsewhere — your unsaved text is kept.',
+            },
+            [
+              { words: { key: 'button.reload', en: 'Reload' }, run: () => reload() },
+              {
+                words: { key: 'button.keepMine', en: 'Keep mine' },
+                run: () => overwrite(now.revision),
+              },
+            ],
+          );
+          return;
+        }
+
+        await load(current);
+      }
+
+      /** Catch up on a document whose events this tab may have missed — a reconnect, a page woken
+       *  from the background. `no revision to catch up on` costs a `get`. */
+      async function resync() {
+        if (current === null) return;
+        const memo = await fetchMemo(current);
+        if (memo === null) return gone();
+        if (memo.revision > revision) await follow([memo]);
+      }
+
+      async function remove() {
+        if (
+          current === null ||
+          !confirm(t('confirm.delete', undefined, 'Delete this memo? This cannot be undone.'))
+        )
+          return;
+        clearTimeout(holder);
+        holder = null;
+        const reply = await call(`${NODE}.delete`, { id: current });
+        if (!reply.ok) return toast(reply.error);
+        forget(draftKey());
+        toast(t('toast.deleted', undefined, 'Memo deleted'));
+        compose(false);
+        await refresh();
+        showPanel('library');
+      }
+
+      $('add').addEventListener('click', () => compose());
+      $('newMemo').addEventListener('click', () => compose());
+      $('back').addEventListener('click', () => {
+        showPanel('library');
+        // Focus follows the eye: back to the memo that was open, or to New when the editor was a
+        // draft. A keyboard reader must not be left on a button that is now display:none.
+        const row = typeof document.querySelector === 'function' ? document.querySelector('.memo.on') : null;
+        const target = row ?? $('newMemo');
+        if (target !== null && typeof target.focus === 'function') target.focus();
+      });
+      $('tab-library').addEventListener('click', () => showPanel('library'));
+      $('tab-editor').addEventListener('click', () => showPanel('editor'));
+      $('save').addEventListener('click', () => void flush());
+      $('del').addEventListener('click', () => void remove());
+      $('cancel').addEventListener('click', () => void cancel());
+      $('previewToggle').addEventListener('click', () => showPreview(!previewing));
+      $('title').addEventListener('input', edited);
+      $('text').addEventListener('input', edited);
+      $('tag').addEventListener('input', edited);
+      $('query').addEventListener('input', () => {
+        $('clear').classList.toggle('on', $('query').value !== '');
+        clearTimeout(typing);
+        typing = setTimeout(refresh, 150);
+      });
+      $('clear').addEventListener('click', () => {
+        $('query').value = '';
+        $('clear').classList.remove('on');
+        void refresh();
+        $('query').focus();
+      });
+      $('tagFilter').addEventListener('change', () => void refresh());
+      document.addEventListener('keydown', (event) => {
+        // Ctrl+S still works — it just means "now" instead of "at the next pause".
+        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+          event.preventDefault();
+          void flush();
+        }
+      });
+      // The text is already on disk by the time the tab goes away; this is the last chance to write
+      // a keystroke that arrived after the previous one, and costs nothing when there was none.
+      window.addEventListener('pagehide', () => {
+        if (local) keepDraft();
+      });
+      // A browser that comes back on its own: whatever failed to save while it was away goes now.
+      window.addEventListener('online', () => {
+        tries = 0;
+        void flush();
+      });
+
+      const feed = window.NodeAgentEvents.connect('/events?topic=' + encodeURIComponent(NODE));
+      feed.onmessage = (event) => {
+        void refresh();
+        let data = null;
+        try {
+          data = JSON.parse(event.data);
+        } catch {
+          data = null;
+        }
+        // The event is a doorbell with the summaries on it: the list is asked again either way, but
+        // the revisions it carries say at once whether the open memo moved on.
+        void follow(data === null ? undefined : data.value);
+      };
+      feed.onopen = () => {
+        reaching = 'live';
+        drawSync();
+        void refresh();
+        // Back from a drop: save what could not be saved, and catch up on the open memo in case its
+        // events went by while this page was not listening.
+        tries = 0;
+        void flush();
+        void resync();
+      };
+      feed.onerror = () => {
+        reaching = 'reconnecting';
+        drawSync();
+      };
+
+      // The select is empty until loadTags() fills it, and an empty value means "No tag" — a real
+      // scope, not "no filter". So the page starts on All tags on purpose, before the first refresh.
+      $('tagFilter').replaceChildren(option(ANY, t('tag.all', undefined, 'All tags')));
+      updateCount();
+      setState('idle');
+      drawSync();
+      void refresh();
+
+      /** Everything this page says in its own words, said again: the character count, the status line,
+       *  the heading over the fields, the chip beside the search box, the bar above the foot and the
+       *  list. The SDK's browser half redraws the words the markup marks; these are the ones this
+       *  script builds, so a new language has to reach them here. */
+      function relabel() {
+        updateCount();
+        setState(state);
+        drawHeading();
+        drawSync();
+        if (noticed !== null && $('notice').hidden === false) noticed();
+        render(shown, lastNote);
+      }
+
+      // A change of language, announced by the SDK's browser half once it has redrawn the words the
+      // markup marks. The list is the node's own answer, so it is asked again in this language.
+      document.addEventListener('node-agent:language', () => {
+        relabel();
+        void refresh();
+      });
+
+      // That module arrives after this script, and until it is there `t(…)` says the English written
+      // beside each key: the page says everything it has once more, now in the reader's language.
+      if (globalThis.nodeAgentI18n === undefined)
+        document.addEventListener('DOMContentLoaded', relabel, { once: true });
+
+      // What the page was doing when it was last left: the memo, and any text that never got saved.
+      // Coming back to unfinished work is the point of keeping it — the page restores it and says
+      // "unsaved changes" rather than opening on a copy that quietly disagrees with the node.
+      const was = keptOpen();
+      if (was === 'new') compose();
+      else if (was !== null && /^\d+$/.test(was)) {
+        void load(Number(was)).then((memo) => {
+          if (local) showPanel('editor'); // unfinished text is what the reader came back for
+          if (memo === null) forget(OPENED);
+        });
+      }
+    </script>
+  </body>
+</html>

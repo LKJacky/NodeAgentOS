@@ -1,0 +1,18 @@
+# The build context of deploy/Dockerfile is the repository root; keep it to sources.
+.git
+.github
+.vscode
+.devcontainer
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+runtime-home
+# Task worktrees live under worktrees/ and are whole checkouts: without this the context carries a
+# second copy of the repository (plus its node_modules) into every build.
+worktrees
+docs
+*.md
+**/.env
+**/.env.*
+!**/.env.example

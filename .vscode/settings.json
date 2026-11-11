@@ -1,0 +1,18 @@
+{
+  "typescript.tsdk": "node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+  // The devcontainer links the nvm-selected node here. The test/debug launcher does not always
+  // inherit the shell PATH, so name the stable link instead of relying on `node` being resolvable.
+  "debug.javascript.defaultRuntimeExecutable": {
+    "pwa-node": "/usr/local/bin/node"
+  },
+  "search.exclude": {
+    "**/node_modules": true,
+    "**/dist": true,
+    "**/*.tsbuildinfo": true
+  },
+  "files.exclude": {
+    "**/*.tsbuildinfo": true
+  },
+  "editor.formatOnSave": false
+}

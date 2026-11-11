@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- Lines in indigo, the tick in green: a list with something already done on it. -->
+  <path stroke="#4f46e5" d="M4 6.5h8.5M4 12h8.5M4 17.5h5.5" />
+  <path stroke="#22c55e" d="m15 15.5 2.2 2.2 4-4.2" />
+</svg>

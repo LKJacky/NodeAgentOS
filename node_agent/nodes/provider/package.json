@@ -1,0 +1,181 @@
+{
+  "name": "node-agent-provider",
+  "version": "0.1.4",
+  "type": "module",
+  "description": "Independent named LLM provider node (TypeScript)",
+  "publisher": "node-agent",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node-agent-sdk .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
+    "@node-agent/sdk": "^0.1.1",
+    "openai": "^7.45.0"
+  },
+  "node": {
+    "id": "provider",
+    "i18n": "dist/i18n",
+    "desc": "Named LLM serving: OpenAI, Anthropic and Responses behind one row",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "caps": {
+      "providers": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "list",
+              "save",
+              "delete"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "config": {
+            "type": "object"
+          }
+        },
+        "description": "list, save, or delete named LLM providers",
+        "callers": [
+          "agent"
+        ],
+        "allow_edit_permission": false
+      },
+      "chat": {
+        "type": "object",
+        "required": [
+          "name",
+          "messages"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array"
+          },
+          "tools": {
+            "type": "array"
+          },
+          "max_completion_tokens": {
+            "type": "integer"
+          },
+          "previous_response_id": {
+            "type": "string"
+          }
+        },
+        "description": "serve one LLM chat request through a named provider",
+        "callers": [
+          "agent"
+        ],
+        "allow_edit_permission": false
+      },
+      "start_stream": {
+        "type": "object",
+        "required": [
+          "name",
+          "messages"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "messages": {
+            "type": "array"
+          },
+          "tools": {
+            "type": "array"
+          },
+          "max_completion_tokens": {
+            "type": "integer"
+          },
+          "previous_response_id": {
+            "type": "string"
+          }
+        },
+        "description": "ask for a stream id: the model is not dialled until stream_ready",
+        "callers": [
+          "agent"
+        ],
+        "allow_edit_permission": false
+      },
+      "stream_ready": {
+        "type": "object",
+        "required": [
+          "stream_id"
+        ],
+        "properties": {
+          "stream_id": {
+            "type": "string"
+          }
+        },
+        "description": "start a stream whose events the caller is already subscribed to",
+        "callers": [
+          "agent"
+        ],
+        "allow_edit_permission": false
+      },
+      "cancel_stream": {
+        "type": "object",
+        "required": [
+          "stream_id"
+        ],
+        "properties": {
+          "stream_id": {
+            "type": "string"
+          }
+        },
+        "description": "cancel one provider stream by the id it was given",
+        "callers": [
+          "agent"
+        ],
+        "allow_edit_permission": false
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "configure named LLM providers",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- A plug in green, its lead in amber: which model the agent is wired to. -->\n  <path stroke=\"#16a34a\" d=\"M9 3.5v5M15 3.5v5\" />\n  <path stroke=\"#16a34a\" d=\"M6.5 8.5h11V11a5.5 5.5 0 0 1-11 0z\" />\n  <path stroke=\"#f59e0b\" d=\"M12 16.5v4\" />\n</svg>\n",
+        "callers": [],
+        "allow_edit_permission": false,
+        "expose": false
+      }
+    }
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/provider"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}

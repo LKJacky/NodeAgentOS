@@ -1,0 +1,146 @@
+{
+  "title": "Notes · node_agent",
+  "tabs": {
+    "label": "which panel is on screen",
+    "memos": "Memos",
+    "editor": "Editor"
+  },
+  "search": {
+    "placeholder": "Search your memos…",
+    "label": "Search memos",
+    "clear": "Clear search",
+    "tagFilter": "Only this tag"
+  },
+  "tag": {
+    "all": "All tags",
+    "none": "No tag",
+    "count": "{tag} ({count})"
+  },
+  "button": {
+    "new": "+ New",
+    "newMemo": "New memo",
+    "reset": "Reset",
+    "delete": "Delete",
+    "save": "Save now",
+    "reload": "Reload",
+    "keepMine": "Keep mine",
+    "discard": "Discard",
+    "saveAsNew": "Save as new"
+  },
+  "sync": {
+    "label": "Live updates",
+    "connecting": "Connecting",
+    "live": "Live sync",
+    "reconnecting": "Reconnecting"
+  },
+  "editor": {
+    "label": "Memo editor",
+    "createTitle": "Create a memo",
+    "editTitle": "Edit memo",
+    "newMeta": "Capture something worth remembering",
+    "updated": "Last updated {when} · Memo #{id}",
+    "live": "Live · Memo #{id}",
+    "untitled": "Untitled",
+    "count": "{count} characters",
+    "countEmpty": "0 characters"
+  },
+  "field": {
+    "title": "Title",
+    "titlePlaceholder": "Give this memo a name",
+    "tag": "Tag",
+    "tagPlaceholder": "e.g. work",
+    "note": "Note",
+    "notePlaceholder": "Write down an idea, preference, decision, or anything useful…"
+  },
+  "preview": {
+    "show": "Preview",
+    "edit": "Edit",
+    "hint": "Show this note as Markdown"
+  },
+  "back": {
+    "text": "← Memos",
+    "label": "Back to memos"
+  },
+  "library": {
+    "label": "Memo library"
+  },
+  "state": {
+    "editing": "Unsaved changes…",
+    "saving": "Saving…",
+    "saved": "Saved",
+    "savedAt": "Saved · {when}",
+    "failed": "Not saved — retrying",
+    "held": "Changed elsewhere",
+    "conflict": "Changed elsewhere — not saved",
+    "gone": "Deleted elsewhere — not saved"
+  },
+  "list": {
+    "open": "Open {title}",
+    "line": "{count} line",
+    "lines": "{count} lines",
+    "morePlaces": "showing {shown} of {total} places",
+    "moreDocs": "showing {shown} of {total} documents"
+  },
+  "empty": {
+    "searchTitle": "No results found",
+    "searchText": "Try another word or clear your search.",
+    "libraryTitle": "Your memo library is empty",
+    "libraryText": "Create your first memo to keep useful context close."
+  },
+  "toast": {
+    "notSaved": "Not saved: {reason}",
+    "deleted": "Memo deleted",
+    "conflict": "Changed elsewhere — not saved",
+    "gone": "Deleted elsewhere — not saved"
+  },
+  "notice": {
+    "conflict": "This memo was changed elsewhere — your text is still here, unsaved.",
+    "held": "This memo was updated elsewhere — your unsaved text is kept.",
+    "gone": "This memo was deleted elsewhere — your text is still here."
+  },
+  "confirm": {
+    "delete": "Delete this memo? This cannot be undone."
+  },
+  "error": {
+    "unreachable": "the node could not be reached",
+    "noId": "the answer did not say which memo it made"
+  },
+  "label": {
+    "node": "Notes",
+    "caps": {
+      "list": "List",
+      "get": "Get",
+      "read": "Read",
+      "search": "Search",
+      "tags": "Tags",
+      "add": "Add",
+      "update": "Update",
+      "edit": "Edit text",
+      "append": "Append",
+      "delete": "Delete",
+      "ui": "Notes page"
+    },
+    "args": {
+      "list": { "tag": "Tag" },
+      "get": { "id": "Note id" },
+      "read": { "id": "Note id", "offset": "Offset", "limit": "Limit" },
+      "search": { "query": "Query", "tag": "Tag" },
+      "add": { "title": "Title", "text": "Text", "tag": "Tag" },
+      "update": {
+        "id": "Note id",
+        "title": "Title",
+        "text": "Text",
+        "tag": "Tag",
+        "expectedRevision": "Expected revision"
+      },
+      "edit": {
+        "id": "Note id",
+        "old": "Old text",
+        "new": "New text",
+        "replaceAll": "Replace all"
+      },
+      "append": { "id": "Note id", "text": "Text" },
+      "delete": { "id": "Note id" }
+    }
+  }
+}

@@ -1,0 +1,3994 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script src="/webui/events-client.js"></script>
+    <script src="/webui/events-broker.js"></script>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- Where this node's words go: `paintPage` fills the slot with the resource the markers below
+         are read from, and the browser half reads it back out of the page. -->
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <link id="favicon" rel="icon" type="image/svg+xml" />
+    <title data-text-key="title">Agent · node_agent</title>
+    <script>
+      // Inside the webui shell this page is an iframe, and then it has to fill the FRAME it was given
+      // rather than the window: the height chain below reads this class. It is set before the style is
+      // parsed, so nothing is ever laid out at the wrong height and no strip of blank flashes under the
+      // composer. `self !== top` is true for a frame and safe to ask anywhere (it never throws).
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f5f7fb;
+        --surface: #ffffff;
+        --surface-soft: #f8fafc;
+        --text: #172033;
+        --muted: #667085;
+        --line: #e2e8f0;
+        --accent: #5b5bd6;
+        --accent-fill: #5b5bd6;
+        --accent-dark: #4747ba;
+        --accent-soft: #eeeeff;
+        --danger: #dc2626;
+        --shadow: 0 8px 30px rgb(15 23 42 / 7%);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color-scheme: dark;
+          --bg: #0d111b;
+          --surface: #151b28;
+          --surface-soft: #101622;
+          --text: #e6eaf2;
+          --muted: #929bad;
+          --line: #293246;
+          --accent: #8b8cf5;
+          --accent-fill: #4b4bc4;
+          --accent-dark: #a5a6ff;
+          --accent-soft: #29294f;
+          --danger: #f87171;
+          --shadow: 0 8px 30px rgb(0 0 0 / 20%);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      /* What the page fills: the viewport when it is the top document, the frame box inside the webui
+         shell. Both are the initial containing block, which is exactly what 100% means here. */
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font:
+          14px/1.6 Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      #provider-switch {
+        width: auto;
+        min-width: 104px;
+        max-width: min(180px, 54vw);
+        height: 26px;
+        padding: 0 25px 0 8px;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        outline: 0;
+        background: var(--surface-2);
+        color: var(--text);
+        font: inherit;
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #provider-switch:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      #provider-switch:focus-visible {
+        border-color: var(--accent);
+      }
+      .usage-summary {
+        display: flex;
+        /* `nowrap` on purpose: a wrapped row is what dropped the switch to a line of its own. Down
+           here the switch keeps its place and the group of counts, which may wrap inside itself,
+           pays for the width. */
+        flex-wrap: nowrap;
+        align-items: center;
+        gap: 2px 10px;
+        padding: 5px clamp(14px, 3vw, 26px) 7px;
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.5;
+      }
+      .usage-summary strong {
+        color: var(--text);
+        font-size: 11px;
+        font-variant-numeric: tabular-nums;
+      }
+      .usage-summary span {
+        white-space: nowrap;
+      }
+      /* The counts are one group and the switch is the other: the numbers on the left, `| provider` at
+         the row's right end, a hairline where the numbers stop. The group is what gives way, never the
+         switch — on a narrow row the numbers wrap among themselves, so the switch stays on the line and
+         in its corner instead of dropping to one of its own. */
+      .usage-counts {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 2px 10px;
+        min-width: 0; /* a flex item's floor is its content, which would starve the switch */
+      }
+      .usage-provider {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto; /* the row's right end, at every width */
+        padding-left: 10px;
+        border-left: 1px solid var(--line);
+      }
+      .usage-provider .provider-label {
+        color: var(--muted);
+        font-size: 9px;
+        letter-spacing: 0.04em;
+      }
+      /* A message's own token usage is one more item on the label row (see .role), so it carries no
+         margin of its own and undoes the label's small caps: it is numbers a reader reads as written. */
+      .token-usage {
+        color: var(--muted);
+        font:
+          11px/1.5 ui-sans-serif,
+          system-ui,
+          sans-serif;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: normal;
+        text-transform: none;
+        white-space: normal;
+      }
+      /* When a message finished, at the left of its last row: the same small muted voice as the usage up
+         top, because it is the smallest fact about the message. A transcript written before the node
+         stamped its lines has no time, and then the row holds the copy button alone. */
+      .msg-time {
+        color: var(--muted);
+        font:
+          11px/1.5 ui-sans-serif,
+          system-ui,
+          sans-serif;
+        font-variant-numeric: tabular-nums;
+        letter-spacing: normal;
+        text-transform: none;
+        white-space: nowrap;
+      }
+      /* The pages of every agent the node runs, one on top of the other: the one on screen is the
+         one not `hidden`, and the others keep their boxes (and their scroll) out of the way. */
+      .pages {
+        display: flex;
+        flex: 1;
+        min-height: 0;
+      }
+      .agent-page {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+      }
+      .agent-page[hidden] {
+        display: none;
+      }
+      main {
+        flex: 1;
+        /* min-height:0 is what lets a scrolling flex child shrink: with the default `auto` the
+           transcript's own height wins, the column overflows and the composer is pushed past the
+           bottom of the screen instead of the log scrolling. */
+        min-height: 0;
+        overflow-y: auto;
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 24px clamp(14px, 4vw, 36px) 30px;
+        scroll-behavior: smooth;
+        scrollbar-gutter: stable;
+      }
+      /* While the tail is being followed the scroll has to land where it is put: a smooth scroll that
+         a streamed snapshot re-aims 20 times a second never arrives, and the reader cannot move. */
+      main.following {
+        scroll-behavior: auto;
+      }
+      /* The line above the transcript, outside `main` on purpose: main's children are the transcript's
+         boxes, and the page paints them by position. It keeps its height while hidden, so a page that
+         has nothing to say does not push the transcript down. */
+      .older-status {
+        padding: 0 clamp(14px, 4vw, 36px);
+        font-size: 12px;
+        line-height: 18px;
+        color: var(--muted);
+        text-align: center;
+      }
+      /* Which agent the page is looking at: one button per agent the node runs, the main one first.
+         The row is only there when there is a choice to make - a node with no sub-agents draws no
+         row at all, and the page looks exactly as it did before there were any. */
+      .agents {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        padding: 6px clamp(14px, 4vw, 36px) 0;
+        background: var(--surface);
+        border-bottom: 1px solid var(--line);
+      }
+      .agents[hidden] {
+        display: none;
+      }
+      .agent-tab {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        width: auto;
+        height: 24px;
+        min-width: 0;
+        padding: 0 9px;
+        overflow: hidden;
+        border: 1px solid transparent;
+        border-radius: 7px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+        line-height: 22px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      .agent-tab:hover {
+        color: var(--text);
+        background: var(--surface-2);
+      }
+      .agent-tab.current {
+        border-color: var(--line);
+        background: var(--surface-2);
+        color: var(--text);
+        font-weight: 600;
+      }
+      .agent-tab[data-busy='true'] {
+        animation: agent-breathe 1.2s ease-in-out infinite;
+      }
+      .agent-tab[data-busy='true'][data-state='stopping'] {
+        animation-name: agent-breathe-stop;
+      }
+      @keyframes agent-breathe {
+        0%,
+        100% {
+          border-color: rgb(34 197 94 / 20%);
+        }
+        50% {
+          border-color: rgb(34 197 94 / 90%);
+        }
+      }
+      @keyframes agent-breathe-stop {
+        0%,
+        100% {
+          border-color: rgb(245 158 11 / 20%);
+        }
+        50% {
+          border-color: rgb(245 158 11 / 90%);
+        }
+      }
+      .agent-tab:focus-visible {
+        border-color: var(--accent);
+        outline: 0;
+      }
+      .agent-icon {
+        display: inline-flex;
+        flex: none;
+        width: 14px;
+        height: 14px;
+      }
+      .agent-icon svg {
+        display: block;
+        width: 14px;
+        height: 14px;
+      }
+      /* What a right click on a sub-agent's tab offers: one menu, drawn over the page at the
+         pointer, with the things this page can do to that agent. It is `fixed` because the row it
+         belongs to scrolls away under it, and it is hidden until a sub-agent's tab is right
+         clicked - the main agent cannot be destroyed, so it has no menu at all. */
+      .agent-menu {
+        position: fixed;
+        z-index: 40;
+        min-width: 132px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .agent-menu[hidden] {
+        display: none;
+      }
+      .agent-menu-item {
+        display: block;
+        width: 100%;
+        height: 26px;
+        padding: 0 9px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--danger);
+        font: inherit;
+        font-size: 12px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .agent-menu-item:hover,
+      .agent-menu-item:focus-visible {
+        background: color-mix(in srgb, var(--danger) 12%, transparent);
+        outline: 0;
+      }
+      .agent-menu-item[disabled] {
+        color: var(--muted);
+        cursor: default;
+      }
+      /* The second question a delete asks, over the page it is about: the row the reader pressed is
+         still there until they say yes, and the dialog is the one thing a press can land on. */
+      .agent-confirm {
+        position: fixed;
+        inset: 0;
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgb(15 23 42 / 28%);
+      }
+      .agent-confirm[hidden] {
+        display: none;
+      }
+      .agent-confirm-card {
+        width: min(340px, 100%);
+        padding: 16px 18px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .agent-confirm-card p {
+        margin: 0 0 14px;
+        font-size: 13px;
+      }
+      .agent-confirm-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .agent-confirm-actions button {
+        width: auto;
+        height: 28px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .agent-confirm-actions .danger {
+        border-color: transparent;
+        background: var(--danger);
+        color: #fff;
+        font-weight: 600;
+      }
+      .empty {
+        margin: auto;
+        color: var(--muted);
+        text-align: center;
+      }
+      .empty strong {
+        display: block;
+        color: var(--text);
+        font-size: 18px;
+      }
+      .msg {
+        max-width: min(88%, 78ch);
+        padding: 11px 14px;
+        border: 1px solid var(--line);
+        border-radius: 5px 16px 16px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+        overflow-wrap: anywhere;
+      }
+      .user {
+        align-self: flex-end;
+        border: 0;
+        border-radius: 16px 16px 5px;
+        background: linear-gradient(145deg, var(--accent), var(--accent-dark));
+        color: white;
+      }
+      .assistant {
+        align-self: flex-start;
+      }
+      .system {
+        align-self: center;
+        border-style: dashed;
+        border-radius: 12px;
+        background: transparent;
+        box-shadow: none;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      /* Tool activity and reasoning read alike: no bubble, no fill — just a folded small-caps title
+         over a body indented by a rule. */
+      .call,
+      .tool,
+      .think {
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+      .call,
+      .tool {
+        align-self: flex-start;
+        max-width: min(88%, 78ch);
+      }
+      .think > summary,
+      .call > summary,
+      .tool > summary {
+        cursor: pointer;
+      }
+      .call > summary,
+      .tool > summary {
+        overflow-wrap: anywhere;
+      }
+      /* A fold's summary is its label followed by what the fold is about; only the label span is a
+         small-caps label, and the preview after it is content. The thinking's summary shows that
+         preview on one ellipsised line, so a narrow screen never wraps it into a mess; the whole text
+         lives in the body, which keeps today's styling. */
+      .think > summary {
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      /* What follows a label is content, not a label: it reads exactly as it was written, so a
+         label's uppercase can never reach the thinking's own words or a tool's own name. */
+      .fold-preview,
+      .long-text,
+      .plain,
+      .markdown {
+        text-transform: none;
+      }
+      .fold-preview {
+        margin-left: 0.45em;
+      }
+      /* A fold's body: indented under a rule, whichever fold it belongs to. */
+      .think .plain,
+      .call > .section,
+      .call > .plain,
+      .tool > .plain {
+        margin-top: 6px;
+        padding-left: 0.85em;
+        border-left: 3px solid var(--line);
+      }
+      .section + .section {
+        margin-top: 6px;
+      }
+      .section-label {
+        margin-bottom: 3px;
+      }
+      .tool-round {
+        align-self: flex-start;
+        max-width: min(88%, 78ch);
+      }
+      .tool-round > .call,
+      .tool-round > .tool {
+        max-width: 100%;
+        margin-top: 6px;
+      }
+
+      /* The agent's `ask_user` tool is the one tool call that waits for the reader, so it is a real
+         card — heading, body, and the controls the model asked for — rather than a fold. */
+      .ask {
+        width: 100%;
+        max-width: 100%;
+        padding: 13px 15px;
+        border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line));
+        border-left: 3px solid var(--accent);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .ask-badge {
+        color: var(--accent-dark);
+      }
+      .ask-badge.error {
+        color: #e5484d;
+      }
+      .ask-title {
+        margin: 4px 0 0;
+        font-size: 15px;
+        line-height: 1.35;
+      }
+      .ask-body {
+        margin-top: 7px;
+        font-size: 13px;
+      }
+      /* Options flow, and a row that fills up wraps instead of running off the card: 8px apart in
+         both directions, and a label too long for its row takes the whole row below. */
+      .ask-choices {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      /* The composer's button is a 36px square; a card's controls are shaped like text instead. A
+         choice's label is a sentence the model wrote, so it takes the card's width and wraps inside
+         it: `max-width` is what lets a label longer than the row shrink at all — a flex item holds
+         its own text's width otherwise and the card's overflow then cuts the words off — and
+         `anywhere` breaks the one long run (a path, a CJK sentence) that has no space in it. Height
+         stays `auto`: a wrapped label makes a taller button, never a smaller font. */
+      .ask-choice,
+      .ask-send {
+        display: inline-flex;
+        width: auto;
+        height: auto;
+        max-width: 100%;
+        min-width: 0;
+        align-items: center;
+        padding: 7px 13px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-align: left;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-soft);
+        color: var(--text);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .ask-choice:hover:not(:disabled) {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent-dark);
+      }
+      .ask-choice:disabled,
+      .ask-send:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      .ask-send {
+        border-color: transparent;
+        background: var(--accent);
+        color: #fff;
+      }
+      .ask-send:hover:not(:disabled) {
+        background: var(--accent-dark);
+      }
+      .ask-form {
+        display: flex;
+        align-items: flex-end;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .ask-text {
+        flex: 1;
+        min-height: 38px;
+        max-height: 140px;
+        padding: 8px 10px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--surface-soft);
+        color: inherit;
+        font: inherit;
+        font-size: 13px;
+        resize: none;
+      }
+      .ask-text:focus {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgb(91 91 214 / 12%);
+      }
+      .ask-state,
+      .ask-answer,
+      .ask-countdown {
+        margin-top: 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .ask-state.error {
+        color: #e5484d;
+      }
+      /* The countdown's digits on a fixed grid: a line that loses a digit while the reader is reading
+         it must not shift the questions under it. */
+      .ask-countdown {
+        font-variant-numeric: tabular-nums;
+      }
+      .ask-answer {
+        padding: 9px 11px;
+        border-left: 3px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        background: var(--surface-soft);
+        color: var(--text);
+        font-size: 13px;
+      }
+      .model-status {
+        align-self: flex-start;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .model-status::before {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--accent);
+        content: '';
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%,
+        100% {
+          opacity: 0.3;
+          transform: scale(0.8);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+      /* The dot says "still running" by moving; a reader who asked for no motion still gets the dot,
+         still, and the words beside it — so the two states are told apart without animation. */
+      @media (prefers-reduced-motion: reduce) {
+        .model-status::before {
+          animation: none;
+          opacity: 1;
+          transform: none;
+        }
+      }
+      /* Every small-caps label on the page is the same label: a role, a section, an ask badge. */
+      .role,
+      .section-label,
+      .ask-badge,
+      .long-label,
+      .fold-label {
+        font-size: 10px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      /* The label row is a flex line because a message's own token usage sits on it: `AGENT`, then the
+         counts for that turn. The row wraps, so a narrow bubble puts the usage under the label instead
+         of squeezing it. A message with no usage (the reader's, a tool result) is only the label. */
+      .role {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: baseline;
+        gap: 2px 10px;
+        margin-bottom: 5px;
+        color: var(--muted);
+        line-height: 1.3;
+      }
+      .user .role {
+        color: rgb(255 255 255 / 72%);
+      }
+      /* The sender beside the role: the row's small caps stay on the role, the name is written the way it
+         was given (a node name is a name), and it wraps rather than pushing a phone's bubble sideways. */
+      .role .from {
+        min-width: 0;
+        max-width: 100%;
+        font-weight: 600;
+        letter-spacing: 0;
+        text-transform: none;
+        overflow-wrap: anywhere;
+      }
+      /* The middle dot between the role and the sender is punctuation, so it is drawn and not typed: a
+         screen reader says "You, From timer", and no one has to hear the word "dot". */
+      .role .from::before {
+        content: '· ';
+      }
+      /* A message can be copied: one small button under the text it copies, right-aligned with it and
+         quiet by default — a message is what the reader came for, not the button. Quiet, though, is
+         not hidden, and not hover-only: a phone has no pointer to hover with, so the button is always
+         there, on every device, at less than full opacity, and only how loudly it reads changes when it
+         is hovered or reached by the keyboard. What it draws is a shape and not a word — the copy mark,
+         a tick, a cross — so there is no text in it at all and its `aria-label` is what a screen reader
+         has to go on. It has no background and no rounding of its own: the box is the hit area, the
+         colour is whatever colour the text under it is, and nothing else about it is painted. */
+      .copy {
+        display: grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        min-width: 24px;
+        min-height: 24px;
+        margin: 4px 0 0 auto;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: inherit;
+        opacity: 0.45;
+        cursor: pointer;
+        transition: opacity 0.15s;
+      }
+      /* The mark is smaller than the button it sits in: 12px of drawing in a 24px box — a 44px one on a
+         phone — because at this size it is a hint beside the message, not a control to be read. It is
+         drawn in `currentColor`, so it is the page's near-black where the page is light and turns light
+         on a dark page, and it is never a colour of its own. Its classes are `copy-*` and not `mark*`,
+         because `mark` names a badge: a copy mark wearing that class came out as a purple gradient
+         chip with a white glyph on it, whatever the message under it was. */
+      .copy svg {
+        display: none;
+        width: 12px;
+        height: 12px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 1.8;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+      /* Which of the three shapes is drawn is the button's own state and nothing else: the shape changes,
+         the box does not, so nothing around it jumps when a copy lands. */
+      .copy[data-state='copy'] .copy-mark {
+        display: block;
+      }
+      .copy[data-state='copied'] .copy-ok {
+        display: block;
+      }
+      .copy[data-state='failed'] .copy-no {
+        display: block;
+      }
+      /* What a pointer or a keyboard has reached, and what the button shows while it has just copied
+         something — or could not copy it: the shape answers, and it answers louder than it rests. */
+      .copy:hover,
+      .copy:focus-visible,
+      .copy[data-state='copied'],
+      .copy[data-state='failed'] {
+        opacity: 0.9;
+      }
+      /* The last row of a message: when it finished and the way to take it away — the time on the left, the
+         button at the right edge, one row and so one thing to a reader. It is the button's own auto margin
+         that holds the right edge, and not `justify-content`, because a row can hold the button and nothing
+         else — a transcript written before the node kept times, or a thinking, which has no time of its own —
+         and a lone child of a `space-between` row would be pushed to the left, away from the text it copies.
+         It rests invisible and comes back when the reader reaches for the message, and `opacity` rather than
+         `display` is what keeps its place in the layout: revealing it moves nothing below it. A touch device
+         has no hover to reach it with, so there the row is simply always there — see the `hover: none` query
+         at the end of this sheet. */
+      .msg-foot {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-top: 4px;
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      /* Reaching for a message — with a pointer or with the keyboard — brings that row back, whichever
+         kind of box holds it: a bubble, a round of tool calls, a thinking. Hovering the bubble counts for
+         a row inside a fold in it, which is where a thinking's copy lives. */
+      .msg:hover .msg-foot,
+      .msg:focus-within .msg-foot,
+      .tool-round:hover .msg-foot,
+      .tool-round:focus-within .msg-foot,
+      .think:hover .msg-foot,
+      .think:focus-within .msg-foot {
+        opacity: 1;
+      }
+      /* Inside that row the button keeps its size and colour but not the margins it uses when it stands
+         alone under a section of text: the row is what places it. `margin-left: auto` is what holds it at
+         the right edge whether or not a time came before it — which is the whole reason the row above does
+         not say `space-between`. */
+      .msg-foot > .copy {
+        margin: 0 0 0 auto;
+      }
+      .plain {
+        white-space: pre-wrap;
+      }
+      /* A reasoning model's thinking: collapsed by default, so it never pushes the answer away. A
+         tool-call round has no bubble of its own, so the thinking sits on the log like one. */
+      main > .think {
+        align-self: flex-start;
+        max-width: min(88%, 78ch);
+      }
+      /* An open thinking runs as long as the model keeps reasoning, and while the turn streams it keeps
+         growing: capped and scrolled inside itself, it pushes nothing else, so the answer under it stays
+         where the reader left it and the page keeps the scroll the reader gave it. The cap is a share of
+         the box the page is drawn in — the shell's frame, a phone's screen — and not a count of pixels it
+         would outgrow on a small one. The wheel is not contained here: past the end of the thinking it
+         carries on into the transcript, so the box is a window onto the reasoning and never a scroll trap. */
+      .think > .plain {
+        max-height: min(320px, 45dvh);
+        overflow-y: auto;
+      }
+      /* An answer folds along its headings, or at its tail when it has none; either way a fold
+         reads as one ellipsised line, the same shape as the reasoning. */
+      .long {
+        margin-top: 7px;
+      }
+      .long > summary {
+        cursor: pointer;
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .long-label {
+        margin-right: 0.5em;
+      }
+      .long-text {
+        opacity: 0.85;
+      }
+      /* A folded heading is drawn in heading format, so the outline still reads as an outline. */
+      .long.head {
+        margin-top: 1.1em;
+      }
+      .long.head > summary {
+        color: var(--text);
+        font-size: 1em;
+      }
+      .long.head > summary .markdown,
+      .long.head > summary .markdown h1,
+      .long.head > summary .markdown h2,
+      .long.head > summary .markdown h3,
+      .long.head > summary .markdown h4,
+      .long.head > summary .markdown h5,
+      .long.head > summary .markdown h6 {
+        display: inline;
+        margin: 0;
+      }
+      .long[open] > summary {
+        margin-bottom: 7px;
+      }
+      .markdown > :first-child {
+        margin-top: 0;
+      }
+      .markdown > :last-child {
+        margin-bottom: 0;
+      }
+      .markdown p {
+        margin: 0.55em 0;
+      }
+      .markdown h1,
+      .markdown h2,
+      .markdown h3 {
+        margin: 1.1em 0 0.45em;
+        line-height: 1.25;
+      }
+      .markdown h1 {
+        font-size: 1.35em;
+      }
+      .markdown h2 {
+        font-size: 1.18em;
+      }
+      .markdown h3 {
+        font-size: 1.06em;
+      }
+      .markdown ul,
+      .markdown ol {
+        margin: 0.5em 0;
+        padding-left: 1.5em;
+      }
+      .markdown li + li {
+        margin-top: 0.22em;
+      }
+      .markdown blockquote {
+        margin: 0.65em 0;
+        padding-left: 0.85em;
+        border-left: 3px solid var(--accent);
+        color: var(--muted);
+      }
+      .markdown code {
+        padding: 0.12em 0.35em;
+        border-radius: 5px;
+        background: var(--surface-soft);
+        font:
+          0.88em/1.5 ui-monospace,
+          SFMono-Regular,
+          Consolas,
+          monospace;
+      }
+      .markdown pre {
+        position: relative;
+        overflow-x: auto;
+        margin: 0.8em 0;
+        padding: 13px 15px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-soft);
+      }
+      .markdown pre code {
+        padding: 0;
+        background: transparent;
+      }
+      .markdown a {
+        color: var(--accent-dark);
+        text-underline-offset: 2px;
+      }
+      .markdown img {
+        max-width: 100%;
+        border-radius: 8px;
+      }
+      .markdown table {
+        width: 100%;
+        margin: 0.8em 0;
+        border-collapse: collapse;
+        font-size: 0.94em;
+      }
+      .markdown th,
+      .markdown td {
+        padding: 7px 9px;
+        border: 1px solid var(--line);
+        text-align: left;
+      }
+      .markdown th {
+        background: var(--surface-soft);
+      }
+      .markdown hr {
+        border: 0;
+        border-top: 1px solid var(--line);
+      }
+      footer {
+        padding: 12px clamp(14px, 3vw, 26px) 16px;
+        border-top: 1px solid var(--line);
+        background: var(--surface);
+      }
+      .composer {
+        display: flex;
+        align-items: flex-end;
+        gap: 9px;
+        max-width: 900px;
+        margin: auto;
+        padding: 7px 7px 7px 13px;
+        border: 1px solid var(--line);
+        border-radius: 15px;
+        background: var(--surface-soft);
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+      .composer:focus-within {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px rgb(91 91 214 / 12%);
+      }
+      /* Messages the node has taken but not read yet: above the composer, because they are what the
+         reader said and is still owed, not part of the transcript. */
+      .queue {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-width: 900px;
+        margin: 0 auto 8px;
+      }
+      .queue[hidden] {
+        display: none;
+      }
+      .queue-item {
+        overflow: hidden;
+        padding: 4px 10px;
+        border-left: 3px solid var(--accent);
+        border-radius: 0 8px 8px 0;
+        background: var(--surface-soft);
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .queue-item strong {
+        margin-right: 6px;
+        color: var(--text);
+        font-size: 9px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      textarea {
+        flex: 1;
+        min-height: 32px;
+        max-height: 140px;
+        resize: none;
+        border: 0;
+        outline: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        line-height: 1.5;
+      }
+      textarea::placeholder {
+        color: var(--muted);
+      }
+      button {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        flex: 0 0 auto;
+        place-items: center;
+        border: 0;
+        border-radius: 10px;
+        background: var(--accent-fill);
+        color: #fff;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          opacity 0.15s;
+      }
+      /* The copy button keeps its own place: it does not lift the way the buttons around it do, because it
+         is a hint beside a message and not a thing to press — the `:not(.copy)` is what says so, here,
+         where the lift is set, rather than in a rule of its own that this one would come after. */
+      button:hover:not(:disabled):not(.copy) {
+        transform: translateY(-1px);
+      }
+      button:disabled {
+        opacity: 0.45;
+        cursor: default;
+      }
+      /* `button` above sets `display: grid`, which would beat the `hidden` attribute — so hiding has
+         to be said again here. The stop button is only in the flow while a turn is running. */
+      button[hidden] {
+        display: none;
+      }
+      button.stop {
+        background: #e5484d;
+        font-size: 13px;
+      }
+      /* A device with no pointer to hover with — a phone, most tablets — has no way to bring that last row
+         back, so there it is not hidden at all. `hover: none` is exactly that device; `pointer: coarse` sits
+         beside it for one that reports no hover and still has a pen, which is the same reader with the same
+         problem. A pointer device keeps the quiet behaviour. */
+      @media (hover: none), (pointer: coarse) {
+        .msg-foot {
+          opacity: 1;
+        }
+      }
+      /* --- Mobile: a phone is one column read with a thumb, and the bottom of the screen belongs to
+         the home indicator. The same block, with the same comment, is on every page of the web UI
+         (README.md, "Mobile"): viewport-fit=cover in the meta, this media query, 44px targets,
+         safe-area padding, and wrapping for long paths. --- */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        /*100dvh, not100vh: a collapsing URL bar must not crop the composer. */
+        body {
+          height: 100dvh; /*viewport-fit=cover lets the page under the notch, so hand its sides back*/
+          padding: 0 env(safe-area-inset-right) 0 env(safe-area-inset-left);
+        }
+        main {
+          padding: 16px 12px 20px;
+        }
+        /* The bubble's width is the scarce thing on a phone, so give it all of it. */
+        .msg,
+        .call,
+        .tool,
+        main > .think {
+          max-width: 100%;
+        }
+        /* An open thinking takes less of the screen here than on a desk: the composer, its row and the
+           usage row all live in the same box, and the reasoning still scrolls inside what is left. */
+        .think > .plain {
+          max-height: 38dvh;
+        }
+        /*44px is the smallest target a thumb hits reliably; the buttons are36px for a pointer. */
+        button {
+          width: 44px;
+          height: 44px;
+        }
+        /* A thumb target, and thin: its width is what the numbers do not get on a 390px row. */
+        #provider-switch {
+          min-width: 0;
+          max-width: min(180px, 42vw);
+          height: 32px;
+          padding: 0 18px 0 6px;
+          font-size: 10px;
+        }
+        /* A card's choice is not a square, so the rule above leaves it at its text's height. One line of
+           that is still a thumb target: 44px tall, and taller when the label wraps. */
+        .ask-choice,
+        .ask-send {
+          min-height: 44px;
+        }
+        /* The copy button is a thumb target like the others — 44px across, not the 24px it rests at.
+           Where that height comes from is said with the rules below, where the boxes that hold one live. */
+        .copy {
+          min-width: 44px;
+          min-height: 44px;
+        }
+        /* A message's last row holds a thumb target, and it pays for that height out of the padding under
+           the bubble instead of making every message a thumb taller: it hangs6px above where the row would
+           sit and10px below, both inside the bubble's own padding. The same trick for a copy button that
+           still stands alone — under a section of text, or on a folded tool result. The thinking's copy sits
+           in the fold's body with its text, not under a bubble, so it pays for nothing. */
+        .msg > .msg-foot,
+        .tool-round > .msg-foot {
+          margin: -6px 0 -10px;
+        }
+        .section > .copy,
+        details.tool > .copy {
+          margin: -6px 0 -10px auto;
+        }
+        /*16px stops iOS Safari from zooming the page in when the box takes focus. */
+        textarea {
+          min-width: 0; /* the box shrinks with the row instead of forcing a wider page */
+          min-height: 44px;
+          max-height: min(
+            140px,
+            30dvh
+          ); /* in a frame dvh is the frame's height: a 213px frame must not try to hold a 140px box */
+          font-size: 16px;
+        }
+        footer {
+          padding-bottom: calc(14px + env(safe-area-inset-bottom));
+        }
+        /* A path or a URL in a tool body must break, not push the page sideways. */
+        .plain {
+          overflow-wrap: anywhere;
+        }
+      }
+      /* Inside the shell's frame the box is the truth: 100% follows it. Chrome already answers
+         `100dvh` with the frame's own viewport, but other engines (and old iOS Safari) answer with the
+         *window's* height, which leaves the page taller than its frame and a strip of blank under the
+         composer. This rule is after the phone block on purpose: in a frame it wins at every width. */
+      :root.framed body {
+        height: 100%;
+        min-height: 0;
+      }
+      /* A phone held sideways has ~400px of height and the shell's bar takes a slice: the usage row gives
+         up a little of its padding and type size, so the input still gets the rest. */
+      @media (orientation: landscape) and (max-height: 480px) {
+        .usage-summary {
+          padding: 2px 12px 4px;
+          font-size: 11px;
+        }
+      }
+      /* A formula is an SVG that MathJax drew, and the page asked it for one formula at a time rather
+         than for a typeset page (see `math-rules` below), so the stylesheet MathJax would have written
+         beside the page is written here instead: the drawing sits on the line of the text it belongs to,
+         a display formula is a block of its own that scrolls sideways rather than pushing the message
+         wider than a phone, and nothing here is a rule about `.markdown` alone — a formula in a thinking,
+         a tool result or a question's card is the same formula. */
+      mjx-container[jax='SVG'] {
+        display: inline-block;
+        max-width: 100%;
+        overflow-x: auto;
+        overflow-y: hidden;
+      }
+      mjx-container[jax='SVG'] > svg {
+        overflow: visible;
+        min-width: 1px;
+        min-height: 1px;
+      }
+      mjx-container[jax='SVG'][display='true'] {
+        display: block;
+        margin: 0.5em 0;
+        text-align: center;
+      }
+      /* The one thing a formula with no renderer shows: the TeX the model wrote, as it wrote it. */
+      .math-source {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.95em;
+      }
+    </style>
+  </head>
+  <body>
+    <nav
+      class="agents"
+      id="agents"
+      aria-label="which agent this page is showing"
+      data-text-label-key="tabs.label"
+      hidden
+    ></nav>
+    <!-- What a right click on a sub-agent's tab opens: the actions this page has for that agent. It
+         is drawn where the pointer was, and closed by the next press anywhere or by Escape. -->
+    <div
+      class="agent-menu"
+      id="agent-menu"
+      role="menu"
+      aria-label="agent actions"
+      data-text-label-key="menu.label"
+      hidden
+    >
+      <button
+        type="button"
+        class="agent-menu-item"
+        id="agent-menu-delete"
+        role="menuitem"
+        data-text-key="menu.delete"
+      >
+        Delete agent
+      </button>
+    </div>
+    <!-- The second question: a delete is not undone by anything the page can offer, so it is asked
+         again, with the agent's name spelled out. -->
+    <div class="agent-confirm" id="agent-confirm" role="dialog" aria-modal="true" hidden>
+      <div class="agent-confirm-card">
+        <p id="agent-confirm-text"></p>
+        <div class="agent-confirm-actions">
+          <button type="button" id="agent-confirm-cancel" data-text-key="confirm.cancel">
+            Cancel
+          </button>
+          <button
+            type="button"
+            id="agent-confirm-ok"
+            class="danger"
+            data-text-key="confirm.ok"
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    </div>
+    <!-- One page per agent, all of them built and kept: each holds its own transcript, snapshot and
+         queue, with updates delivered by one shared event stream. The agent on screen is the one page
+         not `hidden`; switching is that attribute and nothing else. A page's own boxes - the line
+         above its transcript and the transcript itself - are built with it, so the body holds nothing
+         but the pages and the chrome around them. -->
+    <div class="pages" id="pages"></div>
+    <footer>
+      <div class="queue" id="queue" aria-live="polite" hidden></div>
+      <div class="composer">
+        <textarea
+          id="text"
+          rows="1"
+          placeholder="Type a message…"
+          data-text-placeholder-key="composer.placeholder"
+          aria-label="message"
+          data-text-label-key="composer.label"
+        ></textarea>
+        <button
+          id="send"
+          title="Send message"
+          aria-label="Send message"
+          data-text-label-key="composer.send"
+        >
+          ↑
+        </button>
+        <button
+          id="stop"
+          class="stop"
+          type="button"
+          title="Stop the answer in progress"
+          aria-label="Stop the answer in progress"
+          data-text-label-key="composer.stop"
+          hidden
+        >
+          ■
+        </button>
+      </div>
+    </footer>
+    <section
+      class="usage-summary"
+      aria-label="session token usage and active provider"
+      data-text-label-key="usage.label"
+    >
+      <span class="usage-counts">
+        <!-- The word and the count are two elements: a mark that wrapped the word *and* the number
+             would be redrawn by its key, and take the number with it. -->
+        <span>
+          <span data-text-key="usage.input">in ≈</span>
+          <strong id="prompt-tokens">—</strong>
+        </span>
+        <span>
+          <span data-text-key="usage.output">out</span>
+          <strong id="completion-tokens">—</strong>
+        </span>
+        <span>
+          <span data-text-key="usage.total">total ≈</span>
+          <strong id="total-tokens">—</strong>
+        </span>
+      </span>
+      <span class="usage-provider">
+        <span class="provider-label" data-text-key="usage.provider">provider</span>
+        <select
+          id="provider-switch"
+          title="Active provider"
+          aria-label="Active provider"
+          data-text-label-key="usage.activeProvider"
+          disabled
+        >
+          <option data-text-key="usage.loading">Loading providers…</option>
+        </select>
+      </span>
+    </section>
+    <script>
+      /*__MARKDOWN_IT__*/
+    </script>
+    <!-- MathJax draws the formulas as SVG: the glyphs are paths inside the drawing, so the page needs no
+         font file and no network. It is told not to typeset anything itself (`typeset: false`): the page
+         asks it for one formula at a time while it builds a message (see `math-rules` below), which is
+         what keeps a formula from being typeset twice. `autoload` and `require` are switched off, and the
+         loader's own list with them: all three fetch an extension the moment they meet a command they do
+         not carry, and this page has to work offline — the bundle carries every TeX package, so nothing
+         they could fetch is missing, and a formula they would have fetched for is drawn as an unknown
+         command instead. -->
+    <script>
+      window.MathJax = {
+        startup: { typeset: false },
+        loader: { load: [] },
+        tex: { packages: { '[-]': ['autoload', 'require'] } },
+        svg: { fontCache: 'local' },
+        options: { enableMenu: false },
+      };
+    </script>
+    <script>
+      /*__MATH_RENDERER__*/
+    </script>
+    <script id="math-rules">
+      // Formulas. The TeX a model writes is drawn as an SVG by the page itself, one formula at a time,
+      // while it builds a message: MathJax is asked for that drawing (`tex2svg`) and never asked to
+      // typeset the page, so nothing here typesets a node twice and a repaint costs what the text
+      // around it costs.
+      //
+      // What counts as a formula is decided by Markdown's own tokenizer: the two rules below are
+      // markdown-it rules, so an inline code span, a fenced block and an indented block are already out
+      // of reach — the tokenizer never offers them to an inline rule — and a formula in a table cell
+      // or a list item takes the same path as one in a paragraph. `$$...$$` and `\[...\]` are display
+      // formulas, `$...$` and `\(...\)` are inline ones. Raw HTML stays off (`html: false`), so
+      // `<sub>x</sub>` is text with a formula in it or it is text, never markup.
+      (function () {
+        //: A drawing kept under its own TeX. A streaming answer is drawn again on every snapshot and
+        //: most of it — every formula in it — is the same text it was a moment ago, so the drawing is
+        //: made once and handed back.
+        const DRAWN_MAX = 500;
+        const drawn = new Map();
+        //: Set when a formula had to be written as its own TeX because the renderer was not up yet.
+        let waiting = false;
+        /** The SVG MathJax draws for this TeX, as HTML — or `null` when it cannot draw it, which is
+         *  either a renderer that has not started yet or one that refused, and the caller writes the
+         *  TeX instead. A formula MathJax cannot read comes back drawn as the error it is: that is an
+         *  answer, not a failure, and it is what keeps a half-typed formula from throwing its way out
+         *  of a repaint. */
+        function svg(tex, display) {
+          const source = String(tex ?? '').trim();
+          if (source === '') return null;
+          const key = `${display ? 'D' : 'I'}${source}`;
+          if (drawn.has(key)) return drawn.get(key);
+          const MathJax = typeof window === 'undefined' ? null : window.MathJax;
+          if (typeof MathJax?.tex2svg !== 'function') return null;
+          let html = null;
+          try {
+            html = MathJax.tex2svg(source, { display })?.outerHTML ?? null;
+          } catch (error) {
+            console.warn('math:', error?.message ?? error);
+            html = null;
+          }
+          if (typeof html !== 'string' || html === '') return null;
+          if (drawn.size >= DRAWN_MAX) drawn.clear();
+          drawn.set(key, html);
+          return html;
+        }
+        /** Where the formula that opens just before `from` closes, or -1: `close` ends it, a dollar
+         *  sign has to touch its formula at both ends (`it cost $5 and $6` is prose, not a formula),
+         *  and no formula holds a blank line — a paragraph cannot be half a formula. */
+        function closesAt(src, from, max, close) {
+          for (let at = from; at < max; at += 1) {
+            if (src.startsWith(close, at)) {
+              const hugs =
+                close !== '$' ||
+                (at > from && !/\s/.test(src[at - 1]) && !/\d/.test(src[at + 1] ?? ''));
+              if (hugs) return at;
+              continue;
+            }
+            if (src[at] === '\n' && src[at + 1] === '\n') return -1;
+            if (src[at] === '\\') at += 1; // an escape belongs to the formula: `\$` is a dollar sign
+          }
+          return -1;
+        }
+
+        /** `$...$`, `$$...$$`, `\(...\)` and `\[...\]` inside a line — a table cell and a list item
+         *  are lines. */
+        function inlineMath(state, silent) {
+          const at = state.pos;
+          const src = state.src;
+          let open = '';
+          let close = '';
+          let display = false;
+          if (src[at] === '$') {
+            display = src[at + 1] === '$';
+            open = display ? '$$' : '$';
+            close = open;
+          } else if (src.startsWith('\\(', at)) {
+            open = '\\(';
+            close = '\\)';
+          } else if (src.startsWith('\\[', at)) {
+            open = '\\[';
+            close = '\\]';
+            display = true;
+          } else return false;
+          const from = at + open.length;
+          // `$ x$` is not a formula: the marker touches its TeX.
+          if (from >= state.posMax || /\s/.test(src[from])) return false;
+          const end = closesAt(src, from, state.posMax, close);
+          if (end < 0 || src.slice(from, end).trim() === '') return false;
+          if (!silent) {
+            const token = state.push('math_inline', 'math', 0);
+            token.content = src.slice(from, end);
+            token.markup = open;
+            token.meta = { display, open, close };
+          }
+          state.pos = end + close.length;
+          return true;
+        }
+        /** `$$...$$` and `\[...\]` as a block of their own: a display formula written on its own
+         *  lines, which is what a display formula is in practice. What shares its closing line is not
+         *  part of it — `$$x$$ and the rest of the sentence` is a line with a formula in it, so it is
+         *  left to the inline rule. */
+        function blockMath(state, startLine, endLine, silent) {
+          const start = state.bMarks[startLine] + state.tShift[startLine];
+          const src = state.src;
+          let open = '';
+          let close = '';
+          if (src.startsWith('$$', start)) open = close = '$$';
+          else if (src.startsWith('\\[', start)) {
+            open = '\\[';
+            close = '\\]';
+          } else return false;
+          const from = start + open.length;
+          let line = startLine;
+          let end = -1;
+          for (
+            let at = src.indexOf(close, from);
+            at !== -1;
+            at = src.indexOf(close, at + close.length)
+          ) {
+            while (line < endLine - 1 && at >= state.eMarks[line]) line += 1;
+            if (at >= state.eMarks[line]) return false; // past the end of this block
+            if (at > from && /^[ \t]*$/.test(src.slice(at + close.length, state.eMarks[line]))) {
+              end = at;
+              break;
+            }
+          }
+          if (end < 0) return false;
+          if (silent) return true;
+          const token = state.push('math_block', 'math', 0);
+          token.block = true;
+          token.content = src.slice(from, end);
+          token.map = [startLine, line + 1];
+          token.markup = open;
+          token.meta = { display: true, open, close };
+          state.line = line + 1;
+          return true;
+        }
+        /** One formula token as HTML: the drawing, or — when there is none — the TeX the model wrote,
+         *  escaped, which is exactly what the page showed before it could draw formulas at all. */
+        function render(token, md) {
+          const display = token.meta?.display === true;
+          const html = svg(token.content, display);
+          if (html !== null) return html;
+          waiting = true;
+          const tex = `${token.meta?.open ?? '$'}${token.content}${token.meta?.close ?? '$'}`;
+          const escaped = md.utils.escapeHtml(tex);
+          return token.type === 'math_block'
+            ? `<div class="math-source">${escaped}</div>`
+            : `<span class="math-source">${escaped}</span>`;
+        }
+
+        /** The rules, as one plugin for the page's markdown-it. The inline rule goes before `escape`
+         *  because markdown-it reads a backslash itself and would turn `\(` into a bracket before
+         *  anybody asks whether it opens a formula. */
+        function plugin(md) {
+          md.inline.ruler.before('escape', 'math_inline', inlineMath);
+          md.block.ruler.before('fence', 'math_block', blockMath, {
+            alt: ['paragraph', 'reference', 'blockquote', 'list'],
+          });
+          md.renderer.rules.math_inline = (tokens, at) => render(tokens[at], md);
+          md.renderer.rules.math_block = (tokens, at) => render(tokens[at], md);
+        }
+
+        /** What to do once the renderer is up, if a formula was written as its TeX because it was not:
+         *  the page draws itself again, once, and the reason is spent. A renderer that fails to start
+         *  is caught here rather than left as a rejection nobody holds — the page keeps the TeX. */
+        function whenReady(redraw) {
+          const when = typeof window === 'undefined' ? null : window.MathJax?.startup?.promise;
+          if (typeof when?.then !== 'function') return;
+          when.then(
+            () => {
+              if (!waiting) return;
+              waiting = false;
+              redraw();
+            },
+            () => {},
+          );
+        }
+
+        window.agentMath = { plugin, svg, whenReady };
+      })();
+    </script>
+    <script>
+      // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing
+      // here may assume it is called "agent". The node fills its own name in where it hands the page
+      // out (index.ts / ui.py); a page opened unfilled falls back to the path, which is where a panel
+      // is served: /panel/<node>.
+      const INJECTED = "__NODE__";
+      const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+
+      // The page talks to its own node through the webui's generic POST /call — the webui does not
+      // know what an agent is, and this page does not know what the webui is. The relative path
+      // /call works out exactly right when it is sent from /panel/agent.
+      async function call(tool, args) {
+        try {
+          const res = await fetch('/call', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ tool, args }),
+          });
+          return await res.json();
+        } catch (error) {
+          // A call that never arrived is an answer like any other: the callers read `ok`, and one
+          // failure must not become a rejection nothing catches.
+          return { ok: false, error: error instanceof Error ? error.message : String(error) };
+        }
+      }
+
+      // The words this page builds itself. The node embedded its resource in the page (the
+      // `<script type="application/json" data-i18n-resource>` that `paintPage` wrote into the head) and
+      // the SDK's browser half owns it: `t` reads the same catalog the markers are drawn from, in the
+      // language the reader is in now. Before that half has run there is no catalog, and a key is all
+      // there is to show — which is why every sentence of the first paint is written into the markup
+      // and painted by the node, not made here.
+      const t = (key, params) => globalThis.nodeAgentI18n?.t?.(key, params) ?? key;
+
+      // A `title` is a tooltip, and the SDK's markers fill `aria-label` and `placeholder` only: the two
+      // controls whose tooltip repeats their label keep the two in step here, on every chrome paint.
+      function retitle() {
+        if (send !== null && send !== undefined) send.title = t('composer.send');
+        if (stop !== null && stop !== undefined) stop.title = t('composer.stop');
+      }
+
+      // Which agent this page is looking at. One node serves a whole family - the main agent and
+      // every sub-agent it started - because a sub-agent is not a node of its own: the bus knows one
+      // identity per tenant, so a second node would have been a second, emptier set of permissions.
+      // The page therefore names the agent it means in `agent`, and follows that agent's topic.
+      const MAIN = NODE;
+      let currentAgent = MAIN;
+
+      // ---- one page per agent ----
+      //
+      // Every agent the node runs gets a page of its own, built once and kept: its transcript boxes,
+      // the window it has read, the snapshot being streamed, its queue and the state the buttons are
+      // drawn from. A shared event stream keeps every page current. Looking at another agent is a
+      // `hidden` on two sections and nothing else - nothing is read from the node, nothing is rebuilt,
+      // and a turn running in the agent that was on screen keeps streaming into its hidden page.
+      //
+      // The rendering below was written against one transcript, so a page is what those names mean:
+      // `messages`, `historyFrom`, `streamingMessage`, `log`, ... are accessors onto the page the
+      // shared code is working on (`current`). A paint is synchronous and wrapped in `withPage()`, so
+      // the pointer can never be inherited by another page's work; the few places that await capture
+      // their page in a local and write it by name (`page.messages`), which is what keeps a slow
+      // answer from landing in the wrong page after the reader has moved on.
+      const pages = new Map();
+      let familyFeed = null;
+      let familyFeedUrl = '';
+      let feedTimer = null;
+      let current = null;
+      const pagesBox = document.getElementById('pages');
+      //: What each page holds for itself: the state, the eyes on the screen (folds, asks, drawn
+      //: boxes) and the event stream. A factory, because a `Set`/`Map` shared between two pages
+      //: would make one agent's question tick in another one's transcript.
+      const PAGE_FIELDS = {
+        messages: () => [],
+        historyFrom: () => null,
+        streamingMessage: () => null,
+        modelActive: () => false,
+        sending: () => false,
+        loadingOlder: () => false,
+        olderNote: () => '',
+        agentStatus: () => null,
+        activeProvider: () => '',
+        providers: () => [],
+        loadVersion: () => 0,
+        landAtBottom: () => true,
+        seen: () => false,
+        drawn: () => [],
+        drawnStatus: () => null,
+        drawnAsks: () => '',
+        mathRedraw: () => false,
+        foldChoices: () => new Map(),
+        openedThinking: () => new Map(),
+        thinkingScroll: () => new Map(),
+        askSent: () => new Set(),
+        askError: () => new Map(),
+        askDrafts: () => new Map(),
+        liveAsks: () => new Set(),
+        askWaits: () => new Map(),
+        askCountdowns: () => new Map(),
+        askTimedOut: () => new Set(),
+        askFocus: () => null,
+        askScrollTo: () => null,
+        askTimer: () => null,
+        waitSince: () => new Map(),
+        statusInFlight: () => null,
+        statusAgain: () => false,
+        clipboardRefused: () => false,
+      };
+      //: The boxes a page owns. Nothing writes these: a page is built with them and keeps them.
+      const PAGE_BOXES = ['log', 'older', 'statusLine'];
+      for (const [key, make] of Object.entries(PAGE_FIELDS)) {
+        Object.defineProperty(globalThis, key, {
+          configurable: true,
+          get() {
+            if (current === null) throw new Error(`no agent page is being drawn (${key})`);
+            return current[key];
+          },
+          set(value) {
+            if (current === null) throw new Error(`no agent page is being drawn (${key})`);
+            current[key] = value;
+          },
+        });
+      }
+      for (const key of PAGE_BOXES) {
+        Object.defineProperty(globalThis, key, {
+          configurable: true,
+          get() {
+            if (current === null) throw new Error(`no agent page is being drawn (${key})`);
+            return current[key];
+          },
+        });
+      }
+
+      /** The page of one agent, or nothing when the node has never named it. */
+      function pageOf(name) {
+        return pages.get(name) ?? null;
+      }
+
+      /** Run `work` with one page as the one the shared code draws and writes into. Synchronous on
+       *  purpose: an `await` inside would hand the pointer to whatever ran while it was out. */
+      function withPage(page, work) {
+        const before = current;
+        current = page;
+        try {
+          return work();
+        } finally {
+          current = before;
+        }
+      }
+
+      /** One page, built from nothing: the section that hidden/shown, the line above the transcript
+       *  and the transcript box itself. Its state starts empty; `openFeed`/`load` fill it. */
+      function buildPage(name, topic) {
+        const box = document.createElement('section');
+        box.className = 'agent-page';
+        box.dataset.agent = name;
+        const olderBox = document.createElement('div');
+        olderBox.className = 'older-status';
+        olderBox.hidden = true;
+        const logBox = document.createElement('main');
+        logBox.className = 'log';
+        logBox.dataset.role = 'log';
+        logBox.setAttribute('aria-live', 'polite');
+        box.append(olderBox, logBox);
+        const page = { name, topic, box, log: logBox, older: olderBox, renderTimer: null };
+        page.statusLine = el('div', 'model-status');
+        for (const [key, make] of Object.entries(PAGE_FIELDS)) page[key] = make();
+        // The top of this page is where the page before its window is asked for, and only the reader
+        // looking at *this* page asks: the listener belongs to the box, not to the browser window.
+        logBox.addEventListener(
+          'scroll',
+          () => {
+            if (logBox.scrollTop <= OLDER_AT) void loadOlder(page);
+          },
+          { passive: true },
+        );
+        if (pagesBox !== null) pagesBox.append(box);
+        return page;
+      }
+
+      /** The page of one agent, made on first sight. From then on it is read once - its window, its
+       *  state and its provider rows - and the shared stream keeps it current, shown or not. */
+      function ensurePage(name, topic) {
+        const known = pages.get(name);
+        if (known !== undefined) {
+          if (typeof topic === 'string' && topic !== '' && topic !== known.topic) {
+            known.topic = topic;
+            openFeed();
+          }
+          return known;
+        }
+        const page = buildPage(name, typeof topic === 'string' && topic !== '' ? topic : MAIN);
+        pages.set(name, page);
+        page.box.hidden = name !== currentAgent;
+        openFeed();
+        void loadProviders(page);
+        void load(page);
+        return page;
+      }
+
+      /** An agent the node no longer runs takes its page, its subscription and its timers with it. */
+      function dropPage(name) {
+        const page = pages.get(name);
+        if (page === undefined) return;
+        pages.delete(name);
+        openFeed();
+        if (page.renderTimer !== null) clearTimeout(page.renderTimer);
+        if (page.askTimer !== null) clearTimeout(page.askTimer);
+        for (const timer of page.askCountdowns.values()) clearTimeout(timer);
+        page.box.remove();
+      }
+      // One row per agent the node runs: `{name, topic, parent, state, children, icon?}`.
+      let agentRows = [];
+      let agentFetch = null;
+
+      // The topic one agent publishes on: the node's own name for the main agent, `<node>.<name>`
+      // for a sub-agent. Its transcripts, its stream snapshots and its questions all go there.
+      function currentRow() {
+        return agentRows.find((each) => each.name === currentAgent);
+      }
+
+      // The drawing belongs to the selected agent, not just to the switch row: the tab icon and the
+      // page's favicon both follow it. An SVG is encoded as a data URL; no second HTTP route is
+      // needed, and the drawing never leaves the page.
+      function applyAgentIcon() {
+        const favicon = document.getElementById('favicon');
+        if (!favicon) return;
+        const icon = (currentRow() || {}).icon;
+        if (typeof icon === 'string' && icon.trim().startsWith('<svg')) {
+          favicon.setAttribute(
+            'href',
+            `data:image/svg+xml;charset=utf-8,${encodeURIComponent(icon)}`,
+          );
+        } else {
+          favicon.removeAttribute('href');
+        }
+      }
+
+      // Every call about one agent says which one. The main agent is what this node always meant, so
+      // its calls stay exactly the calls they were: the argument is added only for a sub-agent.
+      function forAgent(args) {
+        return currentAgent === MAIN ? args : { ...args, agent: currentAgent };
+      }
+
+      /** The same call, for a named page: the main agent is what a call without `agent` means, so its
+       *  calls stay exactly the calls they were. */
+      function agentArgs(page, args) {
+        return page.name === MAIN ? args : { ...args, agent: page.name };
+      }
+
+      // One button per agent, the current one marked. Every agent carries a dot while it is in a
+      // turn of its own: the page shows one agent, but the others keep working, and that is worth
+      // seeing.
+      // The button drawn for one agent stays the same element for as long as that agent is there:
+      // a turn announces events many times a second, and each of them asks for the list again, so a
+      // row rebuilt on every answer would swallow the click - press and release land on two
+      // different buttons - exactly while the reader wants to look at another agent.
+      const agentTabs = new Map();
+
+      function agentTab(row) {
+        const known = agentTabs.get(row.name);
+        if (known !== undefined) return known;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.setAttribute('data-agent', row.name);
+        button.textContent = row.name;
+        button.dataset.icon = '';
+        button.addEventListener('click', () => {
+          void selectAgent(row.name);
+        });
+        agentTabs.set(row.name, button);
+        return button;
+      }
+
+      // Cheap enough to run per event: attributes only, and the drawing only when it changed.
+      function labelAgentTab(button, row) {
+        const current = row.name === currentAgent;
+        button.className = current ? 'agent-tab current' : 'agent-tab';
+        button.setAttribute('aria-pressed', current ? 'true' : 'false');
+        button.setAttribute(
+          'title',
+          row.parent === null ? t('tabs.main') : t('tabs.sub', { parent: row.parent }),
+        );
+        button.setAttribute('data-busy', row.state === 'idle' ? 'false' : 'true');
+        button.setAttribute('data-state', row.state);
+        const icon = typeof row.icon === 'string' && row.icon.trim().startsWith('<svg') ? row.icon : '';
+        if (button.dataset.icon !== icon) {
+          button.dataset.icon = icon;
+          for (const child of [...button.children]) {
+            if (child.className === 'agent-icon') child.remove();
+          }
+          if (icon !== '') {
+            const mark = document.createElement('span');
+            mark.className = 'agent-icon';
+            mark.innerHTML = icon;
+            button.insertBefore(mark, button.firstChild ?? null);
+          }
+        }
+      }
+
+      function renderAgents() {
+        applyAgentIcon();
+        if (!agentsBar) return;
+        if (agentRows.length < 2) {
+          // Nothing to choose between: the row is not there at all, and the page looks exactly as it
+          // did before the node ran any sub-agents.
+          agentsBar.hidden = true;
+          agentsBar.replaceChildren();
+          agentTabs.clear();
+          return;
+        }
+        agentsBar.hidden = false;
+        const buttons = agentRows.map((row) => {
+          const button = agentTab(row);
+          labelAgentTab(button, row);
+          return button;
+        });
+        for (const name of [...agentTabs.keys()]) {
+          if (!agentRows.some((row) => row.name === name)) agentTabs.delete(name);
+        }
+        const drawn = agentsBar.children;
+        const same =
+          drawn.length === buttons.length && buttons.every((button, at) => drawn[at] === button);
+        if (!same) agentsBar.replaceChildren(...buttons);
+      }
+
+      // The agents the node runs, read from it rather than remembered here: a sub-agent is created
+      // and destroyed by the agent itself (create_agent / destroy_agent), so the page learns about
+      // it the way it learns anything else - by asking.
+      let agentRefreshTimer = null;
+      function scheduleAgentsRefresh() {
+        if (agentRefreshTimer !== null) return;
+        agentRefreshTimer = setTimeout(() => {
+          agentRefreshTimer = null;
+          void refreshAgents();
+        }, 100);
+      }
+      function refreshAgents() {
+        if (agentFetch !== null) return agentFetch;
+        const run = (async () => {
+          try {
+            const reply = await call(`${NODE}.agents`, {});
+            const listed = reply && reply.ok ? reply.value && reply.value.agents : null;
+            if (!Array.isArray(listed)) return;
+            agentRows = listed.filter((row) => row && typeof row.name === 'string');
+            // The menu a right click left open belongs to an agent that may have just been destroyed
+            // by the agent itself: a menu over a row that is gone would offer a second delete.
+            if (menuAgent !== null && !agentRows.some((row) => row.name === menuAgent)) {
+              closeAgentMenu();
+            }
+            // One page per agent the node runs, made on first sight and kept from then on: a
+            // sub-agent the model started gets its page (and its subscription) before anyone looks
+            // at it, and an agent that is gone takes its page, its subscription and its timers with it.
+            for (const row of agentRows) ensurePage(row.name, row.topic);
+            for (const name of [...pages.keys()]) {
+              if (!agentRows.some((row) => row.name === name)) dropPage(name);
+            }
+            // An agent that is gone (destroy_agent) takes the page back to the main one: what was
+            // on screen belongs to something that no longer runs.
+            const lost = pages.get(currentAgent) === undefined;
+            if (lost) {
+              currentAgent = MAIN;
+              switchTo(MAIN);
+            }
+            renderAgents();
+          } catch {
+            // A node that cannot list its agents is a node with one agent on it.
+          } finally {
+            if (agentFetch === run) agentFetch = null;
+          }
+        })();
+        agentFetch = run;
+        return run;
+      }
+
+      // The list read after something the page did to an agent (a delete): a read already on its
+      // way was asked before the change and cannot answer for it, so it is waited for and one fresh
+      // read is made afterwards.
+      async function refreshAgentsNow() {
+        if (agentFetch !== null) {
+          try {
+            await agentFetch;
+          } catch {
+            // The read that failed is not the one that matters: the fresh one below answers.
+          }
+        }
+        await refreshAgents();
+      }
+
+      // The page that was on screen is hidden and the one asked for is shown. That is the whole
+      // switch: each page holds its own transcript, its own snapshot being streamed, its own queue and
+      // its own scroll, so nothing is read from the node, nothing is rebuilt, nothing is reset - and a
+      // turn running in the agent that was on screen keeps writing into its own page.
+      function switchTo(name) {
+        const page = pages.get(name);
+        if (page === undefined) return;
+        const firstLook = !page.seen;
+        page.seen = true;
+        const before = pages.get(currentAgent);
+        currentAgent = name;
+        if (before !== undefined && before !== page) before.box.hidden = true;
+        page.box.hidden = false;
+        current = page;
+        applyAgentIcon();
+        renderAgents();
+        paintChrome(page);
+        // A page whose reader was at its end is still at its end, including the lines that arrived
+        // while it was hidden; a reader who had scrolled up keeps the line they were reading.
+        withPage(page, () => {
+          // Every agent lands at its newest line the first time it is opened. A reader who has
+          // already visited this page keeps the position they left.
+          landAtBottom = firstLook || atEnd(page);
+          renderTranscript();
+        });
+      }
+
+      /** Whether the reader of this page is at its end. A page with no height at all (built but never
+       *  shown) has no reader position to keep, so it counts as being at its end. */
+      function atEnd(page) {
+        const box = page.log;
+        if (typeof box.scrollHeight !== 'number' || box.scrollHeight <= 0) return true;
+        if (typeof box.clientHeight !== 'number' || box.clientHeight <= 0) return true;
+        return box.scrollTop + box.clientHeight >= box.scrollHeight - 4;
+      }
+
+      /** Everything around the pages - the queue, the usage row, the two buttons and the line above the
+       *  transcript - belongs to the page on screen, and is drawn from what that page already knows: a
+       *  switch reads nothing, so it never waits on the node. */
+      function paintChrome(page) {
+        withPage(page, () => {
+          retitle();
+          renderQueue(page.agentStatus?.queued);
+          if (page.agentStatus?.usage) renderUsage(page.agentStatus.usage);
+          else renderUsageMissing();
+          renderControls();
+          showOlder(page.olderNote);
+          providerSwitch.replaceChildren(...providerOptions(page.providers));
+          providerSwitch.value = activeRow(page.activeProvider, page.providers);
+          providerSwitch.disabled = page.providers.length === 0;
+          providerSwitch.title =
+            page.providers.length === 0 ? t('usage.noProviders') : t('usage.activeProvider');
+        });
+      }
+
+      // Looking at another agent: the page that was on screen is hidden, the one asked for is shown.
+      function selectAgent(name) {
+        if (name === currentAgent) return;
+        if (!pages.has(name)) return;
+        switchTo(name);
+      }
+
+      // What a right click on a sub-agent's tab opens: the things this page can do to that agent.
+      // Only a sub-agent has one — the main agent is the node itself, so nothing could destroy it and
+      // the page does not pretend otherwise. The browser's own menu is stopped before it opens, and
+      // this one closes on the next press anywhere or on Escape.
+      const agentMenu = document.getElementById('agent-menu');
+      // The row the menu is attached to, read here rather than from the refs below: this block is
+      // earlier in the script than they are, and a `const` read before its line is an error.
+      const agentMenuBar = document.getElementById('agents');
+      const menuDelete = document.getElementById('agent-menu-delete');
+      const agentConfirm = document.getElementById('agent-confirm');
+      const confirmText = document.getElementById('agent-confirm-text');
+      const confirmCancel = document.getElementById('agent-confirm-cancel');
+      const confirmOk = document.getElementById('agent-confirm-ok');
+      // Which agent the open menu is about, and which one the dialog is about: a press lands after
+      // the menu has closed, so the name has to outlive it.
+      let menuAgent = null;
+      let confirmAgent = null;
+
+      function closeAgentMenu() {
+        menuAgent = null;
+        if (agentMenu !== null) agentMenu.hidden = true;
+      }
+
+      function openAgentMenu(name, at) {
+        if (agentMenu === null) return;
+        menuAgent = name;
+        agentMenu.dataset.agent = name;
+        // At the pointer, and never past an edge: a press in the last pixel of the window still has
+        // to show the whole menu.
+        const room = { w: Number(window.innerWidth) || 1024, h: Number(window.innerHeight) || 768 };
+        const left = Math.max(4, Math.min(at.x, room.w - 136));
+        const top = Math.max(4, Math.min(at.y, room.h - 42));
+        agentMenu.style.left = `${left}px`;
+        agentMenu.style.top = `${top}px`;
+        if (menuDelete !== null) {
+          menuDelete.disabled = false;
+        }
+        agentMenu.hidden = false;
+      }
+
+      // The tab an event landed in. The row is found by walking up from what was pressed, because
+      // the icon inside a tab is the target of a right click as often as the tab itself is.
+      function agentRowAt(target) {
+        let box = target === undefined ? null : target;
+        while (box !== null && box !== undefined) {
+          const name = box.dataset && typeof box.dataset.agent === 'string' ? box.dataset.agent : '';
+          if (name !== '') return agentRows.find((row) => row.name === name) || null;
+          box = box.parentElement === undefined ? (box.parent ?? null) : box.parentElement;
+        }
+        return null;
+      }
+
+      if (agentMenuBar !== null) {
+        agentMenuBar.addEventListener('contextmenu', (event) => {
+          const row = agentRowAt(event.target);
+          // A sub-agent only: a row with a parent, and never the main agent this page is showing.
+          if (row === null || row.parent === null || row.name === MAIN) {
+            closeAgentMenu();
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          openAgentMenu(row.name, {
+            x: Number(event.clientX) || 0,
+            y: Number(event.clientY) || 0,
+          });
+        });
+      }
+
+      if (menuDelete !== null) {
+        menuDelete.addEventListener('click', (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const name = menuAgent;
+          closeAgentMenu();
+          if (name !== null) askDestroy(name);
+        });
+      }
+
+      // The delete is asked twice: a transcript this page cannot get back is what the second press
+      // throws away, so it is spelled out with the agent's name on it.
+      function askDestroy(name) {
+        confirmAgent = name;
+        if (agentConfirm === null) {
+          void destroyAgent(name);
+          return;
+        }
+        if (confirmText !== null) confirmText.textContent = t('confirm.delete', { name });
+        agentConfirm.hidden = false;
+      }
+
+      function closeConfirm() {
+        confirmAgent = null;
+        if (agentConfirm !== null) agentConfirm.hidden = true;
+      }
+
+      if (confirmCancel !== null) confirmCancel.addEventListener('click', () => closeConfirm());
+      if (confirmOk !== null) {
+        confirmOk.addEventListener('click', () => {
+          const name = confirmAgent;
+          closeConfirm();
+          if (name !== null) void destroyAgent(name);
+        });
+      }
+
+      // The delete itself is the node's work, not the page's: `destroy_agent` stops the agent,
+      // deletes the units it persisted and answers what it did. The page then reads the list again —
+      // the row is gone, and if it was the agent on screen, `refreshAgents` takes the page back to
+      // the main agent with it, exactly as it does for a sub-agent the model destroyed itself.
+      async function destroyAgent(name) {
+        if (menuDelete !== null) menuDelete.disabled = true;
+        const reply = await call(`${NODE}.destroy_agent`, { name });
+        await refreshAgentsNow();
+        if (!reply || reply.ok !== true) {
+          const reason = reply && reply.error ? reply.error : t('destroy.noAnswer');
+          alert(t('destroy.failed', { name, reason }));
+        }
+      }
+
+      // A press anywhere else and Escape both close the menu: it is drawn over the page, and the
+      // reader who has moved on should not be able to press a row they can no longer see.
+      if (typeof document.addEventListener === 'function') {
+        document.addEventListener('click', () => closeAgentMenu());
+        document.addEventListener('contextmenu', (event) => {
+          const target = event === undefined || event === null ? null : event.target;
+          const inside =
+            agentMenuBar !== null &&
+            typeof agentMenuBar.contains === 'function' &&
+            target !== null &&
+            target !== undefined &&
+            agentMenuBar.contains(target);
+          if (!inside) closeAgentMenu();
+        });
+        document.addEventListener('keydown', (event) => {
+          if (event === undefined || event === null || event.key !== 'Escape') return;
+          closeAgentMenu();
+          closeConfirm();
+        });
+      }
+
+      // A Chinese, Japanese or Korean IME uses Enter to confirm its candidate — the very key this page
+      // uses to send. `isComposing` is true for that keystroke, and `keyCode === 229` is the older signal
+      // some browsers send instead of it. Without this check the line goes out the moment the writer
+      // confirms a word, and the reader sees half-typed pinyin.
+      const composing = (event) => event.isComposing === true || event.keyCode === 229;
+
+      // An answer past either budget folds; where it folds follows its headings.
+      const RESPONSE_FOLD_CHARS = 1400;
+      const RESPONSE_FOLD_LINES = 18;
+
+      const input = document.getElementById('text');
+      const send = document.getElementById('send');
+      const stop = document.getElementById('stop');
+      const providerSwitch = document.getElementById('provider-switch');
+      const agentsBar = document.getElementById('agents');
+      const promptTokens = document.getElementById('prompt-tokens');
+      const completionTokens = document.getElementById('completion-tokens');
+      const totalTokens = document.getElementById('total-tokens');
+      const usageRow = document.querySelector('.usage-summary');
+      const queue = document.getElementById('queue');
+      const tokenNumber = new Intl.NumberFormat('zh-CN');
+      // A session's totals grow to millions, and `2,408,037` is a wider thing than the row it sits in:
+      // the unit carries the size instead (`2.4m`), with one decimal while the tenth still says
+      // something and none once the number is ten or more.
+      const TOKEN_UNITS = [
+        [1e9, 'b'],
+        [1e6, 'm'],
+        [1e3, 'k'],
+      ];
+      function compactTokens(count) {
+        const smallest = TOKEN_UNITS.at(-1)[0];
+        if (!Number.isFinite(count) || count < smallest) return tokenNumber.format(count);
+        const at = TOKEN_UNITS.findIndex(([size]) => count >= size);
+        const scaled = (size) => {
+          const value = count / size;
+          return value < 10 ? Math.round(value * 10) / 10 : Math.round(value);
+        };
+        let [size, unit] = TOKEN_UNITS[at];
+        let value = scaled(size);
+        // `999,999` rounds to `1000k`, which belongs in the unit above it.
+        if (value >= 1000 && at > 0) {
+          [size, unit] = TOKEN_UNITS[at - 1];
+          value = scaled(size);
+        }
+        return `${value}${unit}`;
+      }
+      // How many messages one `history` call asks for. The page opens on the newest few — a transcript
+      // can be thousands of lines long, and the node itself refuses a window that would not fit one bus
+      // frame — and asks for one more page each time the reader reaches the top.
+      const HISTORY_PAGE = 30;
+      // How near the top (in px) counts as wanting the page before this one.
+      const OLDER_AT = 120;
+      const busy = () => sending || modelActive || streamingMessage !== null;
+      // What the page knows on its own about a turn: `sending` is a `chat_no_wait` POST of this page
+      // still in flight (the line being queued, not the turn), `modelActive` is what the node's events
+      // said (a snapshot, a question, an announced line), and a streaming message is a turn by itself
+      // — python streams one snapshot per token. None of the three decides what Send and Stop do any
+      // more: the node's own `agent.status.state` does (see `controlState`), because a turn another tab
+      // or the debug console started is a turn this page has to offer Stop for, and a turn the node is
+      // already unwinding is one it must not offer Stop for again. These are only what the page has to
+      // go on until its first status read comes back — the page is drawn before that answer arrives.
+      //: How long a call with no result keeps its dot once the page has heard nothing more about it.
+      //: The page's own clock, because a message carries no time: a page that opens onto a call left
+      //: open — a node that died mid-tool, a result that fell outside the window it read — counts from
+      //: when it started watching. A dot that pulses forever would claim what the page cannot know.
+      const CALL_WAIT_MS = 60000;
+      // What #log is showing now, one entry per top-level box, so the next paint rebuilds only the
+      // boxes whose messages changed — in practice the streaming tail. Rebuilding all of them per
+      // token is what made the page unusable while a long answer arrived.
+      let drawn = [];
+      // The rest of what that paint drew: the status line, and the `ask_user` state the cards read.
+      let drawnStatus = null;
+      // A window that was just read has no reader position to keep: the first paint of a feed puts the
+      // log at its end without travelling there. Without this the log sits at the top of a transcript
+      // nobody has scrolled yet, and the follow-the-tail scroll glides down it - a second of nothing
+      // but motion every time the reader opens an agent.
+      // A formula that had to be written as its own TeX — MathJax had not finished starting yet — is
+      // news the moment it is a drawing, the same way a question changing its state is: the boxes are
+      // all drawn again, once, and the reason is spent (see `drawMathWhenReady`).
+      // What the reader folded open or shut themselves, under the fold's own name: a repaint rebuilds
+      // a box the way its builder drew it, so this is what puts the reader's choice back — otherwise
+      // clicking a card would look like it did nothing the moment the next snapshot arrived.
+      // What the reader has decided about a thinking, under the message's own fold key, for as long as
+      // the page lives: written by the click itself, so it survives the redraws a snapshot or a reload
+      // makes. `foldChoices` cannot hold it — it is inferred by diffing a box against what its builder
+      // drew, and the streaming tail's builder already draws the thinking open.
+      // Where the reader has scrolled the body of an open thinking to, under the same fold key. The body
+      // is capped and scrolls inside itself, and the box is rebuilt on every snapshot: a place someone
+      // put by hand has to live outside it or the next token would throw it away.
+      // The agent's own `ask_user` tool: a question waiting on the reader. The card is drawn from the
+      // tool call itself, so it survives a repaint; what the page has to remember between repaints is
+      // only this — an answer already sent, text typed but not sent, and which questions the node
+      // has said it is waiting on.
+      const ASK_TOOL = 'ask_user';
+      // The waits of the questions the node has put a deadline on, by id: the instant the wait runs
+      // out, and what the turn carries on with when it does. The node sends the instant rather than
+      // the seconds that are left, because the page has to be right after it has been away: a tab in
+      // the background, or a page that reloaded, cannot count seconds it was not there for.
+      // The countdown line each card drew, by id, so a tick can move it without repainting the page.
+      // Questions whose wait is over — the node said so, or the clock did. A card whose question is
+      // in here says what the turn carried on with, and never that the reader is still being waited on.
+
+      const el = (tag, cls, text) => {
+        const node = document.createElement(tag);
+        if (cls) node.className = cls;
+        if (text !== undefined) node.textContent = text;
+        return node;
+      };
+
+      // Every fold is born with the state its builder would draw it in, and — where it has a name of
+      // its own (a tool call id, a heading) — with that name: the state a reader gave it survives a
+      // repaint under the same name, even when the boxes around it change.
+      function fold(box, open, id) {
+        box.dataset.fold = open ? '1' : '0';
+        box.open = open;
+        if (id) box.dataset.foldId = id;
+        return box;
+      }
+
+      // The role a box opens with, in the reader's language: the message carries the bus's own word for
+      // it (`assistant`, `user`, `system`, `tool`), which is an identifier, not a sentence.
+      const roles = () => ({
+        assistant: t('roles.assistant'),
+        user: t('roles.user'),
+        system: t('roles.system'),
+        tool: t('roles.tool'),
+      });
+
+      // Raw HTML stays disabled. markdown-it also rejects unsafe link protocols by default.
+      const markdown = window.markdownit({
+        html: false,
+        breaks: true,
+        linkify: true,
+        typographer: true,
+      });
+
+      // Formulas are part of the Markdown, not a pass over the page afterwards: the rules in
+      // `math-rules` above turn a formula into a Markdown token while the text is read, which is what
+      // keeps them out of code — and what makes one inside a table cell or a list item work at all.
+      markdown.use(window.agentMath.plugin);
+
+      function renderMarkdown(source) {
+        const root = el('div', 'markdown');
+        root.innerHTML = markdown.render(String(source ?? ''));
+        for (const link of root.querySelectorAll('a')) {
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+        }
+        return root;
+      }
+
+      //: How much of a thinking's first line its collapsed summary shows before it is ellipsised.
+      const THINKING_PREVIEW_CHARS = 100;
+
+      // The hint a folded thinking shows after its label: the thinking's first non-empty line,
+      // whitespace flattened and cut near a hundred characters, so a reader sees what a turn was about
+      // without clicking — and never the whole reasoning, which stays in the body.
+      function thinkingPreview(text) {
+        const first = String(text ?? '')
+          .split('\n')
+          .map((line) => line.replace(/\s+/g, ' ').trim())
+          .find((line) => line !== '');
+        if (first === undefined) return '';
+        const cut =
+          first.length > THINKING_PREVIEW_CHARS
+            ? `${first.slice(0, THINKING_PREVIEW_CHARS).trimEnd()}…`
+            : first;
+        return cut;
+      }
+
+      // A reasoning model answers with its thinking beside the prose (or beside a tool call). It is
+      // plain text — the thinking is not the answer, and it is often messy — and collapsed to a
+      // one-line preview, so a hint shows without pushing the answer away. While `live` it is drawn
+      // open instead: the reader watches a turn reason as it arrives, and the committed message that
+      // replaces the tail folds it again. A fold the reader opened by hand is theirs: `id` names the
+      // thinking by its message, and `openedThinking` keeps their choice through every redraw.
+      function thinking(text, live = false, id = 'think') {
+        // The button copies the whole reasoning — the text the fold holds, not the one-line preview it shows
+        // while it is closed — and it sits at the end of that text, inside the fold: what is copied and the
+        // way to copy it fold away and come back together, and a closed thinking carries no control of its
+        // own. No time here either: a thinking does not take the round's time, the answer it belongs to does.
+        const whole = String(text ?? '');
+        const box = foldedTool(
+          'think',
+          t('fold.thinking'),
+          text,
+          'think',
+          openedThinking.get(id) ?? live,
+          thinkingPreview(text),
+          messageFoot(null, whole, t('copy.thinking')),
+        );
+        box.dataset.thinkId = id;
+        box.addEventListener('toggle', () => openedThinking.set(id, box.open));
+        return box;
+      }
+
+      // A fold's summary: its label — a small-caps name, the CSS that uppercases `.fold-label` — and,
+      // after it, the preview of what the fold is about, drawn by `.fold-preview` exactly as written.
+      function foldHeading(label, preview) {
+        const summary = el('summary');
+        summary.append(el('span', 'fold-label', label));
+        if (preview) summary.append(el('span', 'fold-preview', preview));
+        return summary;
+      }
+
+      function usageLine(usage) {
+        return el(
+          'div',
+          'token-usage',
+          t('msg.usage', {
+            input: tokenNumber.format(usage.prompt_tokens),
+            output: tokenNumber.format(usage.completion_tokens),
+            total: tokenNumber.format(usage.total_tokens),
+          }),
+        );
+      }
+
+      // When a message finished, as the transcript remembers it: the time it was committed, and — on an
+      // answer — how long its round took. The node writes the stamp in UTC; the reader wants their own
+      // clock, so it is turned into local hours and minutes here — a 24-hour clock, which is the same
+      // five characters wide in every locale. A transcript written before the node stamped its lines,
+      // or a line that is still being written, has no stamp and gets no element.
+      function committedAt(message) {
+        if (!message?.at) return null;
+        const at = new Date(message.at);
+        if (Number.isNaN(at.getTime())) return null;
+        const time = at.toLocaleTimeString([], {
+          hour: '2-digit',
+          minute: '2-digit',
+          hour12: false,
+        });
+        const took =
+          typeof message.took_ms === 'number' && message.took_ms >= 0
+            ? t('msg.took', { seconds: (message.took_ms / 1000).toFixed(1) })
+            : '';
+        return el('div', 'msg-time', `${time}${took}`);
+      }
+
+      // The end of a message: when it finished, and the way to take it away — one row, so the two arrive
+      // and leave together rather than as two things that each happen to be quiet. The row is drawn for
+      // whatever the box has: a stamped message gets its time on the left, a box with text of its own gets
+      // the button on the right, and a box with neither gets no row at all. A thinking has a button and no
+      // time of its own — a round is what takes time, and the round's own row says so.
+      function messageFoot(message, text, label) {
+        const foot = el('div', 'msg-foot');
+        const stamp = committedAt(message);
+        if (stamp) foot.append(stamp);
+        if (text) foot.append(copyButton(text, label));
+        return foot.children.length > 0 ? foot : null;
+      }
+
+      // The label row: who spoke, and what the turn cost. The time is not here: it belongs with the button
+      // at the end of the message (see `messageFoot`), because the two are one thing to a reader. A message
+      // that carries no usage (the reader's, a tool result) is just the label. A pushed message also says
+      // who pushed it, right beside the role (`YOU · From timer`); the moment it was sent is that sender's
+      // tooltip, because a reader who wants it can ask for it and a reader who does not is not made to
+      // read a timestamp on every line.
+      function roleLine(role, message, from = null) {
+        const row = el('div', 'role', role);
+        if (from) {
+          // `textContent`, so a sender is a word and never markup: nothing about it is written as HTML.
+          const tag = el('span', 'from', t('msg.from', { from: from.from }));
+          tag.title = from.time;
+          row.append(tag);
+        }
+        if (message.usage) row.append(usageLine(message.usage));
+        return row;
+      }
+
+      //: What a node puts at the head of the message it pushes into the conversation: `FROM: <sender>,
+      //: TIME: <stamp>` on one line, a blank line, then what was said. It is the envelope, not the
+      //: message. Only the exact shape counts, only at the very start of a user message: a message that
+      //: merely mentions `FROM:` — a quoted line, a fenced block, a sentence — is left as written, and
+      //: an assistant or tool message is never searched at all (see `boxes`).
+      const PUSH_META =
+        /^FROM:[ \t]*([^\n]{1,200}?)[ \t]*,[ \t]*TIME:[ \t]*([0-9]{4}-[0-9]{2}-[0-9]{2}[ T][0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,9})?[ \t]*UTC[+-][0-9]{2}:[0-9]{2})[ \t]*\r?\n(?:[ \t]*\r?\n)+/;
+
+      /** A pushed message split into its envelope and its body, or `null` for one that carries none. */
+      function splitPushMeta(content) {
+        if (typeof content !== 'string') return null;
+        const match = PUSH_META.exec(content);
+        if (!match) return null;
+        return { from: match[1], time: match[2], body: content.slice(match[0].length) };
+      }
+
+      //: How long a copy button says what it did before it goes quiet again: long enough to be read,
+      //: short enough that a message is never left looking changed.
+      const COPY_NOTE_MS = 1000;
+
+      // The message's own text, as plain text: what the message said, not what its box happens to show
+      // — a folded tool result and a rendered Markdown answer copy as the text they were drawn from.
+      //
+      // Copying happens inside the click and never after an `await`: the browser's own copy —
+      // `document.execCommand('copy')` — only works while the click's user activation is still there,
+      // and an `await` is what throws it away (in Safari and on iOS it is not given back, so a fallback
+      // reached after one fails in silence). So where there is no Clipboard API the synchronous way is
+      // the only way, and it is taken at once, before anything is awaited. The Clipboard API, where there
+      // is one, is called here too — synchronously, so it sees the click's own activation — and only its
+      // promise is awaited, which is what the API is for. A refusal is remembered (`clipboardRefused`), so
+      // the click *after* one takes the synchronous way as well: the fallback is never something the page
+      // only knows how to reach too late.
+      //: Set once the Clipboard API has refused. A refusal is a refusal for the page's life — a permission
+      //: the reader denied, a document that never gets focus — so from then on the document's own copy goes
+      //: first, and it goes first *inside the click*, which is the only place it can work from.
+
+      function copyText(text) {
+        const clipboard = typeof navigator === 'undefined' ? null : navigator.clipboard;
+        if (!clipboard?.writeText || clipboardRefused)
+          return Promise.resolve(copyThroughDocument(text));
+        try {
+          return Promise.resolve(clipboard.writeText(text)).then(
+            () => true,
+            () => {
+              clipboardRefused = true;
+              return copyThroughDocument(text);
+            },
+          );
+        } catch {
+          // A browser can refuse before it even returns a promise — an insecure origin, a permission the
+          // reader denied, a document that is not focused. That refusal is remembered for the next click,
+          // which will then be synchronous; this one is late, and tries anyway rather than copying nothing.
+          clipboardRefused = true;
+          return Promise.resolve(copyThroughDocument(text));
+        }
+      }
+
+      // The fallback: the text goes into a text area off the page, is selected, and the document copies
+      // the selection. A browser with no `execCommand` copies nothing and the button says so.
+      function copyThroughDocument(text) {
+        if (typeof document.execCommand !== 'function') return false;
+        const area = el('textarea', 'copy-source');
+        area.value = text;
+        area.setAttribute('readonly', '');
+        area.style.position = 'fixed';
+        area.style.top = '-1000px';
+        document.body.append(area);
+        let copied = false;
+        try {
+          area.select();
+          copied = document.execCommand('copy') === true;
+        } catch {
+          copied = false;
+        }
+        area.remove();
+        return copied;
+      }
+
+      // What the button draws instead of saying it: the classic copy mark — two sheets, the one behind
+      // offset — and its two answers, a tick and a cross. Inline SVG, so the page stays one file, and
+      // `currentColor`, so the marks follow the bubble and the colour scheme. Which one is up is the
+      // button's own `data-state`; the words live in its label, where a screen reader finds them.
+      const COPY_MARK =
+        '<svg class="copy-mark" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<rect x="9" y="8.5" width="11.5" height="11.5" rx="2.6"/>' +
+        '<path d="M6.5 15.5H5.4A2.4 2.4 0 0 1 3 13.1V5.4A2.4 2.4 0 0 1 5.4 3h7.7a2.4 2.4 0 0 1 2.4 2.4v1.1"/></svg>';
+      const OK_MARK =
+        '<svg class="copy-ok" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<path d="M5 12.5l4.5 4.5L19 7.5"/></svg>';
+      const NO_MARK =
+        '<svg class="copy-no" viewBox="0 0 24 24" aria-hidden="true" focusable="false">' +
+        '<path d="M7 7l10 10M17 7L7 17"/></svg>';
+
+      // One copy button, carrying the text it copies — captured when the box was drawn, so a click never
+      // has to go looking for the message it belongs to. It answers with a shape for a second rather than
+      // with a word, and the shape is the only thing that changes: the box keeps its size, so nothing
+      // around it jumps when the mark becomes a tick. The listener is a plain one and not an async
+      // function, because the copy is started in the click's own task and only its answer is awaited.
+      // `label` says what is being copied; while there is nothing to report, the button says that.
+      function copyButton(text, label = null) {
+        const button = el('button', 'copy');
+        button.type = 'button';
+        button.innerHTML = COPY_MARK + OK_MARK + NO_MARK;
+        const saying = (state) => {
+          const said =
+            state === 'copied'
+              ? t('copy.copied')
+              : state === 'failed'
+                ? t('copy.failed')
+                : (label ?? t('copy.thisMessage'));
+          button.dataset.state = state;
+          button.setAttribute('aria-label', said);
+          button.title = said;
+        };
+        saying('copy');
+        let note = null;
+        // A plain listener and not an async function: the copy starts in the click's own task, so the
+        // browser still sees the reader's activation, and only its answer is awaited. Nothing a click does
+        // but copy — no copy button rides a fold's summary any more, so no click here is also a toggle.
+        button.addEventListener('click', () => {
+          copyText(text).then((copied) => {
+            saying(copied ? 'copied' : 'failed');
+            clearTimeout(note);
+            note = setTimeout(() => saying('copy'), COPY_NOTE_MS);
+          });
+        });
+        return button;
+      }
+
+      // Only a box with text of its own has something to copy: a round of tool calls with no prose, a
+      // thinking's live status line and an empty snapshot have none, and get no button. `label` is what
+      // is being copied, for a reader who cannot see where the button sits.
+      function withCopy(box, text, label) {
+        if (text) box.append(copyButton(text, label));
+        return box;
+      }
+
+      /** The word a state shows: the node's own word for machines (`idle` / `generating` / `tool` /
+       *  `stopping`), made readable here. The words live in the resource, so this is the only place that
+       *  knows which state a key belongs to; a state this page has not been taught is shown as the node
+       *  wrote it. */
+      function stateLabel(state) {
+        const key = {
+          idle: 'state.idle',
+          generating: 'state.generating',
+          tool: 'state.tool',
+          stopping: 'state.stopping',
+        }[state];
+        return typeof key === 'string' ? t(key) : state;
+      }
+
+      /** A dash means the count is unknown, not zero — and the row says which kind of unknown it is,
+       *  because “nothing yet” and “the provider reported none” look the same otherwise and a reader
+       *  cannot tell a quiet session from a broken page. */
+      function renderUsage(usage) {
+        const reported = usage.reported_calls > 0;
+        const calls = usage.model_calls > 0;
+        const counts = [
+          [promptTokens, usage.prompt_tokens],
+          [completionTokens, usage.completion_tokens],
+          [totalTokens, usage.total_tokens],
+        ];
+        for (const [node, count] of counts)
+          node.textContent = reported ? compactTokens(count) : '—';
+        usageRow.title = reported
+          ? ''
+          : calls
+            ? usage.model_calls === 1
+              ? t('usage.noCountsOne')
+              : t('usage.noCounts', { calls: usage.model_calls })
+            : t('usage.noCallYet');
+      }
+
+      /** A node whose status carries no usage at all: same dashes, and the row says that instead of
+       *  leaving the reader to guess. */
+      function renderUsageMissing() {
+        for (const node of [promptTokens, completionTokens, totalTokens]) node.textContent = '—';
+        usageRow.title = t('usage.none');
+      }
+
+      /** The newest status read: the state word under the transcript, the queue above the composer. */
+
+      function renderStatus(page, status) {
+        withPage(page, () => {
+          agentStatus = status && typeof status === 'object' ? status : null;
+          const row = agentRows.find((each) => each.name === page.name);
+          if (row && typeof agentStatus?.state === 'string') {
+            row.state = agentStatus.state;
+            renderAgents();
+          }
+          // The queue, the usage row and the two buttons belong to the page on screen: a status read
+          // for a page nobody is looking at changes that page and nothing else.
+          if (page === pages.get(currentAgent)) {
+            renderQueue(agentStatus?.queued);
+            if (agentStatus?.usage) renderUsage(agentStatus.usage);
+            else if (agentStatus !== null) renderUsageMissing();
+            // Send and Stop are drawn from this word, so a status that arrives puts them right now
+            // rather than on the next paint: a box may have nothing to redraw, and a Stop left over
+            // from the last turn is exactly what the reader is looking at while it is wrong.
+            renderControls();
+          }
+          scheduleRender(page);
+        });
+      }
+
+      /** The messages the node has taken but not read yet, oldest first, as one line each. */
+      function renderQueue(queued) {
+        const waiting = Array.isArray(queued) ? queued : [];
+        queue.replaceChildren();
+        for (const message of waiting) {
+          const row = el('div', 'queue-item');
+          row.append(el('strong', null, t('queue.queued')));
+          row.append(document.createTextNode(String(message?.content ?? '')));
+          queue.append(row);
+        }
+        queue.hidden = waiting.length === 0;
+      }
+
+      // `bodyExtra` is what a fold carries at the end of its body, under the text it belongs to — the
+      // thinking's copy button, the one control a fold has. In the body it folds with the content, which is
+      // what a reader who wants the reasoning elsewhere is looking at when they reach for it.
+      function foldedTool(cls, label, content, id, open = false, preview = '', bodyExtra = null) {
+        const box = el('details', cls);
+        const body = el('div', 'plain', content);
+        if (bodyExtra) body.append(bodyExtra);
+        box.append(foldHeading(label, preview), body);
+        return fold(box, open, id);
+      }
+
+      function section(label, content) {
+        const box = el('div', 'section');
+        box.append(el('div', 'section-label', label), content);
+        return box;
+      }
+
+      // This agent offers exactly three tools, so each one gets a heading a reader can use at a
+      // glance: a label saying what kind of call it is, and the node and capability the model named,
+      // exactly as it wrote them. An unknown tool falls back to its name.
+      function toolHeading(call) {
+        const args = parseCallArgs(call) ?? {};
+        const name = call.function.name;
+        if (name === 'list_nodes') return { label: t('tool.listNodes') };
+        if (name === 'list_node_tools')
+          return { label: t('tool.listTools'), detail: String(args.node ?? '?') };
+        if (name === 'run_on_node')
+          return { label: t('tool.call'), detail: `${args.node ?? '?'}.${args.tool_name ?? '?'}` };
+        return { label: t('tool.call'), detail: String(name) };
+      }
+
+      /** Whether the page is still waiting on a round's calls that have no result. A round the
+       *  transcript has moved past is one no result is coming for, and so is one the page has been
+       *  quiet about for longer than CALL_WAIT_MS; while a turn runs the wait stands, however long
+       *  the tool takes. An ask_user call is left out: it is waiting for the reader, not for a result. */
+      function stillWaiting(calls, results, movedOn) {
+        const answered = new Set(results.map((result) => result.tool_call_id));
+        const awaiting = calls.filter(
+          (call) => call.function?.name !== ASK_TOOL && !answered.has(call.id),
+        );
+        if (awaiting.length === 0 || movedOn) return false;
+
+        const now = Date.now();
+        for (const call of awaiting) if (!waitSince.has(call.id)) waitSince.set(call.id, now);
+        if (busy()) return true;
+
+        // The round waits as long as the first of its calls does: they were all asked at once.
+        const since = Math.min(...awaiting.map((call) => waitSince.get(call.id)));
+        const left = since + CALL_WAIT_MS - now;
+        if (left > 0) setTimeout(scheduleRender, left);
+        return left > 0;
+      }
+
+      /** An unanswered call, as the card's summary: a dot and the address being called. The words are
+       *  the reader's; the closing words for the dot are the screen reader's, which then hears the
+       *  state itself and not an ellipsis. The address is the one the settled card wears — the same
+       *  heading — so a call whose arguments are still arriving reads `calling ?.?…`, not a guess. */
+      function parseCallArgs(call) {
+        try {
+          const value = JSON.parse(call.function?.arguments ?? '');
+          return value && typeof value === 'object' ? value : null;
+        } catch {
+          return null;
+        }
+      }
+
+      // The node's deadline for a question, as the page reads it: the instant the wait runs out and
+      // the default the turn carries on with, or null for a question with no deadline at all.
+      function askWait(message) {
+        const at = Date.parse(message?.deadline ?? '');
+        if (!Number.isFinite(at)) return null;
+        return { deadline: at, default: message.default ?? null };
+      }
+
+      // The tool's own word that nobody answered in time: the object the python agent returns when a
+      // question runs out of time. Null for every other result, a real answer included.
+      function timeoutVerdict(answer) {
+        try {
+          const value = JSON.parse(answer);
+          return value && value.answered === false && value.reason === 'timeout' ? value : null;
+        } catch {
+          return null;
+        }
+      }
+
+      // What a question that ran out of time says instead of a countdown: the answer the turn carried
+      // on with, when the question named one.
+      const timedOutNote = (used) =>
+        used === null || used === undefined
+          ? t('ask.timedOutNoAnswer')
+          : t('ask.timedOutDefault', { used });
+
+      // Whole seconds left, rounded up: the line says "42s left" with 41.2 seconds on the clock, and
+      // only reaches zero when the wait is really over.
+      const secondsLeft = (wait) => Math.max(0, Math.ceil((wait.deadline - Date.now()) / 1000));
+
+      // The countdown line itself, kept by its question's id so a tick can move it without a repaint.
+      function countdownLine(id, wait) {
+        const left = secondsLeft(wait);
+        const line = el(
+          'div',
+          'ask-countdown',
+          left > 0 ? t('ask.secondsLeft', { seconds: left }) : timedOutNote(wait.default),
+        );
+        askCountdowns.set(id, line);
+        return line;
+      }
+
+      // One ticker for the page, and it lives only while there is something to count: a question the
+      // node is still waiting on, whose deadline has not passed. Answered, given up on, or past its
+      // deadline, a question stops being one — and the last of them stops the ticker. Every tick reads
+      // the clock instead of adding up the ticks it has seen, which is what lets a tab that was in the
+      // background come back to the right second. True when a clock just ran out, because the badge a
+      // card drew ("waiting for your answer") is no longer true and the caller has to reload.
+      function tickWaits() {
+        let counting = false;
+        let news = false;
+        for (const [id, wait] of askWaits) {
+          if (!liveAsks.has(id) || askTimedOut.has(id)) continue;
+          const left = secondsLeft(wait);
+          if (left > 0) {
+            counting = true;
+            const line = askCountdowns.get(id);
+            if (line) line.textContent = t('ask.secondsLeft', { seconds: left });
+            continue;
+          }
+          askTimedOut.add(id);
+          liveAsks.delete(id);
+          news = true;
+          const line = askCountdowns.get(id);
+          if (line) line.textContent = timedOutNote(wait.default);
+        }
+        if (!counting) stopWaitTicker();
+        return news;
+      }
+
+      function startWaitTicker() {
+        if (askTimer === null)
+          askTimer = setInterval(() => {
+            if (tickWaits()) reload();
+          }, 1000);
+      }
+
+      function stopWaitTicker() {
+        if (askTimer === null) return;
+        clearInterval(askTimer);
+        askTimer = null;
+      }
+
+      // One ask_user call -> one card. The question comes out of the call's own arguments, which the
+      // page can already read while the model is still streaming them; the answer comes back as an
+      // ordinary tool result, matched by the call's id like every other result.
+      function askCard(call, result) {
+        const id = call.id;
+        const card = el('article', 'ask');
+        card.dataset.askId = id;
+        const args = parseCallArgs(call);
+        if (!args) {
+          // Still streaming: a question being written, not a form to answer yet.
+          card.append(
+            el('div', 'ask-badge', t('ask.preparing')),
+            el('div', 'ask-body plain', call.function?.arguments ?? ''),
+          );
+          return card;
+        }
+
+        const selections = Array.isArray(args.selections) ? args.selections.map(String) : [];
+        const mode =
+          args.input === 'button' || args.input === 'text'
+            ? args.input
+            : selections.length
+              ? 'button'
+              : 'text';
+        const answer = result ? String(result.content ?? '') : null;
+        const answered = answer !== null && /^user (chose|answered):/.test(answer);
+        const cancelled = answer === 'cancelled by user';
+        const failed = answer !== null && !answered && !cancelled;
+        const sent = answer === null && askSent.has(id);
+        // The wait the node announced, and the result's own word on whether it ran out: either way a
+        // question that is over is not waiting on the reader, and a card must not say that it is.
+        const wait = askWaits.get(id) ?? null;
+        const verdict = answer === null ? null : timeoutVerdict(answer);
+        const timedOut = verdict !== null || (answer === null && askTimedOut.has(id));
+        const used = wait?.default ?? verdict?.answer ?? null;
+        if (answer !== null) {
+          liveAsks.delete(id);
+          askWaits.delete(id);
+          askCountdowns.delete(id);
+          askTimedOut.delete(id);
+        }
+
+        card.append(
+          el(
+            'div',
+            'ask-badge' + (failed && !timedOut ? ' error' : ''),
+            answer === null
+              ? timedOut
+                ? t('ask.timedOut')
+                : liveAsks.has(id)
+                  ? t('ask.waiting')
+                  : t('ask.yours')
+              : answered
+                ? t('ask.answered')
+                : cancelled
+                  ? t('ask.cancelled')
+                  : timedOut
+                    ? t('ask.timedOut')
+                    : t('ask.failed'),
+          ),
+        );
+        card.append(
+          el('h4', 'ask-title', String(args.title || t('ask.defaultTitle'))),
+        );
+        if (args.content) {
+          const body = renderMarkdown(args.content);
+          body.classList.add('ask-body');
+          card.append(body);
+        }
+        // The wait sits under the question it belongs to: the clock while the node is on it, and then
+        // the note that the turn carried on with the question's own default.
+        if (timedOut) {
+          card.append(el('div', 'ask-countdown', timedOutNote(used)));
+        } else if (wait) {
+          card.append(countdownLine(id, wait));
+        }
+
+        if (answer !== null) {
+          // The timeout result is the tool's own JSON; the note above is its sentence.
+          if (!timedOut) card.append(el('div', 'ask-answer plain', answer));
+          return card;
+        }
+
+        if (sent) {
+          card.append(el('div', 'ask-state', t('ask.sent')));
+        } else if (mode === 'button' && selections.length) {
+          const row = el('div', 'ask-choices');
+          for (const choice of selections) {
+            const button = el('button', 'ask-choice', choice);
+            button.type = 'button';
+            button.addEventListener('click', () => void answerAsk(id, choice));
+            row.append(button);
+          }
+          card.append(row);
+        } else {
+          const form = el('form', 'ask-form');
+          const box = el('textarea', 'ask-text');
+          box.rows = 1;
+          box.dataset.askId = id;
+          box.placeholder = t('ask.placeholder');
+          box.value = askDrafts.get(id) ?? '';
+          const button = el('button', 'ask-send', t('ask.send'));
+          button.type = 'submit';
+          form.append(box, button);
+          const submitAnswer = (event) => {
+            event.preventDefault();
+            void answerAsk(id, box.value);
+          };
+          form.addEventListener('submit', submitAnswer);
+          box.addEventListener('input', () => {
+            askDrafts.set(id, box.value);
+            growText(box);
+          });
+          box.addEventListener('keydown', (event) => {
+            if (!composing(event) && event.key === 'Enter' && !event.shiftKey) submitAnswer(event);
+          });
+          card.append(form);
+        }
+        if (askError.has(id)) card.append(el('div', 'ask-state error', askError.get(id)));
+        return card;
+      }
+
+      // The answer goes back through the same POST /call as the rest of the page. The card stays
+      // inert until the transcript shows the result, so a slow round cannot be answered twice.
+      async function answerAsk(id, value) {
+        const answer = String(value ?? '').trim();
+        if (answer === '' || askSent.has(id)) return;
+        askSent.add(id);
+        askError.delete(id);
+        askDrafts.delete(id);
+        renderTranscript();
+        const reply = await call(`${NODE}.answer`, forAgent({ id, answer }));
+        if (!reply.ok) {
+          askSent.delete(id);
+          askError.set(id, reply.error ?? t('ask.refused'));
+        }
+        await load();
+      }
+
+      // Grow a textarea to its content; the CSS `max-height` is what stops it and starts the scroll.
+      // The inline px is a measurement of one moment, though: turn the phone, open the keyboard, let
+      // the URL bar collapse or drag the shell's splitter and the same text wraps into a different
+      // number of lines while the px stays — a box left taller than its text, with blank space in it,
+      // until the next keystroke. So the cap is read as the px it is right now and the measurement is
+      // taken again whenever the box the page is drawn in changes (see regrowBoxes below).
+      function growText(box) {
+        box.style.height = 'auto';
+        if (!box.isConnected) return;
+        if (box.value === '') {
+          box.style.height = ''; // empty: the stylesheet's one line (and its min-height) is the truth
+          return;
+        }
+        const cap = parseFloat(getComputedStyle(box).maxHeight);
+        const wanted = Number.isFinite(cap) ? Math.min(box.scrollHeight, cap) : box.scrollHeight;
+        box.style.height = `${wanted}px`;
+      }
+
+      // A resize is the phone turning, the keyboard opening or the URL bar collapsing: all three
+      // re-wrap the text and change how much of the screen is left, so every box measures itself
+      // again. visualViewport is the one that fires for the keyboard where it exists; resize and
+      // orientationchange cover the rest, this page's own frame included.
+      function regrowBoxes() {
+        for (const box of [input, ...log.querySelectorAll('textarea')]) growText(box);
+      }
+
+      // A repaint re-creates every box, so what was typed into a card is put back afterwards: a
+      // question can sit on screen for minutes, and losing a keystroke to an unrelated event is a
+      // bug worth preventing.
+      function captureAskDrafts() {
+        for (const box of log.querySelectorAll('.ask-text')) {
+          if (box.value !== '') askDrafts.set(box.dataset.askId, box.value);
+        }
+        const active = document.activeElement;
+        askFocus = active?.classList?.contains('ask-text')
+          ? { id: active.dataset.askId, caret: active.selectionStart }
+          : null;
+      }
+
+      function restoreAskDrafts() {
+        for (const box of log.querySelectorAll('.ask-text')) {
+          const draft = askDrafts.get(box.dataset.askId);
+          if (draft) {
+            box.value = draft;
+            growText(box);
+          }
+        }
+        if (askFocus === null) return;
+        const focused = [...log.querySelectorAll('.ask-text')].find(
+          (box) => box.dataset.askId === askFocus.id,
+        );
+        if (focused) {
+          focused.focus();
+          focused.setSelectionRange(askFocus.caret, askFocus.caret);
+        }
+      }
+
+      function scrollToAsk() {
+        if (askScrollTo === null) return false;
+        const card = [...log.querySelectorAll('.ask')].find(
+          (box) => box.dataset.askId === askScrollTo,
+        );
+        if (!card) return false;
+        askScrollTo = null;
+        card.scrollIntoView({ block: 'nearest' });
+        return true;
+      }
+
+      function toolRound(msg, results, live = false, stillRunning = false, id = 'think') {
+        const box = el('article', 'tool-round');
+        // The label row carries what the turn cost; the round's own time rides at the end of the box with
+        // the copy button, like any other message. The thinking follows `live` and is named by `id`.
+        box.append(roleLine(roles().assistant, msg));
+        if (msg.reasoning_content) box.append(thinking(msg.reasoning_content, live, id));
+
+        // A message's prose is not optional just because it also carries tool calls: a model that says
+        // "let me look at the file" and then calls a tool used to lose the sentence entirely. Drawn with
+        // the same folding any other answer gets; only the thinking follows `live`, so the prose is not
+        // marked as the streaming tail.
+        if (msg.content) box.append(...responseParts(msg.content, false));
+
+        const remaining = [...results];
+        for (const call of msg.tool_calls) {
+          const resultIndex = remaining.findIndex((result) => result.tool_call_id === call.id);
+          const result = resultIndex === -1 ? null : remaining.splice(resultIndex, 1)[0];
+
+          // ask_user is the one call that waits for the reader: it gets a card, not a fold.
+          if (call.function?.name === ASK_TOOL) {
+            box.append(askCard(call, result));
+            continue;
+          }
+
+          let args = call.function.arguments;
+          try {
+            args = JSON.stringify(JSON.parse(args), null, 2);
+          } catch {}
+
+          const heading = toolHeading(call);
+          const running = result === null && stillRunning;
+          const card = el('details', 'call');
+          // Both halves of a call can be taken away: the arguments as the model wrote them, and what the
+          // call answered. Each button sits under the text it copies, with the section that names it.
+          card.append(
+            foldHeading(heading.label, heading.detail),
+            withCopy(
+              section(t('call.arguments'), el('div', 'plain', args)),
+              args,
+              t('copy.arguments'),
+            ),
+          );
+          if (result) {
+            card.append(
+              withCopy(
+                section(t('call.result'), el('div', 'plain', result.content ?? '')),
+                result.content,
+                t('copy.result'),
+              ),
+            );
+          }
+          // Never a result the page does not have: an unanswered call says exactly that.
+          else if (!running) card.append(el('div', 'plain', t('call.noResult')));
+          box.append(fold(card, false, call.id));
+        }
+        for (const result of remaining) {
+          box.append(
+            withCopy(
+              foldedTool('tool', roles().tool, result.content ?? ''),
+              result.content,
+              t('copy.result'),
+            ),
+          );
+        }
+        // The round's last line: when it finished and how long it took, and the way to take its prose away —
+        // at the end of the round, under the calls it made, because that is where the round ends.
+        const foot = messageFoot(msg, msg.content, t('copy.thisMessage'));
+        if (foot) box.append(foot);
+        return box;
+      }
+
+      // An overlong answer folds along its own headings. Every heading is a folding point, so the
+      // outline stays readable and no prose is cut in half; an answer without headings cannot be
+      // folded by structure, so it folds its tail instead and keeps the opening.
+      function responseParts(source, streaming) {
+        const text = String(source ?? '');
+        const tree = outline(text);
+        if (tree.parts.some((part) => part.section)) {
+          const foldLevel = foldLevelFor(tree);
+          return foldLevel === null
+            ? [renderMarkdown(text)]
+            : renderOutline(tree.parts, foldLevel, streaming);
+        }
+
+        const cut = responseCut(text);
+        if (cut >= text.length) return [renderMarkdown(text)];
+
+        const hidden = text.slice(cut);
+        const box = fold(el('details', 'long'), Boolean(streaming), 'tail');
+        const summary = el('summary');
+        summary.append(
+          el('span', 'long-label', t('fold.showRest', { count: hidden.length })),
+          el('span', 'long-text', hidden.replace(/\s+/g, ' ').trim().slice(0, 160)),
+        );
+        box.append(summary, renderMarkdown(hidden));
+
+        const head = text.slice(0, cut);
+        return head.trim() ? [renderMarkdown(head), box] : [box];
+      }
+
+      // Parse Markdown into a heading tree. A section holds its body in document order, so any
+      // prose that follows a subsection stays where it was written. Headings inside a fence are
+      // code, not structure.
+      function outline(source) {
+        const root = { level: 0, heading: null, parts: [] };
+        const stack = [root];
+        let fenced = false;
+
+        for (const line of source.split('\n')) {
+          if (/^[ \t]*(```|~~~)/.test(line)) fenced = !fenced;
+          const heading = fenced ? null : line.match(/^(#{1,6})\s+(.*)$/);
+
+          if (!heading) {
+            const section = stack[stack.length - 1];
+            const last = section.parts[section.parts.length - 1];
+            if (last?.text) last.text.push(line);
+            else section.parts.push({ text: [line] });
+            continue;
+          }
+
+          const level = heading[1].length;
+          while (stack.length > 1 && stack[stack.length - 1].level >= level) stack.pop();
+          const section = { level, heading: heading[2].trim(), parts: [] };
+          stack[stack.length - 1].parts.push({ section });
+          stack.push(section);
+        }
+        return root;
+      }
+
+      // What stays on screen when everything at foldLevel and deeper collapses: each folded section
+      // shrinks to its heading line.
+      function visibleSize(parts, foldLevel) {
+        let lines = 0;
+        let chars = 0;
+        for (const part of parts) {
+          if (!part.section) {
+            lines += part.text.length;
+            chars += part.text.join('\n').length;
+            continue;
+          }
+          const { level, heading, parts: inner } = part.section;
+          if (level >= foldLevel) {
+            lines += 1;
+            chars += heading.length;
+          } else {
+            const below = visibleSize(inner, foldLevel);
+            lines += below.lines + 1;
+            chars += below.chars + heading.length;
+          }
+        }
+        return { lines, chars };
+      }
+
+      // Fold the deepest level first — four, then three, then two, then one — and keep the first
+      // level that brings what remains inside the budget. null means nothing needs folding.
+      function foldLevelFor(tree) {
+        const fits = (level) => {
+          const { lines, chars } = visibleSize(tree.parts, level);
+          return lines <= RESPONSE_FOLD_LINES && chars <= RESPONSE_FOLD_CHARS;
+        };
+        if (fits(Infinity)) return null;
+        for (const level of [4, 3, 2, 1]) if (fits(level)) return level;
+        return 1;
+      }
+
+      // Render an outline with every section at foldLevel or deeper collapsed. A folded section
+      // keeps its heading on screen, drawn in heading format, and reveals its own prose and any
+      // deeper sections, themselves folded the same way.
+      function renderOutline(parts, foldLevel, streaming) {
+        const nodes = [];
+        for (const part of parts) {
+          if (!part.section) {
+            const chunk = part.text.join('\n');
+            if (chunk.trim()) nodes.push(renderMarkdown(chunk));
+            continue;
+          }
+
+          const { level, heading, parts: inner } = part.section;
+          const title = renderMarkdown(`${'#'.repeat(level)} ${heading}`);
+          if (level >= foldLevel) {
+            const box = fold(
+              el('details', 'long head'),
+              Boolean(streaming),
+              `head:${level}:${heading}`,
+            );
+            const summary = el('summary');
+            summary.append(title);
+            box.append(summary, ...renderOutline(inner, foldLevel, false));
+            nodes.push(box);
+          } else {
+            nodes.push(title, ...renderOutline(inner, foldLevel, streaming));
+          }
+        }
+        return nodes;
+      }
+
+      // Where a headingless answer is trimmed: the opening stays up to the budget and the rest
+      // folds. The cut prefers a line boundary, then a word boundary, and backs out of a fenced
+      // code block, so both pieces still render as Markdown.
+      function responseCut(source) {
+        const lines = source.split('\n');
+
+        const lineCut =
+          lines.length > RESPONSE_FOLD_LINES
+            ? lines.slice(0, RESPONSE_FOLD_LINES).join('\n').length + 1
+            : source.length;
+
+        const budget = Math.min(source.length, RESPONSE_FOLD_CHARS);
+        const newline = source.lastIndexOf('\n', budget);
+        const space = source.lastIndexOf(' ', budget);
+        const charCut =
+          source.length <= RESPONSE_FOLD_CHARS
+            ? source.length
+            : newline !== -1
+              ? newline + 1
+              : space !== -1
+                ? space + 1
+                : budget;
+
+        let cut = Math.min(charCut, lineCut);
+
+        // A cut inside a ``` block would split it, so it backs out to the block's opening line. A
+        // block too big for the whole budget therefore folds away as one unit.
+        let fenced = false;
+        let opened = 0;
+        let offset = 0;
+        for (const line of lines) {
+          if (offset >= cut) break;
+          if (/^[ \t]*(```|~~~)/.test(line)) {
+            if (!fenced) opened = offset;
+            fenced = !fenced;
+          }
+          offset += line.length + 1;
+        }
+        if (fenced) cut = opened;
+        return Math.max(cut, 0);
+      }
+
+      // One message -> one or more boxes. Tool activity is literal and folded by default;
+      // assistant prose is Markdown.
+      function boxes(msg, streaming = false, id = 'think') {
+        const thought =
+          msg.role === 'assistant' && msg.reasoning_content
+            ? [thinking(msg.reasoning_content, streaming, id)]
+            : [];
+        if (msg.tool_calls?.length) return [toolRound(msg, [], streaming, busy(), id)];
+        if (msg.role === 'tool')
+          return [
+            withCopy(
+              foldedTool('tool', roles().tool, msg.content ?? ''),
+              msg.content,
+              t('copy.result'),
+            ),
+          ];
+
+        const box = el('article', `msg ${msg.role}`);
+        // A pushed message is unwrapped first: the envelope names who sent it, the body is the message —
+        // and what is copied is the body, the same text the reader sees.
+        const pushed = msg.role === 'user' ? splitPushMeta(msg.content) : null;
+        const body = pushed ? pushed.body : (msg.content ?? '');
+        const content =
+          msg.role === 'assistant' ? responseParts(body, streaming) : [el('div', 'plain', body)];
+        box.append(roleLine(roles()[msg.role] ?? msg.role, msg, pushed), ...thought, ...content);
+        // The end of the message: its time and the way to copy it, as one row (see `messageFoot`).
+        const foot = messageFoot(msg, body, t('copy.thisMessage'));
+        if (foot) box.append(foot);
+        return [box];
+      }
+
+      // The transcript as boxes to keep or rebuild: one entry per top-level box, holding the messages
+      // it was drawn from and how to draw it. Entries are compared by message identity, so a paint
+      // rebuilds only the boxes whose messages are new — in practice the streaming tail, and nothing
+      // else, however long the conversation has grown.
+      function transcriptGroups(lines, streaming) {
+        const groups = [];
+        for (let index = 0; index < lines.length; index += 1) {
+          const msg = lines[index];
+          if (!msg.tool_calls?.length) {
+            const live = streaming && index === lines.length - 1;
+            groups.push({
+              key: `m${index}`,
+              refs: [msg],
+              live,
+              draw: () => boxes(msg, live, `m${index}`),
+            });
+            continue;
+          }
+
+          const results = [];
+          while (lines[index + 1]?.role === 'tool') {
+            results.push(lines[++index]);
+            // A call that has its result is not one the page is waiting on any more.
+            waitSince.delete(lines[index].tool_call_id);
+          }
+          // A streaming snapshot can carry tool calls before any result answers them: that round is
+          // the live tail too, and its thinking opens with it. Whether anything is drawn after it
+          // decides whether its unanswered calls are still running: a round the transcript has moved
+          // past gets no result, so the page stops saying it is calling.
+          const movedOn = index + 1 < lines.length;
+          const live = streaming && index === lines.length - 1;
+          groups.push({
+            key: `t${index}`,
+            refs: [msg, ...results],
+            movedOn,
+            waiting: stillWaiting(msg.tool_calls, results, movedOn),
+            live,
+            draw: (waiting) => [toolRound(msg, results, live, waiting, `t${index}`)],
+          });
+        }
+        return groups;
+      }
+
+      function emptyGroup() {
+        const box = el('div', 'empty');
+        box.append(
+          el('strong', null, t('empty.title')),
+          document.createTextNode(t('empty.text')),
+        );
+        return { key: 'empty', refs: [], live: false, draw: () => [box] };
+      }
+
+      /** The line under the transcript: what the node says it is doing, not what the page guesses from
+       *  the newest snapshot — the node knows whether it is writing, thinking or running a tool. */
+      function agentLine() {
+        const state = agentStatus?.state;
+        if (typeof state !== 'string' || state === 'idle') return null;
+        return stateLabel(state);
+      }
+
+      // Every <details> under #log, with the key its state is remembered by: the key of the box that
+      // owns it, plus either the fold's own name or its position inside that box.
+      function foldEntries() {
+        const found = [];
+        const walk = (node, owner, path) => {
+          let index = 0;
+          for (const child of node.children) {
+            const key = path === '' ? `${index}` : `${path}.${index}`;
+            const group = child.dataset.group ?? owner;
+            const here = child.dataset.group ? '' : key;
+            if (child.tagName === 'DETAILS')
+              found.push([child, `${group}|${child.dataset.foldId ?? here}`]);
+            walk(child, group, here);
+            index += 1;
+          }
+        };
+        walk(log, 'log', '');
+        return found;
+      }
+
+      // What the reader folded open or shut themselves: a fold whose state differs from the one its
+      // builder drew. Read before the paint, because the paint is what destroys the evidence.
+      function rememberFolds() {
+        for (const [box, key] of foldEntries()) {
+          // A thinking keeps its own record (`openedThinking`), written by the click.
+          if (box.dataset.thinkId) continue;
+          if (box.open === (box.dataset.fold === '1')) foldChoices.delete(key);
+          else foldChoices.set(key, box.open);
+        }
+      }
+
+      // Put those choices back on the boxes just drawn, and forget the ones whose box is gone.
+      function applyFolds() {
+        const kept = new Set();
+        for (const [box, key] of foldEntries()) {
+          kept.add(key);
+          const remembered = box.dataset.thinkId
+            ? openedThinking.get(box.dataset.thinkId)
+            : undefined;
+          box.open = remembered ?? foldChoices.get(key) ?? box.dataset.fold === '1';
+        }
+        for (const key of foldChoices.keys()) if (!kept.has(key)) foldChoices.delete(key);
+      }
+
+      // The body a thinking scrolls in: the fold's second child, after its summary. Both of the two rules
+      // below read it, one before the paint and one after.
+      const thinkingBody = (box) => box.children[1];
+
+      // What the reader scrolled a thinking's body to. A body at its own end is following the reasoning
+      // and keeps no place of its own, so the follow below carries on; one anywhere else is being read,
+      // and that place is theirs to keep. Read before the paint, like the folds.
+      function rememberThinkingScroll() {
+        for (const [box] of foldEntries()) {
+          const id = box.dataset.thinkId;
+          if (id === undefined || !box.open) continue;
+          const body = thinkingBody(box);
+          if (body.scrollTop + body.clientHeight >= body.scrollHeight - 40)
+            thinkingScroll.delete(id);
+          else thinkingScroll.set(id, body.scrollTop);
+        }
+      }
+
+      // A thinking is capped, so the reasoning arriving past the cap is out of sight unless the body
+      // itself is put at its own end: the reader watches the newest line, and the page under the box is
+      // not asked to move for it — that is what keeps a long thinking from pushing the answer away.
+      function followThinking() {
+        for (const [box] of foldEntries()) {
+          const id = box.dataset.thinkId;
+          if (id === undefined || !box.open) continue;
+          const body = thinkingBody(box);
+          body.scrollTop = thinkingScroll.get(id) ?? body.scrollHeight;
+        }
+      }
+
+      // The status line is one element, moved rather than re-created, so a paint never has to look
+      // for it among the boxes.
+
+      //: The two words for a turn the loop is in the middle of. `stopping` is the third and is neither
+      //: running nor idle: the turn is there, but it is already being cut short.
+      const RUNNING_STATES = ['generating', 'tool'];
+
+      /** What Send and Stop are drawn from: the node's own word for what it is doing — `generating`,
+       *  `tool`, `stopping` or `idle`. Until a status has been read (the page is drawn before its first
+       *  `agent.status` comes back) it falls back to what the page knows by itself, so a first screen
+       *  with a snapshot already in hand shows Stop rather than a Send that would open a second turn. Any
+       *  other word — a newer node, a state this page has not been taught — is drawn like a turn in
+       *  progress: a Send that cannot be pressed is the safe mistake. */
+      function controlState() {
+        const state = agentStatus?.state;
+        if (typeof state === 'string') return state;
+        return busy() ? 'generating' : 'idle';
+      }
+
+      // Send and Stop are drawn from `controlState()`, never toggled by hand: while the model works the
+      // input is closed and Stop is what is left (the turn is the node's — this page only queued the
+      // line — and only the node can cut it short), and between turns it is the other way round. A turn
+      // being stopped is the third case and has neither: Stop is gone because pressing it again asks the
+      // node for the same thing twice, and Send stays closed until the node says `idle`, because that
+      // turn is still holding the loop.
+      // Drawing both controls here — on every paint, including the one that opens the page — is what
+      // keeps them from disagreeing with each other: a page that repainted mid-answer used to offer
+      // Send, and Stop could not come back at all because only `sendText` ever touched it.
+      function renderControls() {
+        const state = controlState();
+        const running = RUNNING_STATES.includes(state);
+        const closed = state !== 'idle';
+        send.disabled = closed;
+        send.textContent = closed ? '…' : '↑';
+        if (closed) send.setAttribute('aria-busy', 'true');
+        else send.removeAttribute('aria-busy');
+        stop.hidden = !running;
+        stop.disabled = !running;
+      }
+
+      // Put the boxes in order, touching only what changed: a box this paint did not rebuild keeps its
+      // folds, its selection and its place, because it is never removed or re-inserted.
+      function paint(groups) {
+        const wanted = new Set(groups.map((group) => group.node));
+        let index = 0;
+        for (const group of groups) {
+          while (
+            log.children[index] &&
+            log.children[index] !== statusLine &&
+            !wanted.has(log.children[index])
+          ) {
+            log.children[index].remove();
+          }
+          if (log.children[index] !== group.node)
+            log.insertBefore(group.node, log.children[index] ?? null);
+          index += 1;
+        }
+        while (log.children[index] && log.children[index] !== statusLine)
+          log.children[index].remove();
+      }
+
+      function renderTranscript() {
+        // First, and before the early return below: the controls follow the model status, not the boxes,
+        // so a paint that has nothing to redraw still has to put them right. They are the chrome of
+        // the page on screen, so a paint of a hidden page leaves them alone.
+        if (current === pages.get(currentAgent)) renderControls();
+        const shown = streamingMessage === null ? messages : [...messages, streamingMessage];
+        const status = agentLine();
+        const asks = `${[...askSent].join(',')}|${[...askError.keys()].join(',')}|${[...liveAsks].join(',')}|${[...askTimedOut].join(',')}`;
+        // A question's badge and countdown are not in the transcript, so a reload that brings back the
+        // same lines would keep the box they were drawn in — saying the state they had then. When that
+        // state changes, the boxes are all drawn again: a question worth counting down is worth a paint.
+        const askNews = asks !== drawnAsks;
+
+        const groups = transcriptGroups(shown, streamingMessage !== null);
+        if (groups.length === 0) groups.push(emptyGroup());
+        const before = new Map(
+          (askNews || mathRedraw ? [] : drawn).map((entry) => [entry.key, entry]),
+        );
+        const entries = groups.map((group) => {
+          const previous = before.get(group.key);
+          const unchanged =
+            previous &&
+            previous.live === group.live &&
+            previous.movedOn === group.movedOn &&
+            previous.waiting === group.waiting &&
+            (previous.refs.every((ref, at) => ref === group.refs[at]) ||
+              // A streamed tail is a new object every snapshot, so it is compared by what it says:
+              // a snapshot that adds nothing visible costs nothing.
+              (group.live && JSON.stringify(previous.refs) === JSON.stringify(group.refs)));
+          if (unchanged) return previous;
+
+          const node = group.draw(group.waiting)[0];
+          node.dataset.group = group.key;
+          return {
+            key: group.key,
+            refs: group.refs,
+            live: group.live,
+            movedOn: group.movedOn,
+            waiting: group.waiting,
+            node,
+          };
+        });
+
+        // Drawing again would produce the same boxes under the same status line, which is what most
+        // reloads are: an entry is the box the page already has unless its message changed.
+        const same =
+          !askNews &&
+          status === drawnStatus &&
+          entries.length === drawn.length &&
+          entries.every((entry, at) => entry === drawn[at]);
+        drawn = entries;
+        drawnStatus = status;
+        drawnAsks = asks;
+        mathRedraw = false;
+        if (same && !landAtBottom) return;
+
+        captureAskDrafts();
+        rememberFolds();
+        rememberThinkingScroll();
+        const atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+
+        paint(drawn);
+        applyFolds();
+        restoreAskDrafts();
+        followThinking();
+        if (status === null) {
+          statusLine.remove();
+        } else {
+          statusLine.textContent = status;
+          log.append(statusLine);
+        }
+        // Following the tail is what keeps an answer readable; it must not be what makes the page
+        // unusable. So the follow only happens when the reader is already at the bottom, and it
+        // never animates — while it runs, an animated scroll would be re-aimed every snapshot and
+        // would never arrive. A window that was just opened lands there instead of travelling
+        // there, and then hands the reader a log that is already in place.
+        // A paint with no transcript in it (the window a switch empties, or a status line on its own)
+        // has no bottom to land on, and must not spend the flag the window that is about to arrive
+        // needs.
+        const land = landAtBottom && messages.length > 0;
+        if (land) landAtBottom = false;
+        log.classList.toggle('following', land || (streamingMessage !== null && atBottom));
+        // A question that just arrived wins over the usual "follow the tail".
+        if (!scrollToAsk() && (land || atBottom)) log.scrollTop = log.scrollHeight;
+        // A window shorter than the log has nothing to scroll, and a reader cannot scroll up to what
+        // does not scroll: ask for the page before it, once per paint, until the log overflows. A log
+        // with no height yet is one the browser has not laid out (or a stand-in that has no layout at
+        // all), and measuring it says nothing.
+        if (
+          !loadingOlder &&
+          log.clientHeight > 0 &&
+          historyFrom > 0 &&
+          log.scrollHeight <= log.clientHeight
+        ) {
+          void loadOlder();
+        }
+      }
+
+      // Snapshots arrive per token, and a paint per token is wasted work: the eye needs a frame, not
+      // a token. So a burst of snapshots costs one paint, and the last one always lands.
+      const RENDER_MS = 50;
+
+      function scheduleRender(page = pages.get(currentAgent)) {
+        if (page === undefined || page === null || page.renderTimer !== null) return;
+        page.renderTimer = setTimeout(() => {
+          page.renderTimer = null;
+          requestAnimationFrame(() => withPage(page, renderTranscript));
+        }, RENDER_MS);
+      }
+
+      /** The window a `history` answer carries, or null if the node answered with something else
+       *  (one that has not been rebuilt since `history` learned to answer in windows). */
+      function windowOf(reply) {
+        const value = reply.ok ? reply.value : null;
+        return value && Array.isArray(value.messages) && Number.isInteger(value.from)
+          ? value
+          : null;
+      }
+
+      // A bus may carry two provider nodes: `local-provider`, this stack's own endpoint, and
+      // `provider`, the shared one. The page lists the rows of both at once and names each with the
+      // node that holds it (`local-provider.fast`), because that full name is what a selection means
+      // and what it sends back - a row belongs to one node, never to "whichever is nearer".
+      const PROVIDER_NODES = ['local-provider', 'provider'];
+
+      /** Every row on either provider node, each named with the node it lives on. A node that is not
+       *  on the bus, or does not answer, simply has no rows here: the other one still lists. */
+      async function providerNames() {
+        const replies = await Promise.all(
+          PROVIDER_NODES.map((node) => call(`${node}.providers`, { action: 'list' })),
+        );
+        return replies.flatMap((reply, at) => {
+          if (!reply.ok) return [];
+          const rows = reply.value?.providers || [];
+          return rows.map(({ name }) => `${PROVIDER_NODES[at]}.${name}`);
+        });
+      }
+
+      /** Which of `names` the agent's selection points at: the row itself when it is qualified, else
+       *  the first row of that bare name, near node first - the rule the agent applies to a selection
+       *  stored before local mode existed. '' when the selection names nothing that is there. */
+      function activeRow(active, names) {
+        if (names.includes(active)) return active;
+        return names.find((name) => name.slice(name.indexOf('.') + 1) === active) || '';
+      }
+
+      /** The rows of the provider switch, one option each. A page keeps its own list: switching back
+       *  to an agent shows the rows that agent had, without asking the provider nodes again. */
+      function providerOptions(names) {
+        return names.map((name) => {
+          const option = document.createElement('option');
+          option.value = name;
+          option.textContent = name;
+          return option;
+        });
+      }
+
+      function showProviders(page) {
+        providerSwitch.replaceChildren(...providerOptions(page.providers));
+        providerSwitch.value = activeRow(page.activeProvider, page.providers);
+        providerSwitch.disabled = page.providers.length === 0;
+        providerSwitch.title =
+          page.providers.length === 0 ? t('usage.noProviders') : t('usage.activeProvider');
+      }
+
+      /** The agent's own answer says which row it uses; the rows themselves come from the provider
+       *  nodes, both of them, so a node the agent has not noticed yet still shows its rows here. */
+      async function loadProviders(page = pages.get(currentAgent)) {
+        if (page === undefined || page === null) return;
+        const [reply, names] = await Promise.all([
+          call(`${NODE}.provider`, agentArgs(page, { action: 'list' })),
+          providerNames(),
+        ]);
+        if (names.length === 0) {
+          page.providers = [];
+          if (page === pages.get(currentAgent)) {
+            providerSwitch.replaceChildren();
+            providerSwitch.disabled = true;
+            providerSwitch.title =
+              (reply.ok ? t('usage.noProviders') : reply.error) || t('usage.providersFailed');
+          }
+          return;
+        }
+        page.providers = names;
+        page.activeProvider = reply.ok ? reply.value?.active || '' : '';
+        if (page === pages.get(currentAgent)) withPage(page, () => showProviders(page));
+      }
+      async function switchProvider() {
+        const page = pages.get(currentAgent);
+        if (page === undefined) return;
+        const name = providerSwitch.value;
+        const previous = activeRow(page.activeProvider, page.providers);
+        if (!name || name === previous) return;
+        providerSwitch.disabled = true;
+        try {
+          const reply = await call(`${NODE}.provider`, agentArgs(page, { action: 'select', name }));
+          if (!reply.ok) {
+            providerSwitch.value = previous;
+            alert(t('usage.switchFailed', { error: reply.error }));
+            return;
+          }
+          page.activeProvider = reply.value?.active || name;
+          await loadProviders(page);
+        } finally {
+          providerSwitch.disabled = false;
+        }
+      }
+      // A window read again is mostly messages the page already has, so the objects it drew for the
+      // ones that did not change are kept: a re-read then costs only the boxes that are different,
+      // exactly as a reload does. Compared by index in the node's transcript, which is what `from` is.
+      function keepingDrawn(window) {
+        if (historyFrom === null) return window;
+        const had = new Map(messages.map((message, at) => [historyFrom + at, message]));
+        return {
+          ...window,
+          messages: window.messages.map((message, at) => {
+            const kept = had.get(window.from + at);
+            return kept !== undefined && JSON.stringify(kept) === JSON.stringify(message)
+              ? kept
+              : message;
+          }),
+        };
+      }
+
+      // What the line above the log says, or nothing: empty text hides it, so the transcript keeps the
+      // room the line would take only while there is something to say.
+      function showOlder(text) {
+        olderNote = text;
+        older.textContent = text;
+        older.hidden = text === '';
+      }
+
+      // The reader at the top wants the page before this window: one more `history` call, prepended,
+      // with the scroll kept where it was — the page grew above the reader, not under them. The window
+      // comes back starting where this one stops (`from`), so the two join without a gap, and a node
+      // that had to cut the window to fit one bus frame just hands back fewer lines.
+      async function loadOlder(page = pages.get(currentAgent)) {
+        if (page === undefined || page === null) return;
+        if (page.loadingOlder || page.historyFrom === null || page.historyFrom === 0) return;
+        const version = page.loadVersion;
+        page.loadingOlder = true;
+        withPage(page, () => showOlder(t('older.loading')));
+        try {
+          const want = Math.max(0, page.historyFrom - HISTORY_PAGE);
+          const reply = await call(
+            `${NODE}.history`,
+            agentArgs(page, { from: want, count: HISTORY_PAGE }),
+          );
+          if (version !== page.loadVersion) return;
+          const answer = windowOf(reply);
+          if (answer === null) {
+            withPage(page, () => showOlder(t('older.failed')));
+            return;
+          }
+          if (answer.messages.length === 0) {
+            withPage(page, () => {
+              page.historyFrom = answer.from;
+              showOlder('');
+            });
+            return;
+          }
+          withPage(page, () => {
+            const before = page.log.scrollHeight;
+            page.messages = answer.messages.concat(page.messages);
+            page.historyFrom = answer.from;
+            renderTranscript();
+            // The boxes went in above the reader: the scroll moves by as much as they added, so the
+            // line the reader was looking at is the line they are looking at.
+            const grew = page.log.scrollHeight - before;
+            if (grew > 0) {
+              const top = page.log.scrollTop + grew;
+              if (typeof page.log.scrollTo === 'function') page.log.scrollTo({ top, behavior: 'instant' });
+              else page.log.scrollTop = top;
+            }
+          });
+        } finally {
+          withPage(page, () => {
+            if (page.olderNote === t('older.loading')) showOlder('');
+            page.loadingOlder = false;
+          });
+        }
+      }
+      // A reload asks for what the page does not have: `from` follows the lines it already drew, so a
+      // turn that adds one line fetches one line and redraws one box. A window that starts elsewhere is
+      // a different transcript — a node that restarted, or another one in its place — so it is read
+      // again from the top and replaces what the page had. Only the newest reload applies either way:
+      // two of them would otherwise append the same lines twice.
+      async function load(page = pages.get(currentAgent)) {
+        if (page === undefined || page === null) return;
+        const version = ++page.loadVersion;
+        const asked = page.historyFrom === null ? null : page.historyFrom + page.messages.length;
+        const [reply, statusReply] = await Promise.all([
+          call(`${NODE}.history`, agentArgs(page, asked === null ? {} : { from: asked })),
+          call(`${NODE}.status`, agentArgs(page, {})),
+        ]);
+        if (version !== page.loadVersion) return;
+        if (statusReply.ok) renderStatus(page, statusReply.value);
+        let answer = windowOf(reply);
+        if (answer === null) return;
+
+        const continues = asked !== null && answer.from === asked;
+        if (asked !== null && !continues) {
+          const again = await call(`${NODE}.history`, agentArgs(page, { count: HISTORY_PAGE }));
+          if (version !== page.loadVersion) return;
+          answer = windowOf(again);
+          if (answer === null) return;
+          answer = withPage(page, () => keepingDrawn(answer));
+        }
+        withPage(page, () => {
+          messages = continues ? messages.concat(answer.messages) : answer.messages;
+          // `from` is the index `messages[0]` holds, so it only becomes the page's own start when the
+          // window *replaced* what the page had.
+          if (!continues) historyFrom = answer.from;
+          // A reload can land while snapshots are still coming in, so it queues up with them.
+          scheduleRender(page);
+        });
+      }
+      async function sendText() {
+        const page = pages.get(currentAgent);
+        if (page === undefined) return;
+        const text = input.value.trim();
+        if (text === '') return;
+        input.value = '';
+        growText(input);
+        // Set before the POST goes out, so the button cannot be pressed twice, and cleared once the
+        // node has said which turn the line is: only the queueing is what this page waits for.
+        page.sending = true;
+        withPage(page, renderTranscript);
+        const posted = call(
+          `${NODE}.chat_no_wait`,
+          agentArgs(page, { msg: { role: 'user', content: text } }),
+        );
+        try {
+          const reply = await posted;
+          if (!reply.ok) alert(t('composer.failed', { error: reply.error }));
+        } finally {
+          // The node is the authority on what it is doing, and the line is already the turn's.
+          await refreshStatus(page);
+          page.sending = false;
+          withPage(page, renderTranscript);
+          input.focus();
+          // The turn itself may have created or destroyed a sub-agent: the row is read again.
+          void refreshAgents();
+          // What the turn writes arrives as announced lines; this read makes sure the sentence the
+          // reader just sent is on the page even if it were already in the transcript.
+          await load(page);
+        }
+      }
+      // Stopping is its own call and does not wait on the send above: it asks the node to cut its own
+      // turn short. The node is the only one that can do it: the model request is on its side, not
+      // this page's. The controls are not touched here either: the node answers with its stop marker,
+      // and the next announced line or snapshot is what puts the buttons back.
+      async function stopText() {
+        const page = pages.get(currentAgent);
+        if (page === undefined) return;
+        await call(`${NODE}.stop`, agentArgs(page, {}));
+        // The stop landed: the node is unwinding, and that is a state of its own.
+        void refreshStatus(page);
+      }
+      send.addEventListener('click', sendText);
+      stop.addEventListener('click', stopText);
+      providerSwitch.addEventListener('change', switchProvider);
+      input.addEventListener('input', () => growText(input));
+      input.addEventListener('keydown', (e) => {
+        if (!composing(e) && e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendText();
+        }
+      });
+      // The three events that change the box this page is drawn in without anyone typing. `window`
+      // is the object that has them in a browser, and the page test's stand-in gives it those names.
+      window.addEventListener('resize', regrowBoxes);
+      window.addEventListener('orientationchange', regrowBoxes);
+      if (window.visualViewport) window.visualViewport.addEventListener('resize', regrowBoxes);
+      // The main agent's page is the first one - built, read and shown before anything else, so the
+      // page the reader lands on is a page like any other. Every other agent gets one the moment the
+      // list names it (`ensurePage` in `refreshAgents`), whether or not anyone looks at it.
+      const opening = ensurePage(MAIN, MAIN);
+      current = opening;
+      opening.seen = true;
+      opening.box.hidden = false;
+      paintChrome(opening);
+      void refreshAgents();
+
+      // The state word, the queue and the state Send and Stop are drawn from are read from the node, but
+      // only when something happened that can have changed them: a turn starting (the POST below), a
+      // line announced or a stop asked for. A page between turns asks the node nothing.
+      //
+      // A fast model streams a snapshot per token, and every event is an invitation to read the state
+      // again, so the reads are coalesced: one on its way at a time, plus one more when something arrived
+      // while it was out. A whole answer therefore costs a read per round trip rather than a read per
+      // snapshot — and because one read is always asked for after the last event, the word the page ends
+      // on is the node's own (`idle` once the turn is over, `stopping` while it is unwinding).
+
+      function refreshStatus(page = pages.get(currentAgent)) {
+        if (page === undefined || page === null) return Promise.resolve();
+        if (page.statusInFlight !== null) {
+          page.statusAgain = true;
+          return page.statusInFlight;
+        }
+        page.statusInFlight = (async () => {
+          try {
+            const reply = await call(`${NODE}.status`, agentArgs(page, {}));
+            if (reply.ok) renderStatus(page, reply.value);
+          } catch {
+            // A status read is a convenience; a failure leaves the last one on screen.
+          } finally {
+            page.statusInFlight = null;
+            if (page.statusAgain) {
+              page.statusAgain = false;
+              void refreshStatus(page);
+            }
+          }
+        })();
+        return page.statusInFlight;
+      }
+      // The Python agent sends transient stream snapshots; the TypeScript agent continues sending
+      // its existing change notifications. Either way this node is the source of truth, and a reload
+      // fetches only the lines the page is missing.
+      //
+      // HTTP/1.1 browsers only allow a few connections per origin. All agent topics share one SSE
+      // so hidden pages stay live without starving /call. Batch list changes into one reconnect.
+      function openFeed() {
+        if (feedTimer !== null) return;
+        feedTimer = setTimeout(() => {
+          feedTimer = null;
+          const topics = [...new Set([...pages.values()].map((page) => page.topic))].sort();
+          const url = topics.length === 0
+            ? ''
+            : '/events?node=' + encodeURIComponent(NODE) +
+              topics.map((topic) => '&topic=' + encodeURIComponent(topic)).join('');
+          if (url === familyFeedUrl) return;
+          if (familyFeed !== null) familyFeed.close();
+          familyFeedUrl = url;
+          familyFeed = url === '' ? null : window.NodeAgentEvents.connect(url);
+          if (familyFeed === null) return;
+          const feed = familyFeed;
+          feed.onmessage = (event) => {
+            if (feed !== familyFeed) return;
+            let envelope;
+            try {
+              envelope = JSON.parse(event.data);
+            } catch {
+              return;
+            }
+            if (envelope.node !== NODE) return;
+            for (const page of pages.values()) {
+              if (page.topic === envelope.topic) onFeedEvent(page, event);
+            }
+          };
+          // Reload every page on reconnect to recover updates missed while subscriptions changed.
+          feed.onopen = () => {
+            if (feed !== familyFeed) return;
+            void refreshAgents();
+            for (const page of pages.values()) {
+              withPage(page, () => {
+                // Reconnects preserve the reader's position. Only the visible page already at its
+                // end keeps following; unseen pages land at their end when first opened.
+                page.landAtBottom = page === pages.get(currentAgent) && atEnd(page);
+                page.streamingMessage = null;
+              });
+              void load(page);
+            }
+          };
+        }, 0);
+      }
+      // A posted line ends whatever snapshot was on screen: the transcript below is the truth, so the
+      // tail is dropped and the window is read again.
+      const reload = (page) => {
+        withPage(page, () => {
+          streamingMessage = null;
+        });
+        void load(page);
+      };
+      function onFeedEvent(page, event) {
+        // Everything the event says about a turn is the page's own: `withPage` is what makes a
+        // snapshot from a hidden agent land in that agent's transcript and nowhere else. The branches
+        // that read the window again say so (`true`), because the reload is what draws them.
+        let again = false;
+        try {
+          const value = JSON.parse(event.data).value;
+          scheduleAgentsRefresh();
+          // What the branch answers is whether the window has to be read again. A snapshot draws
+          // itself and says no: a reload per token put a `history` read of the whole window between
+          // the node and its own answer (and cleared the tail the reader was watching, while each
+          // read cancelled the one before it - which is why a refreshed page drew no message at all
+          // until the turn ended).
+          again = withPage(page, () => {
+            if (value?.type === 'stream') {
+              // A snapshot is a turn in progress, and the tail it draws is what the reader watches.
+              modelActive = true;
+              streamingMessage = value.message;
+              // The snapshot says a turn is running, and the node says which turn: a state of its own
+              // is what the controls follow, so it is read again here (coalesced, so a snapshot per
+              // token is still one read in flight).
+              void refreshStatus(page);
+              scheduleRender(page);
+              return false; // a snapshot draws itself: the window is not read again
+            }
+            if (value?.type === 'ask') {
+              // The node is waiting on a question: bring its card up and pull the reader to it.
+              modelActive = true;
+              liveAsks.add(value.message?.id);
+              askScrollTo = value.message?.id ?? null;
+              // A question the node put a deadline on counts down; one without just waits.
+              const wait = askWait(value.message);
+              if (wait) {
+                askWaits.set(value.message.id, wait);
+                askTimedOut.delete(value.message.id);
+                startWaitTicker();
+              }
+              return true;
+            }
+            if (value?.type === 'ask_timeout') {
+              // The node gave up on the question and carried on: the card stops counting, says what
+              // the turn carried on with, and stops saying the reader is being waited on.
+              const id = value.message?.id;
+              if (id) {
+                const wait = askWaits.get(id);
+                if (wait) wait.default = value.message?.default ?? wait.default;
+                askTimedOut.add(id);
+                liveAsks.delete(id);
+                tickWaits();
+              }
+              return true;
+            }
+            if (Array.isArray(value)) {
+              const latest = value.at(-1);
+              if (latest?.content === '(Stopped by user)' || latest?.content === 'aborted by user') {
+                modelActive = false;
+              } else if (
+                latest?.role === 'user' ||
+                latest?.role === 'tool' ||
+                latest?.tool_calls?.length
+              ) {
+                modelActive = true;
+              } else if (latest?.role === 'assistant') {
+                modelActive = false;
+                // The last line of a turn: the node may still be closing it for a moment, so read
+                // the state once more after it, rather than polling for the whole turn.
+                setTimeout(() => {
+                  withPage(page, () => {
+                    if (!busy()) void refreshStatus(page);
+                  });
+                }, 1000);
+              }
+            }
+            // An event this page does not know is still news that something changed: the window is
+            // read again, which is what draws it.
+            return true;
+          });
+        } catch {}
+        if (again) reload(page);
+      }
+
+      // MathJax starts itself a moment after its bundle runs — usually before any message has been asked
+      // for, since that is a round trip away. A formula drawn in that moment was drawn as its TeX, and
+      // this is the one paint that puts it right: `whenReady` calls back only if there was such a
+      // formula, and only once, so a page with no renderer and a page whose renderer was ready all along
+      // both do nothing here.
+      window.agentMath.whenReady(() => {
+        mathRedraw = true;
+        renderTranscript();
+      });
+
+      // A change of language. The SDK's browser half redraws its own markers and announces the change
+      // after it has drawn them, so what is left here is the sentences this script built: the tabs'
+      // tooltips, the state word, the usage line, the transcript's cards and the chrome around them.
+      // Every page is marked for a full paint — a hidden page repaints when it is next looked at, in
+      // the language it will be read in — and the page on screen is repainted now, keeping the reader's
+      // folds, drafts and place, because a repaint is what this page does on every snapshot anyway.
+      if (typeof document.addEventListener === 'function') {
+        document.addEventListener('node-agent:language', () => {
+          for (const page of pages.values()) page.mathRedraw = true;
+          const shown = pages.get(currentAgent);
+          renderAgents();
+          if (shown === undefined) return;
+          paintChrome(shown);
+          withPage(shown, () => renderTranscript());
+        });
+      }
+
+      input.focus();
+    </script>
+  </body>
+</html>

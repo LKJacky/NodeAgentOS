@@ -1,0 +1,2871 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- The words of this page, and the browser half that draws them: the node fills the slot in
+         above with its resource when it hands the page out (`paintPage`). -->
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">__NODE__ · node_agent</title>
+    <script>
+      // Inside the webui shell this page is an iframe, and then it has to fill the FRAME it was given
+      // rather than the window: the height chain below reads this class. Set before the style is
+      // parsed, so nothing is ever laid out at the wrong height. `self !== top` never throws.
+      if (self !== top) document.documentElement.classList.add('framed');
+    </script>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --line: #8884;
+        --dim: #8888;
+        --accent: #2563eb;
+        --surface: #ffffff;
+        --surface-soft: #f8f9fc;
+        --text: #171a23;
+        --muted: #5f6a7d;
+        --faint: #6f7888;
+        --brand: #635bff;
+        --brand-soft: #eeecff;
+        --success: #15956f;
+        --success-soft: #e8f7f1;
+        --danger: #d92d4b;
+        --danger-soft: #fff0f3;
+        --shadow: 0 1px 3px #151b2b0d, 0 8px 24px #20294a0f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --surface: #151820;
+          --surface-soft: #1a1e28;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --faint: #7d8798;
+          --line: #292e3a;
+          --brand: #8b83ff;
+          --brand-soft: #29254d;
+          --success: #4bd2a7;
+          --success-soft: #17332a;
+          --danger: #ff6b85;
+          --danger-soft: #3a2029;
+          --shadow: 0 1px 3px #0003, 0 12px 32px #0004;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      /* What the page fills: the viewport as the top document, the frame box inside the webui shell. */
+      html,
+      body {
+        height: 100%;
+      }
+      body {
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        font:
+          14px/1.6 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      /* Console / Files: two views of the same node, one page. The switch is a segmented control
+         inside the content — its own row above the pane it chooses — not a bar across the top. */
+      .tabs {
+        display: flex;
+        flex: none;
+        align-self: flex-start;
+        gap: 3px;
+        padding: 3px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #8881;
+      }
+      .tabs button {
+        min-height: 30px;
+        padding: 5px 15px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--dim);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .tabs button.on {
+        background: var(--accent);
+        color: #fff;
+      }
+      main {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px;
+      }
+      .pane {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      /* The attribute would lose to the `display:flex` above; both panes are kept in the document so
+         the console keeps its output and its focused field while Files is open. */
+      .pane[hidden] {
+        display: none;
+      }
+      form {
+        display: flex;
+        gap: 8px;
+      }
+      input,
+      select {
+        padding: 9px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font:
+          13px/1.6 ui-monospace,
+          monospace;
+      }
+      input {
+        flex: 1;
+      }
+      input.narrow {
+        flex: 0 0 9em;
+      }
+      select {
+        flex: 0 0 7em;
+      }
+      button {
+        padding: 9px 16px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--accent);
+        color: #fff;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      #stop {
+        background: #c62f35;
+      }
+      pre {
+        flex: 1;
+        /* min-height:0 lets this scrolling child shrink: with the default `auto` its content wins and
+           the output grows past the screen instead of scrolling inside itself. */
+        min-height: 0;
+        overflow: auto;
+        margin: 0;
+        padding: 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #8881;
+        font:
+          12px/1.6 ui-monospace,
+          monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      p {
+        margin: 0;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      p.warn {
+        color: #b45309;
+      }
+
+      /* --- The file browser: a tree on the left, one file on the right. --- */
+      .browser {
+        flex: 1;
+        min-height: 0;
+        display: flex;
+        gap: 10px;
+      }
+      #tree-pane {
+        flex: 0 0 250px;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .tree-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 8px 6px 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+        color: var(--dim);
+      }
+      .tree-head .grow {
+        flex: 1;
+      }
+      .tree-head button {
+        padding: 2px 8px;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font-size: 14px;
+      }
+      #tree {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        padding: 6px;
+      }
+      #tree .empty,
+      #tree .failed {
+        padding: 6px 8px;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      #tree .failed {
+        color: #ef4444;
+      }
+      .row {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        width: 100%;
+        padding: 2px 8px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font:
+          12.5px/1.7 ui-monospace,
+          monospace;
+        text-align: left;
+        cursor: pointer;
+      }
+      .row:hover {
+        background: #8882;
+      }
+      .row.sel {
+        background: #3b82f633;
+      }
+      .row .caret {
+        flex: 0 0 0.9em;
+        color: var(--dim);
+      }
+      .row .name {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .row .size {
+        flex: 0 0 auto;
+        color: var(--dim);
+        font-size: 11px;
+      }
+      .row.dir .name {
+        font-weight: 600;
+      }
+      #preview {
+        flex: 1;
+        min-width: 0;
+        min-height: 0;
+        display: flex;
+        flex-direction: column;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        overflow: hidden;
+      }
+      .preview-head {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--line);
+        font-size: 12px;
+      }
+      .preview-head .grow {
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: ui-monospace, monospace;
+      }
+      .preview-head .meta {
+        color: var(--dim);
+      }
+      #tree-toggle {
+        display: none;
+        padding: 2px 10px;
+        border-radius: 6px;
+        font-size: 13px;
+      }
+      #preview-body {
+        flex: 1;
+        min-height: 0;
+        overflow: auto;
+        font:
+          12.5px/1.6 ui-monospace,
+          monospace;
+      }
+      #preview-body .hint {
+        padding: 16px;
+      }
+      #preview-body img {
+        display: block;
+        max-width: 100%;
+        margin: 16px auto;
+        image-rendering: auto;
+      }
+      .notice {
+        padding: 20px;
+        max-width: 40em;
+      }
+      .notice .title {
+        margin-bottom: 4px;
+        color: inherit;
+        font-size: 14px;
+        font-weight: 600;
+      }
+      .notice p {
+        margin-top: 4px;
+      }
+      /* The editor: a plain textarea, monospace (inherited from the body above) and as tall as the
+         pane, so a file is edited where it was read. No wrapping — a long source line scrolls
+         sideways — and no resize grip, because the pane already decides the height. */
+      #editor {
+        display: block;
+        width: 100%;
+        height: 100%;
+        padding: 10px 12px;
+        border: 0;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        tab-size: 2;
+        white-space: pre;
+        overflow: auto;
+        resize: none;
+      }
+      #editor:focus {
+        outline: none;
+      }
+      /* Preview and source are the same file, one at a time: the textarea keeps the caret and the
+         unsaved text while it is out of sight, so switching back is not a reload. */
+      #editor[hidden] {
+        display: none;
+      }
+      /* Beside the file name: the dirty mark, the button that saves, and the line that says what
+         happened (saved / saving / failed). */
+      .dirty {
+        color: var(--accent);
+        font-size: 14px;
+      }
+      .status {
+        color: var(--dim);
+      }
+      .status.saved {
+        color: #16a34a;
+      }
+      .status.failed {
+        color: #ef4444;
+      }
+      #save {
+        padding: 2px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+      /* A save refused for a stale revision asks the only two questions there are: read the file
+         again, or write this text over it. */
+      .conflict {
+        display: flex;
+        align-items: baseline;
+        gap: 10px;
+        padding: 6px 12px;
+        border-bottom: 1px solid var(--line);
+        background: #f59e0b22;
+        font-size: 12px;
+      }
+      .conflict[hidden] {
+        display: none;
+      }
+      .conflict .grow {
+        flex: 1;
+      }
+      .conflict button {
+        padding: 2px 10px;
+        border-radius: 6px;
+        font-size: 12px;
+      }
+
+      /* Source / Preview: the way a markdown file is read. It sits in the head beside the file name,
+         and is only in the document for markdown — everything else has one way to be shown. */
+      .mode {
+        display: inline-flex;
+        gap: 2px;
+        padding: 1px;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+      }
+      .mode[hidden] {
+        display: none;
+      }
+      .mode button {
+        padding: 1px 9px;
+        border-radius: 4px;
+        background: transparent;
+        color: var(--dim);
+        font-size: 12px;
+      }
+      .mode button[aria-pressed='true'] {
+        background: var(--accent);
+        color: #fff;
+      }
+
+      /* --- The markdown preview: prose in the page's own font, drawn over the same background as
+         the editor it replaces. Only tags the page itself writes can appear here (see the renderer
+         in the script below), and every wide block scrolls inside itself instead of pushing the
+         file name and the Save button off the pane. --- */
+      .markdown {
+        padding: 14px 18px 40px;
+        color: inherit;
+        font:
+          14px/1.65 system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+        /* A long URL or one unbroken identifier wraps rather than widening the column. */
+        overflow-wrap: anywhere;
+      }
+      .markdown[hidden] {
+        display: none;
+      }
+      .markdown > :first-child {
+        margin-top: 0;
+      }
+      .markdown h1,
+      .markdown h2,
+      .markdown h3,
+      .markdown h4,
+      .markdown h5,
+      .markdown h6 {
+        margin: 1.3em 0 0.45em;
+        color: inherit;
+        font-weight: 600;
+        line-height: 1.3;
+      }
+      .markdown h1 {
+        font-size: 1.45em;
+      }
+      .markdown h2 {
+        font-size: 1.28em;
+      }
+      .markdown h3 {
+        font-size: 1.12em;
+      }
+      .markdown h4,
+      .markdown h5,
+      .markdown h6 {
+        font-size: 1em;
+      }
+      /* The page's own `p` rule is the dim caption under the console; prose here has to undo it. */
+      .markdown p {
+        margin: 0.65em 0;
+        color: inherit;
+        font-size: inherit;
+      }
+      .markdown a {
+        color: var(--accent);
+      }
+      .markdown code {
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: #8882;
+        font:
+          12.5px/1.6 ui-monospace,
+          monospace;
+      }
+      /* A code block scrolls sideways on its own: the pane is the reader's width, not the file's. */
+      .markdown pre {
+        max-width: 100%;
+        margin: 0.85em 0;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #8881;
+        overflow-x: auto;
+      }
+      .markdown pre code {
+        padding: 0;
+        background: none;
+        font-size: 12.5px;
+        white-space: pre;
+      }
+      .markdown blockquote {
+        margin: 0.85em 0;
+        padding: 2px 0 2px 12px;
+        border-left: 3px solid var(--line);
+        color: var(--dim);
+      }
+      .markdown ul,
+      .markdown ol {
+        margin: 0.65em 0;
+        padding-left: 1.7em;
+      }
+      .markdown li {
+        margin: 0.2em 0;
+      }
+      .markdown li > ul,
+      .markdown li > ol {
+        margin: 0.25em 0;
+      }
+      .markdown hr {
+        margin: 1.1em 0;
+        border: 0;
+        border-top: 1px solid var(--line);
+      }
+      /* A table is a wide thing in a narrow pane: it scrolls, it does not widen the column. */
+      .markdown table {
+        display: block;
+        max-width: 100%;
+        margin: 0.85em 0;
+        border-collapse: collapse;
+        overflow-x: auto;
+        font-size: 13px;
+      }
+      .markdown th,
+      .markdown td {
+        padding: 5px 9px;
+        border: 1px solid var(--line);
+        text-align: left;
+      }
+      .markdown th {
+        background: #8881;
+        font-weight: 600;
+      }
+      /* A link the page will not follow keeps its words and loses its anchor. */
+      .markdown .refused {
+        color: var(--dim);
+        text-decoration: underline dotted;
+      }
+
+      /* --- Mobile: a phone is one column read with a thumb, and the bottom of the screen belongs to
+         the home indicator. The same block, with the same comment, is on every page of the web UI
+         (README.md, "Mobile"). Here the console's three rows are the work: on a phone they wrap into
+         full-width fields instead of being squeezed into a few characters each, and the file tree
+         becomes a drawer that slides over the preview. --- */
+      @media (max-width: 640px), (orientation: landscape) and (max-height: 480px) {
+        body {
+          height: 100dvh; /* a collapsing URL bar must not crop the console */
+        }
+        main {
+          padding: 12px;
+          padding-bottom: calc(12px + env(safe-area-inset-bottom));
+        }
+        form {
+          flex-wrap: wrap;
+        }
+        input,
+        select,
+        input.narrow {
+          flex: 1 1 100%;
+          min-height: 44px;
+        }
+        /* 44px is the smallest target a thumb hits reliably; the buttons are 36px for a pointer. */
+        button {
+          flex: 1 1 auto;
+          min-height: 44px;
+        }
+        /* 16px stops iOS Safari from zooming the page in when a field takes focus. */
+        input,
+        select,
+        #editor {
+          font-size: 16px;
+        }
+        /* The tree is a drawer over the preview: 360px cannot hold both, and a file is read with the
+           whole width once it is picked. */
+        .browser {
+          position: relative;
+        }
+        #tree-pane {
+          position: absolute;
+          z-index: 5;
+          top: 0;
+          bottom: 0;
+          left: 0;
+          width: min(80%, 300px);
+          background: Canvas;
+          transform: translateX(-105%);
+          transition: transform 0.15s ease-out;
+          box-shadow: 0 0 24px #0006;
+        }
+        .browser.tree-open #tree-pane {
+          transform: none;
+        }
+        /* Tapping anywhere beside the open drawer closes it (the handler below listens for the tap
+           on .browser itself, which is the box this panel covers). */
+        .browser.tree-open::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          z-index: 4;
+          background: #0004;
+        }
+        #tree-toggle {
+          display: inline-block;
+          flex: 0 0 auto;
+          min-height: 44px;
+        }
+        .tabs button {
+          min-height: 44px;
+        }
+        .tree-head button {
+          width: 44px;
+          min-height: 44px;
+        }
+        /* The way a markdown file is read is a head control like the others: a pointer-sized box, not
+           the 44px of a form button, and prose at a size a phone reads without pinching. */
+        .mode button {
+          min-height: 44px;
+          padding: 2px 10px;
+        }
+        .markdown {
+          padding: 12px 14px calc(32px + env(safe-area-inset-bottom));
+          font-size: 15px;
+        }
+      }
+      /* Inside another frame the box is the truth: 100% follows it, while `100dvh` may be the window's
+         height in engines that do not shrink viewport units to the frame. After the phone block on
+         purpose, so in a frame it wins at every width. */
+      /* Nodes: the processes this shell started with run-node, as the same card grid as nodes. */
+      .nodes-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .nodes-head .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 11px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .nodes-head .pill b {
+        color: var(--text);
+      }
+      .nodes-head button {
+        min-height: 34px;
+        margin-left: auto;
+        padding: 5px 13px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 12px;
+      }
+      .nodes-head button:hover {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+      .nodes-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+        gap: 12px;
+        overflow: auto;
+        align-content: start;
+      }
+      .nodes-list[hidden],
+      .nodes-empty[hidden],
+      .nodes-error[hidden] {
+        display: none !important;
+      }
+      .node-card {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 10px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .node-card header {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 8px;
+      }
+      .node-card strong {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 15px;
+      }
+      .node-card .status {
+        flex: none;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: var(--success-soft);
+        color: var(--success);
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .node-card .status.running::before {
+        content: '';
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        margin-right: 5px;
+        border-radius: 50%;
+        background: currentColor;
+        vertical-align: 1px;
+      }
+      .node-card code {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .node-card .meta {
+        color: var(--faint);
+        font-size: 11px;
+      }
+      .node-card .actions {
+        display: flex;
+        justify-content: flex-end;
+      }
+      .node-card .actions button {
+        min-height: 34px;
+        padding: 5px 13px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 12px;
+      }
+      .node-card .actions button:hover {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+      .nodes-empty {
+        margin: 8px 0 0;
+        padding: 26px 18px;
+        border: 1px dashed var(--line);
+        border-radius: 14px;
+        background: var(--surface-soft);
+        color: var(--muted);
+        text-align: center;
+      }
+      .nodes-error {
+        margin: 0 0 8px;
+        padding: 10px 12px;
+        border: 1px solid var(--danger);
+        border-radius: 10px;
+        background: var(--danger-soft);
+        color: var(--danger);
+        font-size: 13px;
+      }
+      :root.framed body {
+        height: 100%;
+        min-height: 0;
+      }
+
+      /* --- Permissions: one row per capability, then the commands the user saved. Both are the same
+         kind of thing -- a list the user edits -- so they share a row shape and a head. --- */
+      #permissions-pane {
+        overflow: auto;
+        padding-bottom: 12px;
+      }
+      .perm-head {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .perm-head .pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 11px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface);
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .perm-head .pill b {
+        color: var(--text);
+      }
+      .perm-head button {
+        min-height: 34px;
+        padding: 5px 13px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 12px;
+      }
+      .perm-head button:hover:not(:disabled) {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+      .perm-head button.grow-left {
+        margin-left: auto;
+      }
+      .perm-list {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      .perm-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 9px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+      }
+      .perm-row.off {
+        border-color: var(--danger);
+        background: var(--danger-soft);
+      }
+      .perm-row .name {
+        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+        font-size: 13px;
+        color: var(--text);
+        white-space: nowrap;
+      }
+      .perm-row .effect {
+        flex: none;
+        padding: 1px 7px;
+        border-radius: 999px;
+        background: var(--surface-soft);
+        color: var(--faint);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+      .perm-row .about {
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .perm-row .locked {
+        flex: none;
+        color: var(--faint);
+        font-size: 11px;
+      }
+      /* The switch itself is a checkbox the browser draws nothing of: the box beside it is the whole
+         control, so a phone gets the same 44px target as every other button here. */
+      .perm-row label.switch {
+        position: relative;
+        flex: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 30px;
+        padding: 0 2px;
+        font-size: 12px;
+        color: var(--muted);
+        cursor: pointer;
+        user-select: none;
+      }
+      .perm-row label.switch input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .perm-row .track {
+        display: inline-block;
+        position: relative;
+        width: 38px;
+        height: 22px;
+        border-radius: 999px;
+        background: #8884;
+        transition: background 0.12s ease-out;
+      }
+      .perm-row .track::after {
+        content: '';
+        position: absolute;
+        top: 3px;
+        left: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 1px 2px #0003;
+        transition: transform 0.12s ease-out;
+      }
+      .perm-row label.switch input:checked ~ .track {
+        background: var(--success);
+      }
+      .perm-row label.switch input:checked ~ .track::after {
+        transform: translateX(16px);
+      }
+      .perm-row label.switch input:focus-visible ~ .track {
+        outline: 2px solid var(--accent);
+        outline-offset: 2px;
+      }
+      .perm-row label.switch input:disabled ~ .track {
+        opacity: 0.55;
+      }
+      .perm-title {
+        margin: 6px 0 0;
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--text);
+      }
+      .perm-title .pill {
+        margin-left: 4px;
+        padding: 1px 8px;
+        border-radius: 999px;
+        background: var(--surface-soft);
+        color: var(--faint);
+        font-size: 11px;
+        font-weight: 400;
+      }
+      form#cc-form {
+        flex-wrap: wrap;
+        align-items: center;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface-soft);
+      }
+      form#cc-form input {
+        min-width: 8em;
+        flex: 1 1 9em;
+      }
+      form#cc-form input#cc-command {
+        flex: 1 1 100%;
+      }
+      form#cc-form input.narrow {
+        flex: 0 0 7em;
+      }
+      form#cc-form button {
+        padding: 8px 14px;
+        border-radius: 8px;
+        font-size: 12px;
+      }
+      form#cc-form button#cc-cancel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        color: var(--text);
+      }
+      .perm-row .acts {
+        display: flex;
+        flex: none;
+        gap: 6px;
+      }
+      .perm-row .acts button {
+        min-height: 30px;
+        padding: 3px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--text);
+        font-size: 11px;
+      }
+      .perm-row .acts button:hover {
+        border-color: var(--brand);
+        color: var(--brand);
+      }
+      .perm-row .acts button.danger:hover {
+        border-color: var(--danger);
+        color: var(--danger);
+      }
+      .perm-row .detail {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        gap: 2px;
+        flex: 1;
+      }
+      .perm-row .detail code {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .perm-row .meta {
+        color: var(--faint);
+        font-size: 11px;
+      }
+      .perm-empty {
+        padding: 14px 12px;
+        border: 1px dashed var(--line);
+        border-radius: 10px;
+        color: var(--muted);
+        font-size: 12px;
+        text-align: center;
+      }
+      @media (max-width: 700px) {
+        .perm-row {
+          flex-wrap: wrap;
+        }
+        .perm-row label.switch {
+          min-height: 44px;
+        }
+        .perm-row .acts button {
+          min-height: 40px;
+        }
+        form#cc-form button {
+          min-height: 40px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <nav class="tabs" role="tablist">
+        <button class="on" data-tab="console" type="button" data-text-key="tab.console">Console</button>
+        <button data-tab="files" type="button" data-text-key="tab.files">Files</button>
+        <button data-tab="nodes" type="button" data-text-key="tab.nodes">Nodes</button>
+        <button data-tab="permissions" type="button" data-text-key="tab.permissions">
+          Permissions
+        </button>
+      </nav>
+      <section id="console" class="pane">
+        <form id="exec">
+          <input id="cmd" value="ls -1 | wc -l" autocomplete="off" spellcheck="false" />
+          <input
+            id="cwd"
+            class="narrow"
+            value="."
+            title="cwd"
+            data-title-key="console.cwd"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button data-text-key="common.run">Run</button>
+        </form>
+        <form id="files">
+          <!-- The text of an option is its label, never its value: the capability name stays written
+               out so a translated page still calls `glob`, not “查找文件”. -->
+          <select id="op">
+            <option value="list" data-text-key="op.list">list</option>
+            <option value="read" data-text-key="op.read">read</option>
+            <option value="write" data-text-key="op.write">write</option>
+            <option value="edit" data-text-key="op.edit">edit</option>
+            <option value="glob" data-text-key="op.glob">glob</option>
+            <option value="grep" data-text-key="op.grep">grep</option>
+          </select>
+          <input
+            id="path"
+            value="."
+            placeholder="path"
+            data-text-placeholder-key="console.path"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <input id="a" autocomplete="off" spellcheck="false" />
+          <input id="b" autocomplete="off" spellcheck="false" />
+          <button data-text-key="common.run">Run</button>
+        </form>
+        <form id="session">
+          <button id="list-sessions" type="button" data-text-key="console.sessions">Sessions</button>
+          <input
+            id="sid"
+            class="narrow"
+            placeholder="session id"
+            data-text-placeholder-key="console.sessionId"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <input
+            id="chars"
+            placeholder="write to stdin (a newline is added; empty = just read)"
+            data-text-placeholder-key="console.stdin"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="poll" type="button" data-text-key="console.readWrite">Read / write</button>
+          <button id="stop" type="button" data-text-key="console.stop">Stop</button>
+        </form>
+        <pre id="out" data-text-key="console.out">(nothing has run yet)</pre>
+        <p class="warn" data-text-key="console.warn">/bin/sh -c, no sandbox: a command reaches the whole machine. File operations can access any path allowed by the local process; writes still enforce the deny list.</p>
+        <p data-text-key="console.sessionHint">Still running after 10s? It becomes a session: read, write, or stop it here.</p>
+      </section>
+
+      <section id="files-pane" class="pane" hidden>
+        <div class="browser" id="browser">
+          <aside id="tree-pane">
+            <div class="tree-head">
+              <span class="grow" data-text-key="files.head">files</span>
+              <button
+                id="tree-refresh"
+                type="button"
+                title="reload the tree"
+                data-title-key="files.reload"
+              >
+                ↻
+              </button>
+            </div>
+            <div id="tree" role="tree"></div>
+          </aside>
+          <article id="preview">
+            <div class="preview-head">
+              <button
+                id="tree-toggle"
+                type="button"
+                title="files"
+                data-title-key="files.head"
+                data-text-key="files.open"
+              >
+                ☰ Files
+              </button>
+              <span class="grow" id="preview-name" data-text-key="files.none">no file open</span>
+              <span class="dirty" id="dirty-dot" title="unsaved changes" data-title-key="files.dirty" hidden>●</span>
+              <span
+                class="mode"
+                id="mode"
+                role="group"
+                aria-label="how to read this file"
+                data-text-label-key="files.modeLabel"
+                hidden
+              >
+                <button type="button" data-mode="source" aria-pressed="false" data-text-key="files.source">
+                  Source
+                </button>
+                <button type="button" data-mode="preview" aria-pressed="true" data-text-key="files.preview">
+                  Preview
+                </button>
+              </span>
+              <span class="meta" id="preview-meta"></span>
+              <button id="save" type="button" disabled data-text-key="files.save">Save</button>
+              <span class="status" id="save-status" role="status"></span>
+            </div>
+            <div class="conflict" id="conflict" hidden>
+              <span class="grow" data-text-key="files.conflict">The file was modified on disk since it was opened.</span>
+              <button id="reload-file" type="button" data-text-key="files.reloadFile">Reload</button>
+              <button id="keep-mine" type="button" data-text-key="files.keepMine">Keep mine</button>
+            </div>
+            <div id="preview-body"><p class="hint" data-text-key="files.hint">Pick a file on the left.</p></div>
+          </article>
+        </div>
+      </section>
+
+      <section id="nodes-pane" class="pane" hidden>
+        <div class="nodes-head">
+          <span class="pill"
+            ><b id="nodes-count">0</b> <span data-text-key="nodes.running">running</span></span
+          >
+          <button
+            id="nodes-refresh"
+            type="button"
+            title="reload"
+            data-title-key="nodes.refresh"
+            data-text-key="common.refresh"
+          >
+            Refresh
+          </button>
+        </div>
+        <p id="nodes-error" class="nodes-error" hidden></p>
+        <div id="nodes-list" class="nodes-list"></div>
+        <p id="nodes-empty" class="nodes-empty" hidden>
+          <b data-text-key="nodes.emptyTitle">No node is running.</b><br />
+          <span data-text-key="nodes.emptyHint">Start one with run-node.</span>
+        </p>
+      </section>
+
+      <section id="permissions-pane" class="pane" hidden>
+        <div class="perm-head">
+          <span class="pill"
+            ><b id="perm-denied">0</b> <span data-text-key="perm.of">of</span>
+            <b id="perm-total">0</b> <span data-text-key="perm.refusedSuffix">refused</span></span
+          >
+          <button id="perm-save" class="grow-left" type="button" disabled data-text-key="perm.save">
+            Save
+          </button>
+          <button
+            id="perm-refresh"
+            type="button"
+            title="read this tenant's saved permissions again"
+            data-title-key="perm.refresh"
+            data-text-key="common.refresh"
+          >
+            Refresh
+          </button>
+          <span class="status" id="perm-status" role="status"></span>
+        </div>
+        <p class="hint" data-text-key="perm.hint">
+          Four switches, one per kind of thing this node does: READ (files, searches, previews),
+          WRITE (files, publishing), EXEC (commands and the sessions they become, local nodes) and
+          EXEC_CUSTOM (the commands saved below). A group that is off refuses every capability it
+          covers before it runs, by name: shell.exec is disabled by the user for node "agent". The
+          node keeps one cap + callers rule per capability, in a file per tenant under the node-agent
+          home, so a restart keeps them without the history node being involved. When the group
+          holding a management capability (permissions, custom-commands) is off, other callers are
+          refused, but webui can always reach the page to turn it back on.
+        </p>
+        <div
+          id="perm-list"
+          class="perm-list"
+          role="group"
+          aria-label="permission switches"
+          data-text-label-key="perm.listLabel"
+        ></div>
+
+        <h3 class="perm-title">
+          <span data-text-key="cc.title">Custom commands</span> <span class="pill" id="cc-count">0</span>
+        </h3>
+        <p class="hint" data-text-key="cc.hint">
+          A command saved here runs the way exec does: same working directory rule, same output
+          ceiling, same 30-minute deadline — and a call that outlives its wait becomes a session.
+          Arguments are never pasted into the script: they arrive as $1, $2 … and as
+          $SHELL_CUSTOM_ARGS (JSON).
+        </p>
+        <form id="cc-form">
+          <input
+            id="cc-name"
+            placeholder="name"
+            data-text-placeholder-key="cc.name"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <input
+            id="cc-description"
+            placeholder="description"
+            data-text-placeholder-key="cc.description"
+            autocomplete="off"
+          />
+          <input
+            id="cc-command"
+            placeholder="script, e.g. printf '%s\n' &quot;$@&quot;"
+            data-text-placeholder-key="cc.command"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <input
+            id="cc-cwd"
+            class="narrow"
+            placeholder="cwd"
+            data-text-placeholder-key="cc.cwd"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <input
+            id="cc-timeout"
+            class="narrow"
+            placeholder="timeout ms"
+            data-text-placeholder-key="cc.timeout"
+            autocomplete="off"
+            inputmode="numeric"
+          />
+          <input
+            id="cc-env"
+            placeholder="env names, comma separated"
+            data-text-placeholder-key="cc.env"
+            autocomplete="off"
+            spellcheck="false"
+          />
+          <button id="cc-submit" type="submit" data-text-key="cc.add">Add</button>
+          <button id="cc-cancel" type="button" hidden data-text-key="cc.cancel">Cancel</button>
+          <span class="status" id="cc-status" role="status"></span>
+        </form>
+        <div id="cc-list" class="perm-list"></div>
+      </section>
+    </main>
+    <script>
+      // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing
+      // here may assume it is called "shell". The node fills its own name in where it hands the page
+      // out (index.ts / ui.py); a page opened unfilled falls back to the path, which is where a panel
+      // is served: /panel/<node>.
+      const INJECTED = "__NODE__";
+      const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+
+      // The page's words: the resource the node embedded (`i18n/en.json`, `i18n/zh-CN.json`), read
+      // through the SDK's browser half. `t` falls back to the sentence written where it is used, so
+      // the markup is the default and a page served on its own (a test, a stale build) still reads.
+      const t = (key, fallback, params) => globalThis.nodeAgentI18n?.t?.(key, params) ?? fallback;
+
+      // Something to paint again once the words are known: the SDK fills `placeholder` and
+      // `aria-label` from its markers, but everything this page writes itself waits for the module
+      // to have run (it is deferred, so that is `load`) and for every later change of language.
+      function onLanguage(paint) {
+        if (document.readyState === 'complete') paint();
+        else window.addEventListener('load', paint, { once: true });
+        document.addEventListener('node-agent:language', paint);
+      }
+
+      // A tooltip has no marker of its own, so `data-title-key` names its words and the fallback is
+      // the text the tag already carries.
+      function paintTooltips() {
+        for (const element of document.querySelectorAll('[data-title-key]')) {
+          const key = element.dataset.titleKey;
+          if (key) element.title = t(key, element.title);
+        }
+      }
+      onLanguage(paintTooltips);
+
+      // Same as the agent's page: it only knows webui's generic POST /call, not who forwards it.
+      async function call(tool, args) {
+        const res = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        });
+        return await res.json();
+      }
+
+      // --- Tabs: Console keeps the terminal it always had, Files is the browser beside it. ---
+      const tabs = [...document.querySelectorAll('.tabs button')];
+      const consolePane = document.getElementById('console');
+      const filesPane = document.getElementById('files-pane');
+      const nodesPane = document.getElementById('nodes-pane');
+      // Filled in by the Permissions block below; declared here because `showTab` is wired up first.
+      let permissionsPane = document.getElementById('permissions-pane');
+      const cmd = document.getElementById('cmd');
+
+      function showTab(name) {
+        for (const tab of tabs) tab.classList.toggle('on', tab.dataset.tab === name);
+        consolePane.hidden = name !== 'console';
+        filesPane.hidden = name !== 'files';
+        nodesPane.hidden = name !== 'nodes';
+        permissionsPane.hidden = name !== 'permissions';
+        if (name === 'console') cmd.focus();
+        if (name === 'files' && !treeLoaded) loadTree();
+        if (name === 'nodes') loadRunNodes();
+        // Read once, not on every visit: a switch flipped and not saved yet must survive a look at
+        // another tab. Refresh is the way to ask again.
+        if (name === 'permissions') {
+          if (!permLoaded) loadPermissions(false);
+          if (!ccLoaded) loadCommands();
+        }
+      }
+
+      for (const tab of tabs) tab.addEventListener('click', () => showTab(tab.dataset.tab));
+
+      const out = document.getElementById('out');
+      function show(reply) {
+        out.textContent = reply.ok
+          ? String(reply.value)
+          : t('common.failed', `Failed: ${reply.error}`, { error: reply.error });
+      }
+
+      // --- The nodes page: running `run-node` sessions, refreshed while the tab is visible. ---
+      const nodesList = document.getElementById('nodes-list');
+      const nodesCount = document.getElementById('nodes-count');
+      const nodesEmpty = document.getElementById('nodes-empty');
+      const nodesError = document.getElementById('nodes-error');
+
+      async function loadRunNodes() {
+        if (nodesPane.hidden) return;
+        const reply = await call(`${NODE}.list-local-running-nodes`, {});
+        if (!reply.ok) {
+          nodesError.hidden = false;
+          nodesError.textContent = t('common.failed', `Failed: ${reply.error}`, { error: reply.error });
+          nodesList.replaceChildren();
+          nodesEmpty.hidden = true;
+          return;
+        }
+        nodesError.hidden = true;
+
+        let rows = [];
+        try {
+          rows = JSON.parse(String(reply.value)).nodes ?? [];
+        } catch {
+          rows = [];
+        }
+        nodesCount.textContent = String(rows.length);
+        nodesEmpty.hidden = rows.length !== 0;
+        nodesList.hidden = rows.length === 0;
+        nodesList.replaceChildren(
+          ...rows.map((row) => {
+            const card = document.createElement('article');
+            card.className = 'node-card';
+
+            const head = document.createElement('header');
+            const title = document.createElement('strong');
+            title.textContent = row.name || row.session;
+            title.title = title.textContent;
+            const state = document.createElement('span');
+            state.className = 'status running';
+            state.textContent = t('nodes.running', 'running');
+            head.append(title, state);
+
+            const where = document.createElement('code');
+            // A package row names the directory and the entry the runner loads from it; a plain
+            // script row is the file itself.
+            where.textContent = row.entry ? `${row.path} · ${row.entry}` : row.path;
+            where.title = where.textContent;
+
+            const meta = document.createElement('span');
+            meta.className = 'meta';
+            const pid = row.pid ?? '?';
+            meta.textContent = t('nodes.meta', `pid ${pid} · ${row.session} · cwd ${row.cwd}`, {
+              pid,
+              session: row.session,
+              cwd: row.cwd,
+            });
+            meta.title = meta.textContent;
+
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const stop = document.createElement('button');
+            stop.type = 'button';
+            stop.textContent = t('nodes.kill', 'Kill');
+            stop.addEventListener('click', async () => {
+              stop.disabled = true;
+              await call(`${NODE}.kill-node`, { session_id: row.session });
+              await loadRunNodes();
+            });
+            actions.append(stop);
+            card.append(head, where, meta, actions);
+            return card;
+          }),
+        );
+      }
+
+      document.getElementById('nodes-refresh').addEventListener('click', loadRunNodes);
+      setInterval(() => {
+        if (!nodesPane.hidden) loadRunNodes();
+      }, 3000);
+
+      // Each ability's arguments are fixed, so the page lays them out instead of making you guess at JSON.
+      const cwd = document.getElementById('cwd');
+      const sid = document.getElementById('sid');
+      const chars = document.getElementById('chars');
+
+      document.getElementById('exec').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const command = cmd.value.trim();
+        if (command === '') return;
+
+        out.textContent = t('common.running', 'Running…');
+        const reply = await call(`${NODE}.exec`, { command, cwd: cwd.value });
+        show(reply);
+
+        // When a command outlives the yield, exec answers with a session id — drop it into the field below.
+        const live = /session (s\d+)/.exec(String(reply.value ?? ''));
+        if (reply.ok && live) sid.value = live[1];
+        cmd.focus();
+      });
+
+      const op = document.getElementById('op');
+      const path = document.getElementById('path');
+      const a = document.getElementById('a');
+      const b = document.getElementById('b');
+
+      // write/edit want content and the searches want a pattern: one input, a different placeholder, one less row of controls.
+      const FIELDS = {
+        list: [null, null],
+        read: [null, null],
+        write: [{ key: 'fields.write.content', text: 'file contents (content)' }, null],
+        edit: [
+          { key: 'fields.edit.old', text: 'old snippet (old)' },
+          { key: 'fields.edit.new', text: 'new snippet (new)' },
+        ],
+        glob: [{ key: 'fields.glob.pattern', text: 'a glob, e.g. **/*.ts' }, null],
+        grep: [
+          { key: 'fields.grep.pattern', text: 'a regular expression' },
+          { key: 'fields.grep.glob', text: 'only files matching this glob (optional)' },
+        ],
+      };
+
+      function syncFields() {
+        const [aField, bField] = FIELDS[op.value];
+        a.placeholder = aField === null ? '' : t(aField.key, aField.text);
+        b.placeholder = bField === null ? '' : t(bField.key, bField.text);
+        a.hidden = aField === null;
+        b.hidden = bField === null;
+      }
+
+      op.addEventListener('change', syncFields);
+      onLanguage(syncFields);
+      syncFields();
+
+      document.getElementById('files').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const where = path.value || '.';
+        const which = op.value;
+        const args =
+          which === 'list' || which === 'read'
+            ? { path: where }
+            : which === 'write'
+              ? { path: where, content: a.value }
+              : which === 'edit'
+                ? { path: where, old: a.value, new: b.value }
+                : which === 'glob'
+                  ? { pattern: a.value, path: where }
+                  : { pattern: a.value, path: where, glob: b.value };
+
+        out.textContent = t('common.running', 'Running…');
+        show(await call(`${NODE}.${which}`, args));
+      });
+
+      // The session buttons only pass the id along and never validate it: let the node complain, the page keeps no second rulebook.
+      const sessionForm = document.getElementById('session');
+      sessionForm.addEventListener('submit', (e) => e.preventDefault());
+
+      document.getElementById('list-sessions').addEventListener('click', async () => {
+        show(await call(`${NODE}.sessions`, {}));
+      });
+
+      document.getElementById('poll').addEventListener('click', async () => {
+        const session_id = sid.value.trim();
+        if (session_id === '') return;
+
+        const args = { session_id };
+        if (chars.value !== '')
+          args.chars = chars.value.endsWith('\n') ? chars.value : `${chars.value}\n`;
+
+        out.textContent = t('common.running', 'Running…');
+        show(await call(`${NODE}.write-stdin`, args));
+        chars.value = '';
+      });
+
+      document.getElementById('stop').addEventListener('click', async () => {
+        const session_id = sid.value.trim();
+        if (session_id === '') return;
+
+        show(await call(`${NODE}.kill-session`, { session_id }));
+      });
+
+      // --- The file browser. Every directory is one `files-tree` call, made when it is first opened,
+      // so a big tree costs nothing until someone looks at it; every file is one `files-read`.
+      const treeEl = document.getElementById('tree');
+      const browser = document.getElementById('browser');
+      const previewName = document.getElementById('preview-name');
+      const previewMeta = document.getElementById('preview-meta');
+      const previewBody = document.getElementById('preview-body');
+      let treeLoaded = false;
+
+      function bytes(size) {
+        if (size < 1024) return `${size} B`;
+        if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+        return `${(size / 1024 / 1024).toFixed(1)} MB`;
+      }
+
+      function note(text, failed = false) {
+        const line = document.createElement('div');
+        line.className = failed ? 'failed' : 'empty';
+        line.textContent = text;
+        return line;
+      }
+
+      // One directory as the node hands it over, parsed. A refusal is thrown, so a caller has one path.
+      async function entriesAt(path) {
+        const reply = await call(`${NODE}.files-tree`, { path });
+        if (!reply.ok) throw new Error(reply.error);
+        return JSON.parse(reply.value);
+      }
+
+      function sizeOf(entry) {
+        if (entry.type === 'dir') return '';
+        return bytes(entry.size);
+      }
+
+      // One row. A directory opens under itself (one level per call), a file opens in the preview.
+      function rowFor(entry, depth) {
+        const row = document.createElement('button');
+        row.type = 'button';
+        row.className = `row ${entry.type}`;
+        row.dataset.path = entry.path;
+        row.dataset.type = entry.type;
+        row.style.paddingLeft = `${6 + depth * 14}px`;
+        row.title = t(
+          'files.rowTitle',
+          `${entry.path} — ${entry.type}, ${entry.size} bytes`,
+          { path: entry.path, type: t(`files.type.${entry.type}`, entry.type), size: entry.size },
+        );
+
+        const caret = document.createElement('span');
+        caret.className = 'caret';
+        caret.textContent = entry.type === 'dir' ? '▸' : '';
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = entry.type === 'dir' ? `${entry.name}/` : entry.name;
+
+        const size = document.createElement('span');
+        size.className = 'size';
+        size.textContent = sizeOf(entry);
+
+        row.append(caret, name, size);
+        if (entry.type === 'dir') row.addEventListener('click', () => toggleDir(row, entry, depth));
+        else row.addEventListener('click', () => openFile(entry.path));
+        return row;
+      }
+
+      // Fill a box with one directory's rows. `depth` is how far the row is indented.
+      async function fill(box, path, depth) {
+        box.replaceChildren(note(t('common.loading', 'Loading…')));
+        try {
+          const data = await entriesAt(path);
+          const rows = data.entries.map((entry) => rowFor(entry, depth));
+          if (rows.length === 0) rows.push(note('(empty)'));
+          if (data.truncated) rows.push(note('… (truncated)'));
+          box.replaceChildren(...rows);
+        } catch (e) {
+          box.replaceChildren(note(`Failed: ${e.message}`, true));
+        }
+      }
+
+      async function toggleDir(row, entry, depth) {
+        const open = row.dataset.open === '1';
+        const caret = row.querySelector('.caret');
+        if (open) {
+          row.dataset.open = '0';
+          caret.textContent = '▸';
+          row.nextElementSibling?.remove();
+          return;
+        }
+
+        row.dataset.open = '1';
+        caret.textContent = '▾';
+        const box = document.createElement('div');
+        box.className = 'children';
+        row.after(box);
+        await fill(box, entry.path, depth + 1);
+      }
+
+      async function loadTree() {
+        treeLoaded = true;
+        await fill(treeEl, '.', 0);
+      }
+
+      document.getElementById('tree-refresh').addEventListener('click', () => loadTree());
+      document.getElementById('tree-toggle').addEventListener('click', () => browser.classList.add('tree-open'));
+      browser.addEventListener('click', (e) => {
+        if (e.target === browser) browser.classList.remove('tree-open');
+      });
+
+      function meta(data) {
+        return [bytes(data.size), data.mime].filter(Boolean).join(' · ');
+      }
+
+      function markSelected(path) {
+        for (const row of treeEl.querySelectorAll('.row.sel')) row.classList.remove('sel');
+        const row = [...treeEl.querySelectorAll('.row')].find((one) => one.dataset.path === path);
+        if (row !== undefined) row.classList.add('sel');
+      }
+
+      function showNotice(title, message, data) {
+        const box = document.createElement('div');
+        box.className = 'notice';
+        const head = document.createElement('p');
+        head.className = 'title';
+        head.textContent = title;
+        const why = document.createElement('p');
+        why.textContent = message;
+        box.append(head, why);
+        if (data !== undefined) {
+          const what = document.createElement('p');
+          what.textContent = meta(data);
+          box.append(what);
+        }
+        previewBody.replaceChildren(box);
+        previewMeta.textContent = data === undefined ? '' : meta(data);
+      }
+
+      // --- Markdown, rendered by this page itself: no dependency, no CDN, and no HTML out of the file
+      // is ever executed. Two rules hold it together.
+      //
+      //   1. Escape first. The source is HTML-escaped before anything else looks at it, and every tag
+      //      in the answer is one this block wrote — so a script tag in a file is characters on the
+      //      screen, never markup, and no `<` reaches the page that is not one of ours
+      //      (`tests/markdown.test.mjs` refuses any other tag name).
+      //   2. A link is a link only when the browser would read it as http, https, mailto, or a path
+      //      relative to this page. `javascript:`, `data:`, `//other-host` keep their words and lose
+      //      their `<a>`.
+      //
+      // The region below is pure — no DOM, no page state — so the test lifts it out of this file and
+      // runs it on its own; the first and last line of it are the markers it slices between.
+      // #region markdown
+      const MD_ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+      /** Every character that could open a tag, as the text it stands for. */
+      function escapeHtml(text) {
+        return String(text).replace(/[&<>"']/g, (ch) => MD_ESCAPES[ch]);
+      }
+
+      /** The text an escaped string came from. A link target is read back before it is judged — and
+       *  the numeric character references too, because `javascript&#58;` stands for `javascript:` and
+       *  the browser would decode it in the href just the same. */
+      function unescapeHtml(text) {
+        const named = {
+          amp: '&',
+          lt: '<',
+          gt: '>',
+          quot: '"',
+          '#39': "'",
+          // The few names that can spell a scheme, a slash or a space.
+          colon: ':',
+          Tab: '\t',
+          NewLine: '\n',
+          sol: '/',
+          bsol: '\\',
+          num: '#',
+        };
+        const point = (digits, base) => {
+          const code = parseInt(digits, base);
+          return Number.isFinite(code) && code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : '';
+        };
+        return String(text)
+          .replace(/&(amp|lt|gt|quot|#39|colon|Tab|NewLine|sol|bsol|num);/g, (whole, name) => named[name])
+          .replace(/&#(\d{1,7});/g, (whole, digits) => point(digits, 10))
+          .replace(/&#[xX]([0-9a-fA-F]{1,6});/g, (whole, digits) => point(digits, 16));
+      }
+
+      /** The same text, read back until it stops changing: `&amp;colon;` is a written `&colon;`, and a
+       *  target is judged on what a browser would end up with, not on its first layer. Bounded, so a
+       *  file cannot make the page work for it. */
+      function decodeTarget(target) {
+        let out = String(target);
+        for (let pass = 0; pass < 4; pass += 1) {
+          const next = unescapeHtml(out);
+          if (next === out) break;
+          out = next;
+        }
+        return out;
+      }
+
+      /** A link target as the browser would take it, or null when this page will not follow it:
+       *  http(s), mailto, or a plain relative path. Whitespace and control characters are dropped
+       *  before the scheme is read, because a browser drops them too (`java\nscript:` is a script). */
+      function safeUrl(target) {
+        const raw = decodeTarget(target).trim();
+        if (raw === '') return null;
+        const probe = raw.replace(/[\u0000-\u0020\u007f]/g, '').toLowerCase();
+        // `//host` and `\\host` are another machine by way of this page's scheme, not a path.
+        if (/^[\\/]{2}/.test(probe)) return null;
+        const scheme = /^([a-z][a-z0-9+.-]*):/.exec(probe);
+        if (scheme === null) return raw;
+        return scheme[1] === 'http' || scheme[1] === 'https' || scheme[1] === 'mailto' ? raw : null;
+      }
+
+      /** A file this page can render: markdown by extension, whichever case, nothing else. */
+      function isMarkdown(path) {
+        return /\.(md|markdown)$/i.test(String(path));
+      }
+
+      /** An anchor to a target that has already been judged. Nothing else on this page is a link. */
+      function anchor(url, label) {
+        return `<a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${label}</a>`;
+      }
+
+      /** One line of text, as inline HTML: code spans, emphasis, links — in that order, with what is
+       *  already finished held aside as a numbered marker, so no rule here ever has an attribute or a
+       *  code span in its hands. The two marker characters are reserved, and a file that holds one is
+       *  a file whose markers are dropped: nothing else in this page reads them. */
+      function inline(raw) {
+        const held = [];
+        const hold = (html) => {
+          held.push(html);
+          return `\u0001${held.length - 1}\u0001`;
+        };
+
+        // Escaped first: everything below works on text, and every tag in the answer is ours.
+        let out = escapeHtml(raw).replace(/[\u0000\u0001]/g, '');
+
+        // Code spans, before anything else: `*` in them is a character, and the text around them is
+        // still one line (so `**a `b` c**` is bold around a code span, as a reader expects).
+        out = out.replace(/`([^`\n]+)`/g, (whole, code) => hold(`<code>${code}</code>`));
+
+        out = out.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        out = out.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+        out = out.replace(/(^|[^\w*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+        out = out.replace(/(^|[^\w_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+
+        // `[words](target)`: the words stay either way, the target is judged before it is an href.
+        // A target stops at the first `)` — a link with brackets in it is not a link this page has to
+        // follow, and what comes before the bracket is still judged.
+        out = out.replace(/\[([^\]\n]*)\]\(([^)\s]*)\)/g, (whole, label, target) => {
+          const url = safeUrl(target);
+          return url === null
+            ? `<span class="refused" title="this page does not follow that link">${label}</span>`
+            : hold(anchor(url, label));
+        });
+
+        // `<https://example.com/x>` is a link because the angle brackets say so.
+        out = out.replace(/&lt;(https?:\/\/[^\s&]+)&gt;/g, (whole, url) => hold(anchor(url, url)));
+
+        return out.replace(/\u0001(\d+)\u0001/g, (whole, at) => held[Number(at)]);
+      }
+
+      /** One list marker: how far it is indented, whether it is numbered, and its text. */
+      function listMarker(line) {
+        const found = /^( *)([-*+]|\d{1,9}[.)])( +)(.*)$/.exec(line);
+        if (found === null) return null;
+        return {
+          indent: found[1].length,
+          ordered: /\d/.test(found[2]),
+          number: parseInt(found[2], 10),
+          text: found[4],
+        };
+      }
+
+      function indentOf(line) {
+        return /^ */.exec(line)[0].length;
+      }
+
+      /** A line that begins a block of its own, so it ends the paragraph a list item was writing. */
+      function startsBlock(line) {
+        return (
+          /^ {0,3}(`{3,}|~{3,})/.test(line) ||
+          /^ {0,3}#{1,6} /.test(line) ||
+          /^ {0,3}>/.test(line) ||
+          /^ {0,3}([-*_])(?: *\1){2,} *$/.test(line) ||
+          listMarker(line) !== null
+        );
+      }
+
+      /** One list, nested ones included: a marker deeper than the list's own indent opens a list
+       *  inside the item above it. Returns the HTML and the line after the list. */
+      function renderList(lines, at) {
+        const first = listMarker(lines[at]);
+        const base = first.indent;
+        const items = [];
+        let i = at;
+        while (i < lines.length) {
+          const marker = listMarker(lines[i]);
+          if (marker === null || marker.indent < base) break;
+          if (marker.indent > base) {
+            const [inner, next] = renderList(lines, i);
+            if (items.length > 0) items[items.length - 1].inner.push(inner);
+            i = next;
+            continue;
+          }
+          if (marker.ordered !== first.ordered) break;
+
+          let text = marker.text;
+          i += 1;
+          // The item's own paragraph: an indented line, or a lazy one, is still the same item.
+          while (i < lines.length) {
+            const line = lines[i];
+            if (line.trim() === '') {
+              const next = lines[i + 1];
+              if (next === undefined || next.trim() === '' || indentOf(next) <= base) break;
+              text += '\n';
+              i += 1;
+              continue;
+            }
+            if (listMarker(line) !== null) break;
+            if (indentOf(line) <= base && startsBlock(line)) break;
+            text += `\n${line.trim()}`;
+            i += 1;
+          }
+          items.push({ text, inner: [] });
+        }
+
+        const tag = first.ordered ? 'ol' : 'ul';
+        const start = first.ordered && first.number > 1 ? ` start="${first.number}"` : '';
+        const body = items
+          .map((item) => `<li>${inline(item.text)}${item.inner.join('')}</li>`)
+          .join('');
+        return [`<${tag}${start}>${body}</${tag}>`, i];
+      }
+
+      /** The cells of one table row: the outer pipes are optional, the inner ones split. */
+      function tableCells(line) {
+        let row = String(line).trim();
+        if (row.startsWith('|')) row = row.slice(1);
+        if (row.endsWith('|')) row = row.slice(0, -1);
+        return row.split('|').map((cell) => cell.trim());
+      }
+
+      /** The separator row under a table's head: one run of dashes per column is the whole test, and
+       *  the colons say how the column is aligned. Null when the row is not one. */
+      function tableAlignments(line) {
+        const rules = [];
+        for (const cell of tableCells(line)) {
+          if (!/^:?-+:?$/.test(cell)) return null;
+          const left = cell.startsWith(':');
+          const right = cell.endsWith(':');
+          rules.push(left && right ? 'center' : right ? 'right' : left ? 'left' : '');
+        }
+        return rules.length === 0 ? null : rules;
+      }
+
+      /** A table, or null when these two lines are not one. */
+      function renderTable(lines, at) {
+        if (!lines[at].includes('|') || at + 1 >= lines.length) return null;
+        const alignments = tableAlignments(lines[at + 1]);
+        if (alignments === null) return null;
+        const head = tableCells(lines[at]);
+        if (head.length !== alignments.length) return null;
+
+        const rows = [];
+        let i = at + 2;
+        while (i < lines.length && lines[i].trim() !== '' && lines[i].includes('|')) {
+          rows.push(tableCells(lines[i]));
+          i += 1;
+        }
+
+        // The alignment is one of three words this file wrote; nothing else reaches the attribute.
+        const cell = (tag, text, column) => {
+          const align = alignments[column] ?? '';
+          const style = align === '' ? '' : ` style="text-align:${align}"`;
+          return `<${tag}${style}>${inline(text ?? '')}</${tag}>`;
+        };
+        const width = alignments.length;
+        const headHtml = `<thead><tr>${Array.from({ length: width }, (whole, column) => cell('th', head[column], column)).join('')}</tr></thead>`;
+        const bodyHtml =
+          rows.length === 0
+            ? ''
+            : `<tbody>${rows
+                .map(
+                  (row) =>
+                    `<tr>${Array.from({ length: width }, (whole, column) => cell('td', row[column], column)).join('')}</tr>`,
+                )
+                .join('')}</tbody>`;
+        return [`<table>${headHtml}${bodyHtml}</table>`, i];
+      }
+
+      /** One file, one block at a time: headings, fenced code, quotes, tables, lists, rules, prose. */
+      function renderMarkdown(source) {
+        const lines = String(source ?? '')
+          .replace(/\r\n?/g, '\n')
+          .split('\n');
+        const out = [];
+        let i = 0;
+        while (i < lines.length) {
+          const line = lines[i];
+          if (line.trim() === '') {
+            i += 1;
+            continue;
+          }
+
+          // A fence: everything to its pair is code, escaped and otherwise untouchable.
+          const fence = /^ {0,3}(`{3,}|~{3,}) *([^`]*)$/.exec(line);
+          if (fence !== null) {
+            const mark = fence[1][0];
+            const info = fence[2].trim().split(/\s+/)[0].replace(/[^\w+#.-]/g, '');
+            const closes = mark === '`' ? /^ {0,3}`{3,} *$/ : /^ {0,3}~{3,} *$/;
+            const body = [];
+            i += 1;
+            while (i < lines.length && !closes.test(lines[i])) {
+              body.push(lines[i]);
+              i += 1;
+            }
+            i += 1; // past the closing fence, or past the end of a file that forgot it
+            const lang = info === '' ? '' : ` class="language-${info}"`;
+            out.push(`<pre><code${lang}>${escapeHtml(body.join('\n'))}</code></pre>`);
+            continue;
+          }
+
+          const heading = /^ {0,3}(#{1,6}) +(.*?) *(#*) *$/.exec(line);
+          if (heading !== null) {
+            const level = heading[1].length;
+            out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
+            i += 1;
+            continue;
+          }
+
+          if (/^ {0,3}([-*_])(?: *\1){2,} *$/.test(line)) {
+            out.push('<hr>');
+            i += 1;
+            continue;
+          }
+
+          if (/^ {0,3}>/.test(line)) {
+            const quoted = [];
+            while (i < lines.length && /^ {0,3}>/.test(lines[i])) {
+              quoted.push(lines[i].replace(/^ {0,3}> ?/, ''));
+              i += 1;
+            }
+            out.push(`<blockquote>${renderMarkdown(quoted.join('\n'))}</blockquote>`);
+            continue;
+          }
+
+          const table = renderTable(lines, i);
+          if (table !== null) {
+            out.push(table[0]);
+            i = table[1];
+            continue;
+          }
+
+          if (listMarker(line) !== null) {
+            const [html, next] = renderList(lines, i);
+            out.push(html);
+            i = next;
+            continue;
+          }
+
+          const paragraph = [];
+          const broken = [];
+          while (i < lines.length && lines[i].trim() !== '' && !startsBlock(lines[i])) {
+            // Two trailing spaces or a trailing backslash is a hard break, as in every markdown.
+            broken.push(/ {2,}$/.test(lines[i]) || /\\$/.test(lines[i]));
+            paragraph.push(lines[i].trim().replace(/\\$/, ''));
+            i += 1;
+          }
+          out.push(`<p>${paragraph.map((text, at) => (broken[at] && at < paragraph.length - 1 ? `${inline(text)}<br>` : inline(text))).join('\n')}</p>`);
+        }
+        return out.join('\n');
+      }
+      // #endregion markdown
+
+      // --- Source or Preview: which way a markdown file is read. Preview is the default, the choice
+      // is the reader's own and outlives the tab — it lives in localStorage, which a browser may
+      // refuse (private mode, a sandboxed frame). A refused preference is not an error: the page
+      // starts at the default and says nothing. Only markdown shows the switch; every other file has
+      // exactly one way to be shown.
+      const MODE_KEY = 'shell.markdown.mode';
+      const modeSwitch = document.getElementById('mode');
+      let markdownView = null;
+      let mode = 'preview';
+
+      function rememberedMode() {
+        try {
+          const saved = localStorage.getItem(MODE_KEY);
+          return saved === 'source' || saved === 'preview' ? saved : 'preview';
+        } catch {
+          return 'preview';
+        }
+      }
+
+      function rememberMode(chosen) {
+        try {
+          localStorage.setItem(MODE_KEY, chosen);
+        } catch {
+          // A preference is not worth a line of error text.
+        }
+      }
+
+      // The preview is drawn from what the editor holds, so an unsaved edit is one switch away.
+      // `innerHTML` is the one place the page writes markup, and it is only ever the renderer's
+      // answer: escape-first, and every tag in it was written above.
+      function paintMarkdown() {
+        markdownView.innerHTML = renderMarkdown(editor.value);
+        // The renderer carries no words of its own — it is lifted out of this file and run alone —
+        // so the sentence it writes on a refused link gets its language once the markup exists.
+        for (const refused of markdownView.querySelectorAll('.refused'))
+          refused.title = t('files.refusedLink', 'this page does not follow that link');
+      }
+
+      // One mode at a time: the textarea keeps the caret and the unsaved text while it is out of
+      // sight, and the rendered page is built from the same bytes when it comes back.
+      function paintMode() {
+        for (const button of modeSwitch.querySelectorAll('button'))
+          button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+        if (editor !== null) editor.hidden = mode !== 'source';
+        if (markdownView !== null) {
+          markdownView.hidden = mode !== 'preview';
+          if (mode === 'preview') paintMarkdown();
+        }
+      }
+
+      function chooseMode(chosen, remember = true) {
+        mode = chosen === 'source' ? 'source' : 'preview';
+        if (remember) rememberMode(mode);
+        paintMode();
+      }
+
+      for (const button of modeSwitch.querySelectorAll('button'))
+        button.addEventListener('click', () => chooseMode(button.dataset.mode));
+
+      // A text file opens in a plain `<textarea>`: monospace, and edited where it was read. Markdown
+      // also gets the rendered page — the default, and the reason the switch is in the head. A save
+      // cannot quietly overwrite a file that moved under us either way: that is the revision below.
+      function renderText(data) {
+        editor = document.createElement('textarea');
+        editor.id = 'editor';
+        editor.value = data.text;
+        editor.spellcheck = false;
+        editor.setAttribute('aria-label', data.path);
+        editor.hidden = false;
+        editor.addEventListener('input', () => markDirty());
+        previewMeta.textContent = t('files.lines', `${data.lines} lines · ${meta(data)}`, {
+          count: data.lines,
+          meta: meta(data),
+        });
+
+        const markdown = isMarkdown(data.path);
+        modeSwitch.hidden = !markdown;
+        markdownView = null;
+        if (!markdown) {
+          previewBody.replaceChildren(editor);
+          return;
+        }
+
+        markdownView = document.createElement('div');
+        markdownView.className = 'markdown';
+        markdownView.id = 'markdown';
+        markdownView.setAttribute('role', 'document');
+        previewBody.replaceChildren(editor, markdownView);
+        chooseMode(rememberedMode(), false);
+      }
+
+      function renderImage(data) {
+        const image = document.createElement('img');
+        image.src = data.dataUrl;
+        image.alt = data.path;
+        previewMeta.textContent = meta(data);
+        previewBody.replaceChildren(image);
+      }
+
+      // --- Editing and saving: `file` is what the editor holds — `saved` is the text the node last
+      // confirmed on disk and `revision` is what that save came from. The revision is the whole
+      // safety: a save carries it, and the node refuses one that no longer matches the file. ---
+      const saveButton = document.getElementById('save');
+      const saveStatus = document.getElementById('save-status');
+      const dirtyDot = document.getElementById('dirty-dot');
+      const conflict = document.getElementById('conflict');
+      let editor = null;
+      let file = null;
+      let saving = false;
+
+      function lineCount(text) {
+        return text === '' ? 0 : text.split('\n').length;
+      }
+
+      function sayStatus(text, tone) {
+        saveStatus.textContent = text;
+        saveStatus.className = tone === undefined ? 'status' : `status ${tone}`;
+      }
+
+      // Dirty is one comparison: what the editor shows against what the node confirmed.
+      function isDirty() {
+        return file !== null && editor !== null && editor.value !== file.saved;
+      }
+
+      function markDirty() {
+        const changed = isDirty();
+        dirtyDot.hidden = !changed;
+        saveButton.disabled = !changed || saving;
+      }
+
+      // A save carries the revision it started from. `force` is "Keep mine": it leaves the revision
+      // out on purpose, which is the one way to say "write this over whatever is there".
+      async function save(force = false) {
+        if (file === null || editor === null || saving) return;
+        const content = editor.value;
+        saving = true;
+        saveButton.disabled = true;
+        sayStatus(t('files.saving', 'Saving…'));
+
+        let reply;
+        try {
+          reply = await call(`${NODE}.files-write`, {
+            path: file.path,
+            content,
+            ...(force ? {} : { expectedRevision: file.revision }),
+          });
+        } catch (e) {
+          saving = false;
+          markDirty();
+          sayStatus(t('files.saveFailed', `Save failed: ${e.message}`, { error: e.message }), 'failed');
+          return;
+        }
+
+        saving = false;
+        if (!reply.ok) {
+          markDirty();
+          sayStatus(t('files.saveFailed', `Save failed: ${reply.error}`, { error: reply.error }), 'failed');
+          return;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(reply.value);
+        } catch {
+          data = null;
+        }
+        if (data === null) {
+          markDirty();
+          sayStatus(
+            t('files.saveNoAnswer', 'Save failed: the node did not answer with a save'),
+            'failed',
+          );
+          return;
+        }
+
+        if (data.ok === true) {
+          file.revision = data.revision;
+          file.saved = content;
+          previewMeta.textContent = t('files.lines', `${lineCount(content)} lines · ${meta(data)}`, {
+            count: lineCount(content),
+            meta: meta(data),
+          });
+          conflict.hidden = true;
+          markDirty();
+          sayStatus(t('files.saved', 'Saved'), 'saved');
+          return;
+        }
+
+        // Refused. A stale revision asks its question on the bar under the head; a denied path only
+        // has to say why — a version-control directory is not something a reload can fix.
+        markDirty();
+        if (data.kind === 'conflict') {
+          conflict.hidden = false;
+          sayStatus(t('files.notSaved', `Not saved: ${data.message}`, { error: data.message }), 'failed');
+          return;
+        }
+        sayStatus(
+          t('files.notSaved', `Not saved: ${data.message ?? data.kind}`, {
+            error: data.message ?? data.kind,
+          }),
+          'failed',
+        );
+      }
+
+      saveButton.addEventListener('click', () => save());
+      document.getElementById('keep-mine').addEventListener('click', () => save(true));
+      document.getElementById('reload-file').addEventListener('click', () => {
+        if (file !== null) openFile(file.path);
+      });
+
+      // Cmd/Ctrl+S saves while the Files tab is open, wherever the caret happens to be.
+      document.addEventListener('keydown', (e) => {
+        if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 's' || filesPane.hidden) return;
+        e.preventDefault();
+        save();
+      });
+
+      // Open one file: text goes to the editor, an image is shown, and a binary or oversized file says
+      // what it is without the page ever holding its bytes.
+      async function openFile(path) {
+        previewName.textContent = path;
+        previewMeta.textContent = t('common.loading', 'Loading…');
+        previewBody.replaceChildren(note(t('common.loading', 'Loading…')));
+        markSelected(path);
+        browser.classList.remove('tree-open');
+        conflict.hidden = true;
+        sayStatus('');
+        file = null;
+        editor = null;
+        // Whatever the last file was, this one starts from nothing: an image or a binary has no source
+        // to switch to, and a switch left over from the file before it would open nothing.
+        modeSwitch.hidden = true;
+        markdownView = null;
+        markDirty();
+
+        let reply;
+        try {
+          reply = await call(`${NODE}.files-read`, { path });
+        } catch (e) {
+          showNotice(path, t('common.failed', `Failed: ${e.message}`, { error: e.message }));
+          return;
+        }
+        if (!reply.ok) {
+          showNotice(path, t('common.failed', `Failed: ${reply.error}`, { error: reply.error }));
+          return;
+        }
+
+        let data;
+        try {
+          data = JSON.parse(reply.value);
+        } catch {
+          showNotice(path, t('files.badAnswer', `Failed: the node's answer was not a preview`));
+          return;
+        }
+
+        if (data.ok === true && data.kind === 'text') {
+          renderText(data);
+          file = { path: data.path, revision: data.revision, saved: data.text };
+          markDirty();
+        } else if (data.ok === true && data.kind === 'image') renderImage(data);
+        else
+          showNotice(
+            t('files.notPreviewable', 'not previewable'),
+            data.message ?? t('files.noPreview', 'this file has no preview'),
+            data,
+          );
+      }
+
+      // --- Permissions: the switches this node enforces before a capability runs, and the commands the
+      // user saved for it. Both lists are the node's answer, drawn as it arrives — the page never
+      // patches its own copy, because the node is the thing that saves, and one list drawn from one
+      // answer is the only way the page and the shell cannot disagree.
+      const permList = document.getElementById('perm-list');
+      const permDenied = document.getElementById('perm-denied');
+      const permTotal = document.getElementById('perm-total');
+      const permSave = document.getElementById('perm-save');
+      const permRefresh = document.getElementById('perm-refresh');
+      const permStatus = document.getElementById('perm-status');
+      const ccList = document.getElementById('cc-list');
+      const ccForm = document.getElementById('cc-form');
+      const ccCount = document.getElementById('cc-count');
+      const ccSubmit = document.getElementById('cc-submit');
+      const ccCancel = document.getElementById('cc-cancel');
+      const ccStatus = document.getElementById('cc-status');
+      const ccFields = {
+        name: document.getElementById('cc-name'),
+        description: document.getElementById('cc-description'),
+        command: document.getElementById('cc-command'),
+        cwd: document.getElementById('cc-cwd'),
+        timeoutMs: document.getElementById('cc-timeout'),
+        env: document.getElementById('cc-env'),
+      };
+
+      // `permView` is the last answer, `permDraft` the switches as they stand on screen: the two are
+      // equal until somebody flips one, and that difference is what Save is for.
+      let permView = null;
+      let permDraft = null;
+      let permLoaded = false;
+      let permSaving = false;
+      let ccLoaded = false;
+      let ccCommands = [];
+      let editing = null;
+
+      function say(node, text, tone) {
+        node.textContent = text;
+        node.className = tone === undefined ? 'status' : `status ${tone}`;
+      }
+
+      function draftDiffers() {
+        if (permView === null || permDraft === null) return false;
+        return permView.groups.some((row) => permDraft[row.group] !== row.enabled);
+      }
+
+      function markPermissionDirty() {
+        permSave.disabled = permSaving || !draftDiffers();
+        if (permView === null || permDraft === null) return;
+        permDenied.textContent = String(
+          permView.groups.filter((row) => !permDraft[row.group]).length,
+        );
+      }
+
+      /** The four switches a person actually decides at. The node's own rules stay one per
+       *  capability (`{ cap, callers }`, the shape a bus-wide check can host); this page draws them
+       *  as READ, WRITE, EXEC and EXEC_CUSTOM — what may be read, what may be written, what may be
+       *  run, and the commands the user saved themselves. A capability added later lands in its
+       *  effect's group without anybody editing this table; `run-custom` is the one carve-out. */
+      const GROUP_ORDER = ['READ', 'WRITE', 'EXEC', 'EXEC_CUSTOM'];
+
+      function groupOf(row) {
+        if (row.cap === 'run-custom') return 'EXEC_CUSTOM';
+        if (row.effect === 'read') return 'READ';
+        if (row.effect === 'write') return 'WRITE';
+        return 'EXEC';
+      }
+
+      /** The switches, in the order a person reads them, each with the capabilities it covers.
+       *  `enabled` is the whole group on: a group only part off (a file written by hand, or by a
+       *  page from before this one) reads off, because that is what Save would write for it. */
+      function permissionGroups(view) {
+        const groups = new Map(GROUP_ORDER.map((group) => [group, []]));
+        for (const row of view.caps) groups.get(groupOf(row))?.push(row);
+
+        return [...groups.entries()]
+          .filter(([, rows]) => rows.length > 0)
+          .map(([group, rows]) => ({
+            group,
+            effect: rows[0].effect,
+            caps: rows.map((row) => row.cap),
+            off: rows.filter((row) => !row.enabled).map((row) => row.cap),
+            named: rows.filter((row) => row.callers !== null).map((row) => row.cap),
+            forceWebui: rows.some((row) => row.forceWebui),
+            enabled: rows.every((row) => row.enabled),
+          }));
+      }
+
+      /** One group: its name, what it covers, who may call it, and its switch. */
+      function permissionRow(row) {
+        const line = document.createElement('div');
+        line.className = 'perm-row';
+        line.dataset.group = row.group;
+
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = row.group;
+
+        const effect = document.createElement('span');
+        effect.className = 'effect';
+        effect.textContent = row.effect;
+
+        // What the switch covers, so the four names are not a guessing game: the capabilities, plus
+        // what is already off inside the group and which of them a rule limits to named callers.
+        const about = document.createElement('span');
+        about.className = 'about';
+        about.textContent = [
+          row.off.length > 0 && row.off.length < row.caps.length
+            ? t('perm.off', `off: ${row.off.join(', ')}`, { caps: row.off.join(', ') })
+            : '',
+          row.named.length > 0
+            ? t('perm.named', `named callers: ${row.named.join(', ')}`, {
+                caps: row.named.join(', '),
+              })
+            : '',
+          row.caps.join(', '),
+        ]
+          .filter((part) => part !== '')
+          .join(' · ');
+        about.title = t('perm.aboutTitle', `${row.group}: ${row.caps.join(', ')}`, {
+          group: row.group,
+          caps: row.caps.join(', '),
+        });
+
+        const label = document.createElement('label');
+        label.className = 'switch';
+        label.title = row.forceWebui
+          ? t(
+              'perm.switchForce',
+              `${row.group}: off refuses other callers, but webui can always reach its own page`,
+              { group: row.group },
+            )
+          : t(
+              'perm.switch',
+              `${row.group}: on lets a caller use every capability in it, off refuses each with a clear error`,
+              { group: row.group },
+            );
+
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.dataset.group = row.group;
+        input.checked = permDraft[row.group] !== false;
+        input.setAttribute(
+          'aria-label',
+          t('perm.allowedLabel', `${row.group}: allowed`, { group: row.group }),
+        );
+
+        const track = document.createElement('span');
+        track.className = 'track';
+
+        const word = document.createElement('span');
+        word.textContent = input.checked
+          ? t('perm.allowed', 'allowed')
+          : t('perm.refusedWord', 'refused');
+
+        input.addEventListener('change', () => {
+          if (permDraft === null) return;
+          permDraft[row.group] = input.checked;
+          word.textContent = input.checked
+            ? t('perm.allowed', 'allowed')
+            : t('perm.refusedWord', 'refused');
+          line.classList.toggle('off', !input.checked);
+          markPermissionDirty();
+          say(permStatus, t('perm.unsaved', 'unsaved changes'));
+        });
+
+        label.append(input, track, word);
+        line.classList.toggle('off', !input.checked);
+        line.append(name, effect, about, label);
+        return line;
+      }
+
+      /** Draw one answer from the node; the draft starts from what it says. */
+      function showPermissions(answer) {
+        const groups = permissionGroups(answer);
+        permView = { ...answer, groups };
+        permDraft = {};
+        for (const row of groups) permDraft[row.group] = row.enabled;
+        permLoaded = true;
+        permTotal.textContent = String(groups.length);
+        permList.replaceChildren(...groups.map(permissionRow));
+        permSave.disabled = true;
+        permDenied.textContent = String(groups.filter((row) => !row.enabled).length);
+      }
+
+      async function loadPermissions(reload = true) {
+        let reply;
+        try {
+          reply = await call(`${NODE}.permissions`, reload ? { reload: true } : {});
+        } catch (e) {
+          say(permStatus, t('common.failed', `Failed: ${e.message}`, { error: e.message }), 'failed');
+          return;
+        }
+        if (!reply.ok) {
+          say(
+            permStatus,
+            t('common.failed', `Failed: ${reply.error}`, { error: reply.error }),
+            'failed',
+          );
+          return;
+        }
+        let view;
+        try {
+          view = JSON.parse(String(reply.value));
+        } catch {
+          say(
+            permStatus,
+            t('perm.badAnswer', 'Failed: the node did not answer with switches'),
+            'failed',
+          );
+          return;
+        }
+        showPermissions(view);
+        // A shell whose permissions file cannot be read still shows its switches — it just cannot
+        // promise they will be there after the next restart, and the page says so rather than
+        // pretending. It runs with every capability allowed meanwhile (`settings.ts`).
+        const refused = permView.groups.filter((row) => !row.enabled).length;
+        if (view.warning)
+          say(
+            permStatus,
+            t('perm.notRead', `not read: ${view.warning}`, { warning: view.warning }),
+            'failed',
+          );
+        else if (refused === 0)
+          say(permStatus, t('perm.allAllowed', 'everything is allowed'), 'saved');
+        else say(permStatus, t('perm.refusedCount', `${refused} refused`, { count: refused }), 'saved');
+      }
+
+      async function savePermissions() {
+        if (permView === null || permDraft === null || permSaving) return;
+        permSaving = true;
+        markPermissionDirty();
+        say(permStatus, t('common.saving', 'saving…'));
+
+        // One switch per group: every capability it covers takes the switch's position, so the
+        // node is still handed the per-capability map it saves.
+        const caps = {};
+        for (const row of permView.caps) caps[row.cap] = permDraft[groupOf(row)] !== false;
+
+        let reply;
+        try {
+          reply = await call(`${NODE}.set-permissions`, { caps });
+        } catch (e) {
+          permSaving = false;
+          markPermissionDirty();
+          say(
+            permStatus,
+            t('common.saveFailed', `Save failed: ${e.message}`, { error: e.message }),
+            'failed',
+          );
+          return;
+        }
+        permSaving = false;
+        if (!reply.ok) {
+          markPermissionDirty();
+          say(
+            permStatus,
+            t('common.saveFailed', `Save failed: ${reply.error}`, { error: reply.error }),
+            'failed',
+          );
+          return;
+        }
+
+        let view;
+        try {
+          view = JSON.parse(String(reply.value));
+        } catch {
+          say(
+            permStatus,
+            t('perm.saveBadAnswer', 'Save failed: the node did not answer with switches'),
+            'failed',
+          );
+          return;
+        }
+        showPermissions(view);
+        if (view.persisted === false)
+          say(
+            permStatus,
+            t('perm.notPersisted', `in force here, not saved for a restart: ${view.error}`, {
+              error: view.error,
+            }),
+            'failed',
+          );
+        else say(permStatus, t('common.saved', 'saved'), 'saved');
+      }
+
+      ccForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        submitCommand();
+      });
+      ccCancel.addEventListener('click', () => resetCommandForm());
+      permSave.addEventListener('click', () => savePermissions());
+      permRefresh.addEventListener('click', () => {
+        loadPermissions(true);
+        loadCommands(true);
+      });
+
+      function emptyNote(text) {
+        const note = document.createElement('p');
+        note.className = 'perm-empty';
+        note.textContent = text;
+        return note;
+      }
+
+      function resetCommandForm() {
+        editing = null;
+        ccSubmit.textContent = t('cc.add', 'Add');
+        ccCancel.hidden = true;
+        for (const field of Object.values(ccFields)) field.value = '';
+        say(ccStatus, '');
+      }
+
+      /** One saved command: what it is, the script itself, and the two things one may do to it. */
+      function commandRow(command) {
+        const line = document.createElement('div');
+        line.className = 'perm-row';
+        line.dataset.id = command.id;
+
+        const detail = document.createElement('div');
+        detail.className = 'detail';
+        const name = document.createElement('span');
+        name.className = 'name';
+        name.textContent = command.name;
+        const body = document.createElement('code');
+        body.textContent = command.command;
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        meta.textContent =
+          [
+            command.description,
+            command.cwd === undefined
+              ? ''
+              : t('cc.metaCwd', `cwd ${command.cwd}`, { cwd: command.cwd }),
+            command.timeoutMs === undefined
+              ? ''
+              : t('cc.metaMs', `${command.timeoutMs} ms`, { ms: command.timeoutMs }),
+            (command.env ?? []).length === 0
+              ? ''
+              : t('cc.metaEnv', `env ${command.env.join(', ')}`, {
+                  names: command.env.join(', '),
+                }),
+          ]
+            .filter((part) => part !== '')
+            .join(' · ') || t('cc.noDescription', 'no description');
+        detail.append(name, body, meta);
+
+        const acts = document.createElement('div');
+        acts.className = 'acts';
+        const edit = document.createElement('button');
+        edit.type = 'button';
+        edit.textContent = t('cc.edit', 'Edit');
+        edit.addEventListener('click', () => editCommand(command));
+        const remove = document.createElement('button');
+        remove.type = 'button';
+        remove.className = 'danger';
+        remove.textContent = t('cc.remove', 'Delete');
+        remove.addEventListener('click', () => deleteCommand(command));
+        acts.append(edit, remove);
+
+        line.append(detail, acts);
+        return line;
+      }
+
+      function showCommands(commands) {
+        ccCommands = commands;
+        ccCount.textContent = String(commands.length);
+        ccList.replaceChildren(
+          ...(commands.length === 0
+            ? [
+                emptyNote(
+                  t(
+                    'cc.empty',
+                    'No custom command yet: name one above, and the agent can call it by name.',
+                  ),
+                ),
+              ]
+            : commands.map(commandRow)),
+        );
+      }
+
+      async function loadCommands(reload = false) {
+        let reply;
+        try {
+          reply = await call(`${NODE}.custom-commands`, reload ? { action: 'list', reload: true } : { action: 'list' });
+        } catch (e) {
+          say(ccStatus, t('common.failed', `Failed: ${e.message}`, { error: e.message }), 'failed');
+          return;
+        }
+        if (!reply.ok) {
+          say(ccStatus, t('common.failed', `Failed: ${reply.error}`, { error: reply.error }), 'failed');
+          return;
+        }
+        let answer;
+        try {
+          answer = JSON.parse(String(reply.value));
+        } catch {
+          say(
+            ccStatus,
+            t('cc.badAnswer', 'Failed: the node did not answer with a command list'),
+            'failed',
+          );
+          return;
+        }
+        ccLoaded = true;
+        showCommands(answer.commands ?? []);
+        if (answer.warning)
+          say(
+            ccStatus,
+            t('cc.notSaved', `nothing saved yet: ${answer.warning}`, { warning: answer.warning }),
+            'failed',
+          );
+      }
+
+      /** What the form holds, as the node takes it: empty optional fields stay empty (undefined), so a
+       *  command with no cwd runs in the workspace and one with no deadline takes the ceiling. */
+      function commandFields() {
+        const env = ccFields.env.value
+          .split(',')
+          .map((name) => name.trim())
+          .filter((name) => name !== '');
+        const timeout = ccFields.timeoutMs.value.trim();
+        return {
+          name: ccFields.name.value.trim(),
+          description: ccFields.description.value.trim(),
+          command: ccFields.command.value,
+          ...(ccFields.cwd.value.trim() === '' ? {} : { cwd: ccFields.cwd.value.trim() }),
+          ...(timeout === '' ? {} : { timeoutMs: Number(timeout) }),
+          ...(env.length === 0 ? {} : { env }),
+        };
+      }
+
+      async function submitCommand() {
+        const fields = commandFields();
+        if (fields.name === '' || fields.command.trim() === '') {
+          say(ccStatus, t('cc.needName', 'a name and a script are needed'), 'failed');
+          return;
+        }
+        if (fields.timeoutMs !== undefined && !Number.isFinite(fields.timeoutMs)) {
+          say(ccStatus, t('cc.badTimeout', 'the timeout is a number of milliseconds'), 'failed');
+          return;
+        }
+
+        say(ccStatus, t('common.saving', 'saving…'));
+        let reply;
+        try {
+          reply = await call(`${NODE}.custom-commands`, {
+            action: editing === null ? 'add' : 'update',
+            ...(editing === null ? {} : { id: editing }),
+            ...fields,
+          });
+        } catch (e) {
+          say(
+            ccStatus,
+            t('common.saveFailed', `Save failed: ${e.message}`, { error: e.message }),
+            'failed',
+          );
+          return;
+        }
+        if (!reply.ok) {
+          say(
+            ccStatus,
+            t('common.saveFailed', `Save failed: ${reply.error}`, { error: reply.error }),
+            'failed',
+          );
+          return;
+        }
+        let answer;
+        try {
+          answer = JSON.parse(String(reply.value));
+        } catch {
+          say(
+            ccStatus,
+            t('cc.saveBadAnswer', 'Save failed: the node did not answer with a command list'),
+            'failed',
+          );
+          return;
+        }
+        showCommands(answer.commands ?? []);
+        resetCommandForm();
+        if (answer.persisted === false)
+          say(
+            ccStatus,
+            t('perm.notPersisted', `in force here, not saved for a restart: ${answer.error}`, {
+              error: answer.error,
+            }),
+            'failed',
+          );
+        else say(ccStatus, t('common.saved', 'saved'), 'saved');
+      }
+
+      function editCommand(command) {
+        editing = command.id;
+        ccFields.name.value = command.name;
+        ccFields.description.value = command.description ?? '';
+        ccFields.command.value = command.command;
+        ccFields.cwd.value = command.cwd ?? '';
+        ccFields.timeoutMs.value = command.timeoutMs === undefined ? '' : String(command.timeoutMs);
+        ccFields.env.value = (command.env ?? []).join(', ');
+        ccSubmit.textContent = t('cc.save', 'Save');
+        ccCancel.hidden = false;
+        say(ccStatus, t('cc.editing', `editing ${command.name}`, { name: command.name }));
+        ccFields.name.focus();
+      }
+
+      async function deleteCommand(command) {
+        say(ccStatus, t('cc.deleting', `deleting ${command.name}…`, { name: command.name }));
+        let reply;
+        try {
+          reply = await call(`${NODE}.custom-commands`, { action: 'delete', id: command.id });
+        } catch (e) {
+          say(ccStatus, t('cc.deleteFailed', `Delete failed: ${e.message}`, { error: e.message }), 'failed');
+          return;
+        }
+        if (!reply.ok) {
+          say(
+            ccStatus,
+            t('cc.deleteFailed', `Delete failed: ${reply.error}`, { error: reply.error }),
+            'failed',
+          );
+          return;
+        }
+        let answer;
+        try {
+          answer = JSON.parse(String(reply.value));
+        } catch {
+          say(
+            ccStatus,
+            t('cc.deleteBadAnswer', 'Delete failed: the node did not answer with a command list'),
+            'failed',
+          );
+          return;
+        }
+        showCommands(answer.commands ?? []);
+        if (editing === command.id) resetCommandForm();
+        say(ccStatus, t('cc.deleted', `deleted ${command.name}`, { name: command.name }), 'saved');
+      }
+
+      // The seam the browser tests (and a curious console) use: the same calls the buttons make.
+      window.shellFiles = {
+        call,
+        entriesAt,
+        openFile,
+        loadTree,
+        save,
+        chooseMode,
+        renderMarkdown,
+        state: () => file,
+        mode: () => mode,
+      };
+
+      // The same seam for Permissions: the switches, the draft, and the commands, so a browser test
+      // (and a curious console) drives the same calls the buttons do.
+      window.shellPermissions = {
+        call,
+        load: loadPermissions,
+        save: savePermissions,
+        toggle: (group, on) => {
+          const input = permList.querySelector(`input[data-group="${group}"]`);
+          if (input === null || input.disabled) return false;
+          if (input.checked !== on) input.click();
+          return input.checked === on;
+        },
+        draft: () => permDraft,
+        view: () => permView,
+        rows: () => [...permList.querySelectorAll('.perm-row')].map((row) => row.dataset.group),
+        loadCommands,
+        submit: submitCommand,
+        edit: editCommand,
+        remove: deleteCommand,
+        commands: () => ccCommands,
+        reset: resetCommandForm,
+      };
+
+      // A tab can be linked to: #files opens the browser, #permissions the switches, and the console
+      // is the default.
+      const linked = location.hash.replace('#', '');
+      showTab(['files', 'nodes', 'permissions'].includes(linked) ? linked : 'console');
+      cmd.focus();
+    </script>
+  </body>
+</html>
