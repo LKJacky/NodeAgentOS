@@ -437,11 +437,13 @@ test('it offers the runtime setup entry and the introduction/connect page', () =
   assert.match(html, /it remembers you, it gets things done/);
   // What the product is for and how to attach another computer; the setup/build recipe has moved
   // out of this page.
-  for (const section of ['What you can do with it', 'Day to day', 'Attach an external node']) {
+  for (const section of ['What you can do with it', 'Day to day', 'Connect your computer']) {
     assert.match(html, new RegExp(section));
   }
   assert.doesNotMatch(html, /第一次使用|常用配置|npm install|npm run build/);
   assert.match(html, /npx @node-agent\/shell --name computer/);
+  assert.equal((html.match(/class="os-tab"/g) ?? []).length, 3);
+  for (const platform of ['posix', 'windows']) assert.match(html, new RegExp(`data-os-target="${platform}"`));
   assert.match(html, /NODE_AGENT_BUS_URL/);
   // The guide is its own page now; the first-visit gate is not mixed into it.
   assert.doesNotMatch(html, /id="onboarding"|id="onboarding-language"/);
@@ -480,7 +482,7 @@ test('the first visit is a separate onboarding page with one language choice', (
   // The guide and its connection recipes belong to the other page (the embedded resource still
   // carries every sentence, so look at the body, not the JSON in the head).
   const body = html.slice(html.indexOf('<body>'));
-  assert.doesNotMatch(body, /Attach an external node|NODE_AGENT_BUS_URL|node_agent\/nodes\/shell/);
+  assert.doesNotMatch(body, /Connect your computer|NODE_AGENT_BUS_URL|node_agent\/nodes\/shell/);
   assert.doesNotMatch(html, /<link|<img|@import|fonts\./i);
   assert.deepEqual(
     [...html.matchAll(/\ssrc="([^"]*)"/g)].map((one) => one[1]),
@@ -577,8 +579,8 @@ test('the page is drawn in the language of the visit, marker by marker', () => {
   assert.match(zh, /只监听在回环地址上/);
   assert.doesNotMatch(markup(zh), /listening on loopback/);
   // The copy buttons are sentences too, and the page says which ones it can build itself.
-  assert.match(en, /Copy start command/);
-  assert.match(zh, /复制启动命令/);
+  assert.match(en, /Copy connection commands/);
+  assert.match(zh, /复制连接命令/);
   // The same resource the node painted from travels in the page, for the browser half to read.
   assert.match(en, /<script type="application\/json" data-i18n-resource>/);
   assert.match(en, /"copy.done":"Copied"/);

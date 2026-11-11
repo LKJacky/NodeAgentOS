@@ -156,10 +156,50 @@
         color: var(--text);
         font-size: 12.5px;
       }
-      .label {
-        margin: 14px 0 6px;
+      .label,
+      .card > p.label {
+        margin: 16px 0 6px;
+        color: var(--text);
         font-size: 13.5px;
         font-weight: 600;
+      }
+      .os-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 10px 0 4px;
+      }
+      .os-tab {
+        padding: 5px 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--soft);
+        color: var(--muted);
+        font: inherit;
+        font-size: 12.5px;
+        cursor: pointer;
+      }
+      .os-tab[aria-selected='true'] {
+        border-color: var(--brand);
+        background: var(--brand-soft);
+        color: var(--brand);
+      }
+      .command-box {
+        margin-top: 8px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--soft);
+      }
+      .command-box pre {
+        padding: 0;
+        background: transparent;
+        color: var(--text);
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      .command-box button.copy {
+        margin-top: 8px;
       }
       .note {
         margin: 6px 0;
@@ -194,19 +234,28 @@
         color: var(--text);
         font-weight: 600;
       }
-      .value {
-        display: flex;
-        align-items: center;
+      .credentials {
+        display: grid;
         gap: 8px;
-        justify-content: space-between;
-        flex-wrap: wrap;
         margin: 8px 0 0;
-        padding: 9px 10px;
+        padding: 10px;
         border: 1px solid var(--line);
         border-radius: 10px;
         background: var(--soft);
       }
-      .value code {
+      .credential {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+      .credential-label {
+        flex: 0 0 auto;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .credential code {
+        flex: 1 1 auto;
         min-width: 0;
         overflow-wrap: anywhere;
       }
@@ -279,6 +328,12 @@
         <h2 id="what" data-text-key="what.title">你可以用它做什么</h2>
         <div class="grid">
           <div class="piece">
+            <h3><span class="dot" aria-hidden="true"></span><span data-text-key="daily.title">日常怎么用</span></h3>
+            <ul class="plain">
+              <li data-text-key="daily.chat">左边对话，右边功能页；历史一直保留。</li>
+            </ul>
+          </div>
+          <div class="piece">
             <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.chat">和它说话</span></h3>
             <p data-text-key="what.chat.text">在左边的对话框里直接说。它保留完整历史，重启后还能接着聊。</p>
           </div>
@@ -294,44 +349,46 @@
             <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.act">动手和查资料</span></h3>
             <p data-text-key="what.act.text">让它运行命令、读写文件、搜索网页；能不能做、做到哪一步，由你在 system 页面里控制。</p>
           </div>
+          <div class="piece">
+            <h3><span class="dot" aria-hidden="true"></span><span data-text-key="what.connect">连接你的电脑</span></h3>
+            <p data-text-key="what.connect.text">在另一台电脑上启动一个 shell Node，它就能在那台电脑上读写文件、执行命令。</p>
+          </div>
         </div>
       </section>
 
-      <section class="card" aria-labelledby="daily">
-        <h2 id="daily" data-text-key="daily.title">日常怎么用</h2>
-        <ul class="plain">
-          <li><strong data-text-key="daily.chat.lead">左边是对话。</strong><span data-text-key="daily.chat.text">输入问题或任务，Enter 发送；历史会一直保留。</span></li>
-          <li><strong data-text-key="daily.pages.lead">右边是功能页。</strong><span data-text-key="daily.pages.text">点 notes 看记住了什么，点 todo 安排今天，点 timer 设提醒，点 search 配搜索，点 shell 看命令权限。</span></li>
-          <li><strong data-text-key="daily.active.lead">让它主动做事。</strong><span data-text-key="daily.active.text">直接说“每天九点提醒我……”或“明天下午帮我查……”，它会创建 timer；到点后 agent 会收到消息并继续执行。</span></li>
-          <li><strong data-text-key="daily.permission.lead">控制权限。</strong><span data-text-key="daily.permission.text">shell 能运行命令，默认只允许当前工作目录；在 system 页面可以按能力关闭或收紧。</span></li>
-          <li><strong data-text-key="daily.stop.lead">停止与继续。</strong><span data-text-key="daily.stop.text">终端里 Ctrl-C 停止；下次用同一条命令启动，notes、todo、timer 和对话都还在。</span></li>
-        </ul>
-      </section>
-
       <section class="card" aria-labelledby="connect">
-        <h2 id="connect" data-text-key="connect.title">连接外部节点</h2>
-        <p><span data-text-key="connect.intro1">把另一台电脑接到当前 stack。先接 </span><strong>shell</strong><span data-text-key="connect.intro2">，之后 agent 就能在你的电脑上读写文件和执行命令。</span><span data-text-key="connect.intro3">这是当前用户的 join token，只发给可信的电脑。直接用总线原始 token 加入的节点不会出现在这个用户的 UI 里。</span></p>
-        <div class="value"><code id="busUrl">{{busUrl}}</code><button class="copy" data-copy="busUrl" type="button" data-text-key="copy.busUrl">复制</button></div>
-        <div class="value"><code id="token">{{token}}</code><button class="copy" data-copy="token" type="button" data-text-key="copy.token">复制</button></div>
+        <h2 id="connect" data-text-key="connect.title">连接你的电脑</h2>
+        <p><span data-text-key="connect.intro1">以连接外部电脑为例。先在目标电脑上启动 </span><strong>shell</strong><span data-text-key="connect.intro2">，之后 agent 就能在那台电脑上读写文件和执行命令。</span><span data-text-key="connect.intro3">这是当前用户的 join token，只发给可信的电脑。直接用总线原始 token 加入的节点不会出现在这个用户的 UI 里。</span></p>
+        <div class="credentials">
+          <div class="credential">
+            <span class="credential-label" data-text-key="connect.busUrlLabel">总线地址</span>
+            <code id="busUrl">{{busUrl}}</code>
+            <button class="copy" data-copy="busUrl" type="button" data-text-key="copy.busUrl">复制</button>
+          </div>
+          <div class="credential">
+            <span class="credential-label" data-text-key="connect.tokenLabel">加入 token</span>
+            <code id="token">{{token}}</code>
+            <button class="copy" data-copy="token" type="button" data-text-key="copy.token">复制</button>
+          </div>
+        </div>
         <p class="warn" data-text-key="{{loopbackKey}}">This bus is listening on loopback.</p>
 
-        <p class="label" data-text-key="connect.step1">1. 设置连接</p>
-        <p class="note" data-text-key="connect.notePosix">Linux / macOS：</p>
-        <pre id="env">export NODE_AGENT_BUS_URL="{{busUrl}}"
-export NODE_AGENT_TOKEN="{{token}}"</pre>
-        <button class="copy" data-copy="env" type="button" data-text-key="copy.env">复制环境变量</button>
-        <p class="note" data-text-key="connect.noteWindows">Windows PowerShell：</p>
-        <pre id="env-win">$env:NODE_AGENT_BUS_URL="{{busUrl}}"
-$env:NODE_AGENT_TOKEN="{{token}}"</pre>
-        <button class="copy" data-copy="env-win" type="button" data-text-key="copy.envWin">复制 PowerShell 版本</button>
-
-        <p class="label" data-text-key="connect.step2">2. 启动 shell 节点</p>
-        <p class="note" data-text-key="connect.noteRoot">在已部署的 node-agent 根目录运行。</p>
-        <pre id="start">npx @node-agent/shell --name computer</pre>
-        <button class="copy" data-copy="start" type="button" data-text-key="copy.start">复制启动命令</button>
+        <p class="label" data-text-key="connect.step1">1. 设置连接并启动 shell</p>
+        <div class="os-tabs" role="tablist" aria-label="Platform">
+          <button class="os-tab" type="button" role="tab" data-os-target="posix" aria-selected="true" data-text-key="connect.osMac">macOS</button>
+          <button class="os-tab" type="button" role="tab" data-os-target="posix" aria-selected="false" data-text-key="connect.osLinux">Linux</button>
+          <button class="os-tab" type="button" role="tab" data-os-target="windows" aria-selected="false" data-text-key="connect.osWindows">Windows</button>
+        </div>
+        <p class="note" data-text-key="connect.noteRoot">在要接入的电脑上运行：</p>
+        <div class="command-box">
+          <pre id="connect-script">env \
+  NODE_AGENT_BUS_URL="{{busUrl}}" \
+  NODE_AGENT_TOKEN="{{token}}" \
+  npx @node-agent/shell --name computer</pre>
+          <button class="copy" data-copy="connect-script" type="button" data-text-key="copy.connect">复制连接命令</button>
+        </div>
         <p class="note"><code>--name computer</code><span data-text-key="connect.name">是它在总线上的名字；接入多台电脑时给每台一个不同的名字。启动后 agent 会看到这些能力：</span><code>computer.read</code> <code>computer.exec</code></p>
         <p class="note"><span data-text-key="connect.verify1">验证：回到 Web UI，节点列表里应出现</span><code>computer</code><span data-text-key="connect.verify2">；再让 agent 调用</span><code>list_nodes</code> <code>computer.exec</code> <code>computer.read</code><span data-text-key="connect.verify3">，能拿到结果就说明接好了。</span></p>
-        <p class="note"><span data-text-key="connect.others1">任何带</span><code>dist/serve.js</code><span data-text-key="connect.others2">的节点都这样接入，只换启动路径，例如 </span><code>node node_agent/nodes/provider/dist/serve.js</code></p>
       </section>
 
       <footer data-text-key="footer">这一页只介绍怎么用和怎么接入节点：页面里的复制按钮只写剪贴板，不执行命令。</footer>
@@ -356,6 +413,32 @@ $env:NODE_AGENT_TOKEN="{{token}}"</pre>
         document.execCommand('copy');
         area.remove();
       }
+      const osTabs = [...document.querySelectorAll('.os-tab')];
+      const connectScript = document.getElementById('connect-script');
+      function selectOs(target) {
+        for (const tab of osTabs) {
+          const on = tab.dataset.osTarget === target;
+          tab.setAttribute('aria-selected', String(on));
+          tab.tabIndex = on ? 0 : -1;
+        }
+        if (!connectScript) return;
+        const busUrl = document.getElementById('busUrl')?.textContent ?? '';
+        const token = document.getElementById('token')?.textContent ?? '';
+        connectScript.textContent =
+          target === 'windows'
+            ? `$env:NODE_AGENT_BUS_URL="${busUrl}"
+$env:NODE_AGENT_TOKEN="${token}"
+npx @node-agent/shell --name computer`
+            : `env \\
+  NODE_AGENT_BUS_URL="${busUrl}" \\
+  NODE_AGENT_TOKEN="${token}" \\
+  npx @node-agent/shell --name computer`;
+      }
+      for (const tab of osTabs) {
+        tab.addEventListener('click', () => selectOs(tab.dataset.osTarget));
+      }
+      selectOs('posix');
+
       for (const button of document.querySelectorAll('button.copy')) {
         button.addEventListener('click', async () => {
           const target = document.getElementById(button.dataset.copy);
