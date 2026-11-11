@@ -6,28 +6,65 @@ import TimerNode from '../dist/system.js';
 
 function fixture(t, now, timezone = 'America/New_York') {
   const previous = process.env.TZ;
-  process.env.TZ = timezone;
+  // The cloud process usually runs in UTC. The wall clock the timer must use comes from the system
+  // profile, never from this process setting.
+  process.env.TZ = 'UTC';
   t.after(() => {
     if (previous === undefined) delete process.env.TZ;
     else process.env.TZ = previous;
   });
   t.mock.timers.enable({ apis: ['Date'], now: Date.parse(now) });
   const scheduled = [];
+  const wakes = [];
   const node = new TimerNode({
     from: 'webui',
     async call(target, cap, args) {
+      if (target === 'system' && cap === 'timezone') return timezone;
       if (target === 'system' && cap === 'timers') return [];
       if (target === 'system' && cap === 'add_timer') {
         scheduled.push(args);
         return;
       }
-      if (target === 'webui' && cap === 'chat_no_wait') return 'queued';
+      if (target === 'webui' && cap === 'chat_no_wait') {
+        wakes.push(args);
+        return 'queued';
+      }
       assert.fail(`unexpected call: ${target}.${cap}`);
     },
     publish() {},
   });
-  return { node, scheduled };
+  return { node, scheduled, wakes };
 }
+
+test('a wake names the system profile timezone', async (t) => {
+  const { node, wakes } = fixture(t, '2026-03-07T12:00:00-05:00');
+  await node.handlers.wake({
+    id: 1,
+    target: 'webui',
+    message: 'morning reminder',
+    mode: 'alarm',
+    repeat: 'once',
+    firesAt: Date.parse('2026-03-08T09:00:00-04:00'),
+  });
+  assert.equal(wakes.length, 1);
+  assert.match(wakes[0].msg.content, /\[timer 1 09:00 America\/New_York\] morning reminder/);
+});
+
+test('the page is painted with the system profile timezone', async (t) => {
+  const { node } = fixture(t, '2026-03-07T12:00:00-05:00');
+  const html = await node.handlers.ui({});
+  assert.match(html, /const INJECTED_ZONE = "America\/New_York"/);
+  assert.doesNotMatch(html, /__TIMEZONE__/);
+  assert.match(html, /id="nowTime"/);
+  assert.doesNotMatch(html, /Where the timers are kept/);
+});
+
+test('the system profile timezone wins over the process timezone', async (t) => {
+  const { node, scheduled } = fixture(t, '2026-03-07T12:00:00-05:00');
+  await node.handlers.set({ at: '09:00', message: 'morning reminder' });
+  // 09:00 in New York on 2026-03-08 is 13:00Z, even though the process itself runs in UTC.
+  assert.equal(scheduled[0].at, '2026-03-08T13:00:00.000Z');
+});
 
 for (const [season, before, after] of [
   ['spring', '2026-03-07T12:00:00-05:00', '2026-03-08T09:00:00-04:00'],

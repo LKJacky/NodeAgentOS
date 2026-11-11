@@ -105,9 +105,101 @@ function kindOf(mode: TimerMode): TimerKind {
   return mode === 'alarm' ? 'alarm' : 'delay';
 }
 
-function clockText(moment: number): string {
-  const at = new Date(moment);
-  return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+type ZonedParts = {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
+  second: number;
+  weekday: number;
+};
+
+const WEEKDAYS: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+const FORMATTERS = new Map<string, Intl.DateTimeFormat>();
+
+function formatterFor(timeZone: string): Intl.DateTimeFormat {
+  const cached = FORMATTERS.get(timeZone);
+  if (cached !== undefined) return cached;
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    weekday: 'short',
+    hourCycle: 'h23',
+  });
+  FORMATTERS.set(timeZone, formatter);
+  return formatter;
+}
+
+function zonedParts(moment: number, timeZone: string): ZonedParts {
+  const values: Record<string, string> = {};
+  for (const part of formatterFor(timeZone).formatToParts(new Date(moment))) {
+    if (part.type !== 'literal') values[part.type] = part.value;
+  }
+  const weekday = WEEKDAYS[values.weekday ?? ''];
+  if (weekday === undefined) throw new Error(`cannot read the weekday in ${timeZone}`);
+  return {
+    year: Number(values.year),
+    month: Number(values.month),
+    day: Number(values.day),
+    hour: Number(values.hour),
+    minute: Number(values.minute),
+    second: Number(values.second),
+    weekday,
+  };
+}
+
+function wallClockAsUtc(parts: ZonedParts): number {
+  return Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+}
+
+function offsetAt(moment: number, timeZone: string): number {
+  return wallClockAsUtc(zonedParts(moment, timeZone)) - Math.floor(moment / 1000) * 1000;
+}
+
+/** The instant whose wall clock in `timeZone` is `parts`. For an ambiguous time choose the earlier
+ *  occurrence; for a missing time choose the instant just after the gap. */
+function utcFromZoned(parts: ZonedParts, timeZone: string): number {
+  const target = wallClockAsUtc(parts);
+  // `Date.UTC` normalises an overflowing day (for example day 32) into the next month.
+  const wanted = new Date(target);
+  const wall = {
+    year: wanted.getUTCFullYear(),
+    month: wanted.getUTCMonth() + 1,
+    day: wanted.getUTCDate(),
+    hour: parts.hour,
+    minute: parts.minute,
+  };
+  const before = offsetAt(target - DAY, timeZone);
+  const after = offsetAt(target + DAY, timeZone);
+  const candidates = [...new Set([before, after])]
+    .map((offset) => target - offset)
+    .filter((moment) => {
+      const actual = zonedParts(moment, timeZone);
+      return (
+        actual.year === wall.year &&
+        actual.month === wall.month &&
+        actual.day === wall.day &&
+        actual.hour === wall.hour &&
+        actual.minute === wall.minute
+      );
+    });
+  if (candidates.length > 0) return Math.min(...candidates);
+  return target - before;
+}
+
+function pad2(value: number): string {
+  return String(value).padStart(2, '0');
+}
+
+function clockText(moment: number, timeZone: string): string {
+  const at = zonedParts(moment, timeZone);
+  return `${pad2(at.hour)}:${pad2(at.minute)}`;
 }
 
 function phraseText(seconds: number): string {
@@ -119,20 +211,26 @@ function phraseText(seconds: number): string {
   return rest === 0 ? `in ${hours}h` : `in ${hours}h ${rest}m`;
 }
 
-// Calendar alarms keep local wall-clock time across DST; countdowns use elapsed seconds.
-function addCalendarDays(moment: number, days: number): number {
-  const at = new Date(moment);
-  at.setDate(at.getDate() + days);
-  return at.getTime();
+// Calendar alarms keep the wall-clock time of the system profile's timezone across DST; countdowns
+// use elapsed seconds. The process timezone is deliberately not consulted: a cloud process usually
+// runs in UTC while the person's configured timezone lives in `system.settings`.
+function addCalendarDays(moment: number, days: number, timeZone: string): number {
+  const at = zonedParts(moment, timeZone);
+  return utcFromZoned({ ...at, day: at.day + days }, timeZone);
 }
 
-function alarmTime(value: string, now: number): number {
+function alarmTime(value: string, now: number, timeZone: string): number {
   const clock = CLOCK_TIME.exec(value);
   if (clock !== null) {
-    const at = new Date(now);
-    at.setHours(Number(clock[1]), Number(clock[2]), 0, 0);
-    let moment = at.getTime();
-    if (moment <= now) moment = addCalendarDays(moment, 1);
+    const today = zonedParts(now, timeZone);
+    const target: ZonedParts = {
+      ...today,
+      hour: Number(clock[1]),
+      minute: Number(clock[2]),
+      second: 0,
+    };
+    let moment = utcFromZoned(target, timeZone);
+    if (moment <= now) moment = utcFromZoned({ ...target, day: target.day + 1 }, timeZone);
     return moment;
   }
   const moment = Date.parse(value);
@@ -140,36 +238,38 @@ function alarmTime(value: string, now: number): number {
   return moment;
 }
 
-function nextFireAt(rule: RepeatRule, from: number): number {
-  if (rule === 'daily') return addCalendarDays(from, 1);
-  if (rule === 'weekly') return addCalendarDays(from, 7);
+function nextFireAt(rule: RepeatRule, from: number, timeZone: string): number {
+  if (rule === 'daily') return addCalendarDays(from, 1, timeZone);
+  if (rule === 'weekly') return addCalendarDays(from, 7, timeZone);
   if (rule.startsWith('every:')) return from + Number(rule.slice(6)) * 1000;
-  let next = addCalendarDays(from, 1);
-  while ([0, 6].includes(new Date(next).getDay())) next = addCalendarDays(next, 1);
+  let next = addCalendarDays(from, 1, timeZone);
+  while ([0, 6].includes(zonedParts(next, timeZone).weekday))
+    next = addCalendarDays(next, 1, timeZone);
   return next;
 }
 
-function forwardToWeekday(moment: number): number {
-  return [0, 6].includes(new Date(moment).getDay()) ? nextFireAt('weekdays', moment) : moment;
+function forwardToWeekday(moment: number, timeZone: string): number {
+  return [0, 6].includes(zonedParts(moment, timeZone).weekday)
+    ? nextFireAt('weekdays', moment, timeZone)
+    : moment;
 }
 
-function dayGap(moment: number, now: number): number {
+function dayGap(moment: number, now: number, timeZone: string): number {
   const day = (at: number): number => {
-    const date = new Date(at);
-    return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+    const date = zonedParts(at, timeZone);
+    return Date.UTC(date.year, date.month - 1, date.day);
   };
   return Math.round((day(moment) - day(now)) / DAY);
 }
 
-function alarmPhrase(moment: number, now: number): string {
-  const days = dayGap(moment, now);
-  const at = new Date(moment);
-  const clock = clockText(moment);
+function alarmPhrase(moment: number, now: number, timeZone: string): string {
+  const days = dayGap(moment, now, timeZone);
+  const at = zonedParts(moment, timeZone);
+  const clock = clockText(moment, timeZone);
   if (days <= 0) return `${clock} today`;
   if (days === 1) return `${clock} tomorrow`;
-  if (days <= 6)
-    return `${clock} ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][at.getDay()]}`;
-  return `${clock} on ${at.toISOString().slice(0, 10)}`;
+  if (days <= 6) return `${clock} ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][at.weekday]}`;
+  return `${clock} on ${at.year}-${pad2(at.month)}-${pad2(at.day)}`;
 }
 
 function remoteId(wake: RemoteWake): string {
@@ -200,7 +300,7 @@ function remoteWakeOf(timer: RemoteTimer): RemoteWake | null {
   }
 }
 
-function remoteRow(wake: RemoteWake, now: number): ScheduledWake {
+function remoteRow(wake: RemoteWake, now: number, timeZone: string): ScheduledWake {
   const inSeconds = Number(Math.max(0, (wake.firesAt - now) / 1000).toFixed(1));
   return {
     id: wake.id,
@@ -213,7 +313,8 @@ function remoteRow(wake: RemoteWake, now: number): ScheduledWake {
     repeat: wake.repeat,
     next_at: new Date(wake.firesAt).toISOString(),
     in_seconds: inSeconds,
-    phrase: wake.mode === 'alarm' ? alarmPhrase(wake.firesAt, now) : phraseText(inSeconds),
+    phrase:
+      wake.mode === 'alarm' ? alarmPhrase(wake.firesAt, now, timeZone) : phraseText(inSeconds),
   };
 }
 
@@ -230,10 +331,13 @@ class TimerNode extends Node {
       // The page is drawn in the language the visit asked for (the shell sends it as `language`):
       // every marked sentence and the resource the browser half reads are written in before the page
       // leaves the node, so the first paint is already right.
-      ui: (args) =>
-        paintPage(PAGE, RESOURCE, args).replace('__NODE__', () =>
+      ui: async (args) => {
+        const page = paintPage(PAGE, RESOURCE, args).replace('__NODE__', () =>
           JSON.stringify(NODE_ID).slice(1, -1),
-        ),
+        );
+        const timeZone = await this.timeZone();
+        return page.replace('"__TIMEZONE__"', () => JSON.stringify(timeZone));
+      },
     };
   }
 
@@ -243,11 +347,16 @@ class TimerNode extends Node {
 
   private async rows(): Promise<ScheduledWake[]> {
     const now = Date.now();
+    const timeZone = await this.timeZone();
     return (await this.remoteTimers())
       .map(remoteWakeOf)
       .filter((wake): wake is RemoteWake => wake !== null)
       .sort((a, b) => a.firesAt - b.firesAt)
-      .map((wake) => remoteRow(wake, now));
+      .map((wake) => remoteRow(wake, now, timeZone));
+  }
+
+  private async timeZone(): Promise<string> {
+    return await this.ctx.call<string>('system', 'timezone', {});
   }
 
   private async set(args: ToolArgs): Promise<string> {
@@ -261,9 +370,10 @@ class TimerNode extends Node {
       );
 
     const now = Date.now();
-    const { mode, firesAt: requested } = this.firstMoment(args, modeOf(args.mode), now);
+    const timeZone = await this.timeZone();
+    const { mode, firesAt: requested } = this.firstMoment(args, modeOf(args.mode), now, timeZone);
     const repeat = repeatOf(args.repeat, mode);
-    const firesAt = repeat === 'weekdays' ? forwardToWeekday(requested) : requested;
+    const firesAt = repeat === 'weekdays' ? forwardToWeekday(requested, timeZone) : requested;
     const pending = (await this.remoteTimers())
       .map(remoteWakeOf)
       .filter((wake): wake is RemoteWake => wake !== null);
@@ -283,7 +393,7 @@ class TimerNode extends Node {
       at: new Date(firesAt).toISOString(),
       callpayload: { cap: WAKE_CAP, args: { ...wake } },
     });
-    const row = remoteRow(wake, now);
+    const row = remoteRow(wake, now, timeZone);
     this.ctx.publish(NODE_ID, { type: 'set', ...row });
     const when = mode === 'alarm' ? `at ${row.phrase}` : row.phrase;
     return `set timer id=${id}: ${mode} wakes ${target} ${when}${repeat === 'once' ? '' : `, ${repeat}`}`;
@@ -327,11 +437,12 @@ class TimerNode extends Node {
       throw new Error('invalid system timer wake payload');
     }
 
+    const timeZone = await this.timeZone();
     let woke = false;
     let error = '';
     try {
       await this.ctx.call(wake.target, 'chat_no_wait', {
-        msg: { role: 'system', content: this.wakeContent(wake) },
+        msg: { role: 'system', content: this.wakeContent(wake, timeZone) },
         priority: wake.priority,
       });
       woke = true;
@@ -341,8 +452,8 @@ class TimerNode extends Node {
 
     let next: number | null = null;
     if (wake.repeat !== 'once') {
-      next = nextFireAt(wake.repeat, wake.firesAt);
-      while (next <= Date.now()) next = nextFireAt(wake.repeat, next);
+      next = nextFireAt(wake.repeat, wake.firesAt, timeZone);
+      while (next <= Date.now()) next = nextFireAt(wake.repeat, next, timeZone);
       try {
         const following: RemoteWake = { ...wake, firesAt: next };
         await this.ctx.call('system', 'add_timer', {
@@ -377,6 +488,7 @@ class TimerNode extends Node {
     args: ToolArgs,
     mode: TimerMode | undefined,
     now: number,
+    timeZone: string,
   ): { mode: TimerMode; firesAt: number } {
     const hasAlarm = args.at !== undefined;
     const hasCountdown = args.after_seconds !== undefined;
@@ -389,13 +501,13 @@ class TimerNode extends Node {
       );
     }
     return resolved === 'alarm'
-      ? { mode: resolved, firesAt: alarmTime(text(args.at, 'at'), now) }
+      ? { mode: resolved, firesAt: alarmTime(text(args.at, 'at'), now, timeZone) }
       : { mode: resolved, firesAt: now + afterSeconds(args.after_seconds) * 1000 };
   }
 
-  private wakeContent(wake: RemoteWake): string {
+  private wakeContent(wake: RemoteWake, timeZone: string): string {
     const rule = wake.repeat === 'once' ? '' : ` ${wake.repeat}`;
-    return `[timer ${wake.id} ${clockText(wake.firesAt)}${rule}] ${wake.message}`;
+    return `[timer ${wake.id} ${clockText(wake.firesAt, timeZone)} ${timeZone}${rule}] ${wake.message}`;
   }
 }
 
