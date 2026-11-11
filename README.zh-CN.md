@@ -1,98 +1,159 @@
-# node-agent
+# NodeAgentOS
 
 [English](README.md) | [中文](README.zh-CN.md)
 
-![node-agent：一个点，衍生出很多节点，你的专属 Agent](docs/assets/hero.svg)
+![NodeAgentOS：一个点，衍生出很多节点，你的专属 Agent](docs/assets/hero.svg)
 
-**一个你自己运行的完整 Agent。** 一条总线、一组小而专注的工具节点，以及一个不挡路的 Web UI。
-它面向一个人——你的机器，或你自己的内网。没有注册、没有租户、没有账单。模型密钥由你提供，兼容
-任意 OpenAI-compatible 接口。
+**一个持续运行的 Agent 操作系统。** 一个 Agent、一个持续 session，Node 可以从任何地方接入总线。
+它今天跑在你的电脑上，同一套 runtime 契约也为多租户云端而设计。
 
-## ⚡ 30 秒启动
+## 1. Setup
 
 需要 Node 23.6 或更新版本（`.nvmrc` 和 CI 使用 24）以及 npm。
+
+### a. npx
 
 ```bash
 npx @node-agent/local
 # 打开 http://127.0.0.1:8790/
 ```
 
-一个镜像，两种启动方式——先在本地跑，确认要公网访问再加门：
+### b. Docker
 
 ```bash
 # 本地：只启动 stack，页面在 127.0.0.1:8790
-cp deploy/env.example deploy/.env                            # 填入 token
+cp deploy/env.example deploy/.env                         # 填入一个 token
 docker compose -f deploy/docker-compose.yml up -d --build
 
-# 公网：同一个 stack，加上 Caddy 的 80/443 和证书
-# （需要在 deploy/.env 设置 NODE_AGENT_ACCESS_TOKEN 和 NODE_AGENT_DOMAIN）
+# 公网：同一个 stack，外加 Caddy 处理 80/443 和证书
+# （需要在 deploy/.env 里设置 NODE_AGENT_ACCESS_TOKEN 和 NODE_AGENT_DOMAIN）
 docker compose -f deploy/docker-compose.yml --profile public up -d
 ```
 
-## 🧠 它是什么
+## 2. NodeAgentOS 的特点
 
-| 层 | 含义 |
+### 2.1 单 Agent 为中心，单一 session
+
+NodeAgentOS 的核心是一个持续存在的 Agent，而不是每个标签页一个助手的聊天产品。
+
+- **单一 session。** 没有 per-chat workspace，也不会为每个任务 fork 一份 Agent。每个页面、每条消息、
+  每个定时器面对的都是同一个 Agent，共享同一份记忆和工作上下文。
+- **单一身份。** notes、todo、history、工具和权限都属于这个 Agent，而不属于某一次临时对话。
+- **持续服务。** Agent 不依赖某个页面或一次会话：它可以在定时器上醒来、接收 Node 发来的消息，
+  或在 UI 关闭后继续任务。重启进程不会创造一个新的人格。
+
+这就是“打开一个聊天窗口”和“有一个一直在的助手”的区别。
+
+### 2.2 天生为云端设计
+
+一个 7×24 小时在线的个人 Agent，不能住在一台会合盖休眠的笔记本里。它需要跑在云端：一直在线、
+从任何地方都能连上，并且与其他用户彼此隔离。NodeAgentOS 是围绕这个前提设计的，而不是围绕一个
+本地 demo。
+
+- **所有组件都服务化。** bus、runtime、agent 和 Node 都是有明确契约的独立进程。开发时可以跑在同一台
+  机器上，之后可以拆到不同主机，而模型不变。
+- **多租户是结构的一部分。** 用户是访问关系，不是全局单例。同一个 runtime 要能承载很多用户，
+  每个用户拥有一个持续 Agent 和一组独立的 Node。
+- **网络优先。** Node 通过网络连接 Agent，而不是靠进程内 import。Node 可以在另一个容器、另一个
+  机房，甚至另一家公司的基础设施里。
+- **持续服务。** 浏览器关闭后，定时器、Node 发来的事件和未完成的任务仍然继续。
+
+### 2.3 扩展能力：Node 是网络服务
+
+扩展的单位是 **Node**：一个向 Agent 暴露能力的小包。
+
+- **天然隔离。** 每个 Node 都是独立的进程或 worker，只能通过总线上的统一协议与系统其他部分
+  交流。Node 之间不 import、不共享内存、不调用彼此的内部实现。一个 Node 故障、重启或迁移，
+  不会把 Agent 一起拖垮。
+- **连接多设备、多应用。** 台式机、笔记本、手机或一个应用后端，都可以作为 Node 通过 WebSocket
+  接入。Agent 看到的是能力，而不是需要嵌进核心的代码。
+- **双向通信。** Agent 可以调用 Node 的能力，Node 也可以调用另一个 Node，或把事件推回 Agent。
+- **持续扩展。** Node 在 manifest 里声明自己的能力，Agent 在运行时发现这份 manifest。增加一个
+  设备或一个应用，不需要重建核心。
+
+这让系统可以持续扩展，而 Agent 不会变成巨石。
+
+### 2.4 OS 级能力
+
+一个有用的操作系统不只是能运行程序，还要给程序稳定的接口。NodeAgentOS 用同样的思路对待 Agent 扩展：
+
+| 接口 | 提供什么 |
 |---|---|
-| **bus** (`node_agent/bus`) | 一条 WebSocket 总线；每个节点和 UI 都是它的客户端 |
-| **runtime** (`node_agent/runtime`) | runtime 契约（`Runtime`：总线、节点、用户作为访问关系），以及把同一接口放到 HTTP 上的 `RuntimeServer`，让 runtime 可以运行在别处 |
-| **nodes** (`node_agent/nodes/*`，节点包） | 小包：`agent`、`history`、`provider`、`shell`、`search`、`webui`、`notes`、`todo`、`timer`、`system`、`introduce` |
-| **sdk** (`node_agent/sdk`) | 写节点时面对的东西：信封、manifest、runner |
-| **node-agent** (`node_agent/node-agent`) | `LocalRuntime`：本进程内的总线，每个节点一个 worker 线程，以及启动整个 stack 的命令行入口 |
+| **UI** | Node 可以贡献页面、panel 和 action；路由、布局和外壳由宿主负责。 |
+| **国际化** | Node 以资源形式提供文案；runtime 解析读者语言，所有界面跟随。 |
+| **持久化存储** | 对话记录、notes 和长期状态走 runtime 和 history 层，而不是每个 Node 自己藏文件。 |
+| **权限** | Node 的每个 capability 声明 callers；runtime 按用户和 Agent 授予访问关系，决定谁可以调用哪个 Node。 |
 
-节点就是一个带 `node` manifest 和入口文件的包；节点之间共享的只有总线。
-`node_example/hello-node` 是最小的可运行示例，[docs/node-authoring.md](docs/node-authoring.md)
-会带你写自己的节点。
+这些接口决定了它只是一组工具，还是一个工具可以长期生活的平台。
 
-## 🧩 不一样在哪
+## 3. 架构
 
-- 🧠 **一个 Agent，而不是每个标签页一个聊天。** 所有页面看到同一份历史、notes、todo 和工具。
-- 🧰 **工具就是节点。** 加一个包就多一种能力，Agent 在运行时发现它。
-- 🖥️ **本地优先。** 文件、shell、计时器、搜索都在你身边运行；除非你选择，否则模型是唯一远程部分。
-- 🔌 **不锁定。** 任意 OpenAI-compatible 接口、普通 WebSocket 总线，以及可以替换的 Web UI。
-
-## 🚫 它不是什么
-
-- 不是托管服务：没有需要注册的服务器
-- 不是多租户：一个部署就是一个人、一个 token（内置登录页是一道门，不是账号系统）
-- 不是节点商店：第三方节点自己连到你的本地总线（`npx @node-agent/sdk .`）
-- 不是沙箱：`shell` 节点会在你的机器上执行命令，因为它本来就是干这个的
-
-## 🗂 目录结构
-
-```text
-node_agent/
-  sdk/         通信类型、manifest schema、节点 runner
-  bus/         WebSocket 总线
-  runtime/     runtime 契约，以及面向远程 runtime 的 RuntimeServer over HTTP
-  node-agent/  LocalRuntime（本进程的总线和每节点 worker）以及入口，bin: node-agent
-  nodes/       节点包
-    agent/ history/ provider/ shell/ search/ webui/
-    notes/ todo/ timer/ system/ introduce/
-deploy/        一个 Dockerfile、一个 compose：`stack`，以及 public profile 里的 `caddy`
-node_example/hello-node/
-docs/
+```mermaid
+flowchart LR
+  U[Web UI / API 客户端] --> B[(Bus)]
+  B <--> A[持续 Agent]
+  B <--> H[(历史与记忆)]
+  B <--> N1[本地 Node]
+  B <--> N2[远程 Node]
+  B <--> N3[服务化 Node]
 ```
 
-## 🛠 开发
+总线是唯一的共享面，每个进程都是它的客户端。
+
+| 层 | 职责 |
+|---|---|
+| **bus** (`node_agent/bus`) | 一个 WebSocket 端点；envelope 承载调用、事件和流 |
+| **runtime** (`node_agent/runtime`) | 启动总线和 Node，并记录哪个用户可以使用哪个 Node |
+| **agent** (`node_agent/nodes/agent`) | 唯一的持续 Agent：上下文、记忆、工具和模型循环 |
+| **nodes** (`node_agent/nodes/*`) | 小而专注的能力包：history、shell、search、notes、todo、timer、system、webui |
+| **sdk** (`node_agent/sdk`) | manifest schema、wire 类型和 Node runner |
+
+## 4. Node 契约
+
+Node 是一个带 `node` manifest 和入口文件的 npm 包。它不 import 另一个 Node；它通过总线到达系统其他部分。
+
+```json
+{
+  "name": "my-node",
+  "node": {
+    "id": "my-node",
+    "desc": "一个 Agent 可以调用的能力",
+    "entry": "dist/index.js",
+    "caps": {
+      "hello": {
+        "type": "object",
+        "callers": ["agent"]
+      }
+    }
+  }
+}
+```
+
+把它接到一个正在运行的总线上：
 
 ```bash
-npm install          # workspace 包 + 从 npm 安装 @node-agent/sdk
-npm run build        # 按依赖顺序构建 workspace
-npm test             # 先构建，再跑每个 workspace suite；全绿（计数见 docs/STATUS.md）
+NODE_AGENT_BUS_URL=ws://127.0.0.1:8788 \
+NODE_AGENT_TOKEN=your-token \
+NODE_AGENT_TENANT=default \
+node-agent-sdk .
 ```
 
-另见 [docs/quickstart.md](docs/quickstart.md)、[docs/architecture.md](docs/architecture.md)、
+`node_example/hello-node` 是一个完整可运行的例子，[docs/node-authoring.md](docs/node-authoring.md)
+会带你走一遍 manifest、SDK runner 和 Node 之间的调用路径。
+
+## 5. Development
+
+```bash
+npm install          # workspace 包 + npm 上的 @node-agent/sdk
+npm run build        # 按依赖顺序构建所有 workspace
+npm test             # 先构建，再运行每个 workspace 的测试
+```
+
+参见 [docs/quickstart.md](docs/quickstart.md)、[docs/architecture.md](docs/architecture.md)、
 [docs/security.md](docs/security.md) 和 [docs/deployment.md](docs/deployment.md)。
-
-## 📊 状态
-
-这是一个早期的 `0.1.0` 项目，还不是生产软件。`npm run build` 是支持的构建门禁；CI 还会跑
-`npm test`，它先构建，再执行每个 workspace 的测试；两者目前都是绿的。每个 suite 的计数见
-[docs/STATUS.md](docs/STATUS.md)。
 
 ## 📄 License
 
-MIT License，见 [LICENSE](LICENSE)。
+MIT License。见 [LICENSE](LICENSE)。
 
-每个要发布的 workspace 包都带有 npm 需要的 LICENSE 副本；副本漂移时
-`npm run licenses:check` 会失败。
+每个发布的 workspace 包都带有 npm 需要的 license 副本；副本漂移时 `npm run licenses:check` 会失败。
