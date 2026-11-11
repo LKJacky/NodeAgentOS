@@ -9,8 +9,6 @@
   "sync.reconnecting": "重连中…",
   "pending.title": "等待中",
   "pending.reading": "正在读取本节点保存的计时器…",
-  "note.summary": "计时器存在哪里",
-  "note.body": "总线上有 history节点时，队列由它保存，重启后仍在等待的计时器会回来——包括重复的。没有 history节点时，队列只活在计时器节点的进程里，重启这个节点就会全部丢失。节点不在时到点的唤醒，会在下次启动时补响一次。每次唤醒都是一次单独的调用、只发一次，重复的按自己的规则再回来。",
   "view.alarm": "新建闹钟",
   "view.countdown": "新建倒计时",
   "mode.alarm": "闹钟",

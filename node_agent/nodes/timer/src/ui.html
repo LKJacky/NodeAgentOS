@@ -193,8 +193,23 @@
         color: var(--muted);
         font-size: 12px;
       }
-      /* The list is the page, so it takes every pixel the heading, the footnote and the two buttons
-         do not: it scrolls here rather than the page. */
+      .heading .now {
+        flex: 1 0 100%;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+        min-width: 0;
+        white-space: nowrap;
+        font-variant-numeric: tabular-nums;
+      }
+      .now-zone {
+        min-width: 0;
+        overflow: hidden;
+        color: var(--faint);
+        text-overflow: ellipsis;
+      }
+      /* The list is the page, so it takes every pixel the heading and the two buttons do not: it
+         scrolls here rather than the page. */
       .list {
         flex: 1;
         min-height: 0;
@@ -368,28 +383,6 @@
       .retry:disabled {
         opacity: 0.6;
         cursor: default;
-      }
-      /* The one honest caveat the page carries, folded away so the list keeps the height: it is
-         content a person reads once, not a strip they read every time. */
-      .note {
-        flex: none;
-        padding: 0 16px;
-        color: var(--muted);
-        font-size: 11.5px;
-        line-height: 1.5;
-      }
-      .note summary {
-        padding: 10px 2px;
-        color: var(--faint);
-        font-size: 11.5px;
-        font-weight: 600;
-        cursor: pointer;
-      }
-      .note[open] summary {
-        color: var(--text);
-      }
-      .note p {
-        margin: 0 0 10px;
       }
       /* The two ways in, where a thumb already is: one row at the bottom of the page, each half a
          thumb wide and 52px tall. */
@@ -623,10 +616,6 @@
           padding-right: calc(12px + env(safe-area-inset-right));
           padding-left: calc(12px + env(safe-area-inset-left));
         }
-        .note {
-          padding-right: calc(16px + env(safe-area-inset-right));
-          padding-left: calc(16px + env(safe-area-inset-left));
-        }
         .actions {
           grid-template-columns: 1fr 1fr;
           justify-content: stretch;
@@ -700,18 +689,12 @@
             <p id="summary" data-text-key="pending.reading">
               Reading the timers this node is holding…
             </p>
+            <p class="now">
+              <span id="nowTime">—</span>
+              <span class="now-zone" id="nowZone"></span>
+            </p>
           </div>
           <div class="list" id="list"></div>
-          <details class="note" id="note">
-            <summary data-text-key="note.summary">Where the timers are kept</summary>
-            <p data-text-key="note.body">
-              The queue is kept through the history node when one is on the bus, so a restart brings
-              the timers that are still pending back — repeats included. With no history node on the
-              bus the queue lives in this node's process only, so restarting the timer node forgets
-              all of them. A wake whose moment passed while the node was away fires once at the next
-              start. Each wake is a single call, made once, and a repeat comes back on its own rule.
-            </p>
-          </details>
           <div class="actions">
             <button
               class="new new-alarm"
@@ -914,6 +897,10 @@
       // served: /panel/<node>.
       const INJECTED = "__NODE__";
       const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || '' : INJECTED;
+      // The system profile timezone, not the browser or the server process: alarm clock time is the
+      // user's configured timezone. A page opened unfilled falls back to the browser's zone.
+      const INJECTED_ZONE = "__TIMEZONE__";
+      const TIMEZONE = INJECTED_ZONE.startsWith('__') ? undefined : INJECTED_ZONE;
 
       const $ = (id) => document.getElementById(id);
       // The two modes in the words the user used, on the buttons and on every row's badge: the
@@ -980,24 +967,56 @@
         return t('phrase.minutes', { count: minutes });
       }
 
-      function clock(iso) {
-        const at = new Date(iso);
-        return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
+      const ZONE_FORMATTER = new Intl.DateTimeFormat('en-US', {
+        timeZone: TIMEZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23',
+      });
+
+      function zonedParts(value) {
+        const at = value instanceof Date ? value : new Date(value);
+        const values = {};
+        for (const part of ZONE_FORMATTER.formatToParts(at)) {
+          if (part.type !== 'literal') values[part.type] = part.value;
+        }
+        return values;
       }
 
-      // The weekday in the page's language, from the browser's own tables: `水` for a reader of
-      // Chinese, `Wed` for one of English. Read on every call, because the language can change.
-      function weekdayName(at) {
-        return new Intl.DateTimeFormat(currentLocale(), { weekday: 'short' }).format(at);
+      function dateKey(parts) {
+        return `${parts.year}-${parts.month}-${parts.day}`;
+      }
+
+      function clock(iso) {
+        const at = zonedParts(iso);
+        return `${at.hour}:${at.minute}`;
+      }
+
+      // The weekday in the page's language, in the timezone the system profile chose: `水` for a
+      // reader of Chinese, `Wed` for one of English. Read on every call, because language changes.
+      function weekdayName(iso) {
+        return new Intl.DateTimeFormat(currentLocale(), {
+          weekday: 'short',
+          timeZone: TIMEZONE,
+        }).format(new Date(iso));
       }
 
       function dayName(iso) {
-        const today = new Date();
-        const at = new Date(iso);
-        if (at.toDateString() === today.toDateString()) return t('day.today');
-        const tomorrow = new Date(today.getTime() + 86400000);
-        if (at.toDateString() === tomorrow.toDateString()) return t('day.tomorrow');
-        return weekdayName(at);
+        const today = zonedParts(new Date());
+        const at = zonedParts(iso);
+        if (dateKey(at) === dateKey(today)) return t('day.today');
+        const tomorrow = new Date(Date.UTC(Number(today.year), Number(today.month) - 1, Number(today.day) + 1));
+        const tomorrowParts = {
+          year: String(tomorrow.getUTCFullYear()),
+          month: String(tomorrow.getUTCMonth() + 1).padStart(2, '0'),
+          day: String(tomorrow.getUTCDate()).padStart(2, '0'),
+        };
+        if (dateKey(at) === dateKey(tomorrowParts)) return t('day.tomorrow');
+        return weekdayName(iso);
       }
 
       // A moment as a person says it: `07:30 tomorrow` in English, `明天 07:30` in Chinese — the
@@ -1280,6 +1299,10 @@
       }
 
       function tick() {
+        const now = zonedParts(new Date());
+        $('nowTime').textContent = `${now.year}-${now.month}-${now.day} ${now.hour}:${now.minute}:${now.second}`;
+        $('nowZone').textContent =
+          TIMEZONE ?? new Intl.DateTimeFormat().resolvedOptions().timeZone ?? '';
         for (const [index, node] of $('list').querySelectorAll('.wake').entries()) {
           const wake = shown[index];
           if (wake === undefined) continue;
@@ -1386,6 +1409,7 @@
       if (location.hash === '') history.replaceState(null, '', '#/list');
       show(route());
       // One second is what a countdown needs; it is the only repeating thing on this page.
+      tick();
       setInterval(tick, 1000);
       void refresh();
     </script>

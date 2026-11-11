@@ -9,8 +9,6 @@
   "sync.reconnecting": "reconnecting…",
   "pending.title": "Pending",
   "pending.reading": "Reading the timers this node is holding…",
-  "note.summary": "Where the timers are kept",
-  "note.body": "The queue is kept through the history node when one is on the bus, so a restart brings the timers that are still pending back — repeats included. With no history node on the bus the queue lives in this node's process only, so restarting the timer node forgets all of them. A wake whose moment passed while the node was away fires once at the next start. Each wake is a single call, made once, and a repeat comes back on its own rule.",
   "view.alarm": "New alarm",
   "view.countdown": "New countdown",
   "mode.alarm": "Alarm",

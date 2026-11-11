@@ -235,7 +235,7 @@ test('a countdown is set, listed, fired at the target through chat_no_wait, then
     const wake = caller.handed[0];
     assert.equal(wake.priority, 'queue');
     assert.equal(wake.msg.role, 'system');
-    assert.match(wake.msg.content, /^\[timer 1 \d\d:\d\d\] integration ping$/);
+    assert.match(wake.msg.content, /^\[timer 1 \d\d:\d\d \S+\] integration ping$/);
 
     // 4. the queue is empty on both sides: the timer's view and the scheduler's own
     await waitFor(async () => {
