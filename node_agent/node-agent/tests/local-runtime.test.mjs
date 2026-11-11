@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { RuntimeError, RuntimeServer } from '@node-agent/runtime';
+import { RuntimeError, RuntimeServer } from '../dist/runtime/index.js';
 import { LocalRuntime } from '../dist/local.js';
 
 test('user and node names are refused before a process starts', async () => {

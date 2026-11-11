@@ -571,5 +571,8 @@
   },
   "bin": {
     "node-agent-shell": "./dist/index.js"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

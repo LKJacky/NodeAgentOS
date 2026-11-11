@@ -1,8 +1,8 @@
 {
-  "name": "node-agent",
+  "name": "@node-agent/local",
   "version": "0.1.0",
   "type": "module",
-  "description": "The node agent meta package: combines the bus (node-agent-bus) and the agent (node-agent-agent), and provides the headless backend entry (bin: node-agent)",
+  "description": "Run NodeAgentOS locally: one persistent agent, one bus, and the core nodes in a single command.",
   "bin": {
     "node-agent": "./dist/serve.js"
   },
@@ -20,7 +20,7 @@
     "prepack": "node ../../scripts/sync-licenses.mjs",
     "pretest": "npm run build",
     "test": "node --test tests/*.test.mjs",
-    "build": "tsc -p tsconfig.json"
+    "build": "tsc -p tsconfig.json && node scripts/copy-runtime.mjs"
   },
   "node": {
     "id": "node-agent",
@@ -32,16 +32,23 @@
     "node": ">=23.6"
   },
   "dependencies": {
-    "@node-agent/runtime": "file:../runtime",
-    "node-agent-agent": "file:../nodes/agent",
-    "node-agent-bus": "file:../bus",
-    "node-agent-history": "file:../nodes/history",
     "@node-agent/sdk": "^0.1.1",
-    "node-agent-webui": "file:../nodes/webui"
+    "node-agent-agent": "^0.1.0",
+    "node-agent-bus": "^0.1.0",
+    "node-agent-history": "^0.1.0",
+    "node-agent-introduce": "^0.1.0",
+    "node-agent-notes": "^0.1.2",
+    "node-agent-provider": "^0.1.4",
+    "node-agent-search": "^0.1.0",
+    "node-agent-system": "^0.1.0",
+    "node-agent-timer": "^0.2.0",
+    "node-agent-todo": "^0.1.0",
+    "node-agent-webui": "^0.1.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
-    "typescript": "^7.0.2"
+    "typescript": "^7.0.2",
+    "@node-agent/runtime": "^0.1.0"
   },
   "license": "MIT",
   "repository": {
@@ -52,5 +59,15 @@
   "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
   "bugs": {
     "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  },
+  "keywords": [
+    "agent",
+    "node-agent",
+    "nodeagentos",
+    "self-hosted",
+    "ai"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

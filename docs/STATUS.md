@@ -64,12 +64,13 @@ legacy bus handshake:
 
 ## Before the first publish
 
-- **Internal dependencies are `file:` links.** `node_agent/node-agent`, `@node-agent/runtime` and the
-  node packages depend on their siblings as `file:../bus`, `file:../../sdk` and so on. That is what
-  `npm install` needs inside this repository; a tarball published with those ranges cannot be
-  installed. They have to become real version ranges (`^0.1.0` and friends) once the packages are in
-  the registry — in dependency order: `node-agent-bus`, `@node-agent/runtime`, then
-  the nodes and `node-agent`.
+- **Internal dependencies are version ranges.** The launcher is now `@node-agent/local`; its
+  core nodes are ordinary `^0.1.0` dependencies, and the runtime is bundled into the launcher, so the packed tarball is installable from the
+  registry. Publish in dependency order: `@node-agent/sdk`, `node-agent-bus`, the node packages, then
+  `@node-agent/local`. `@node-agent/runtime` is not a published dependency.
+- **Registry state is the remaining publish blocker.** At the time of this status update only
+  `@node-agent/sdk@0.1.0` is on npm; the launcher needs `@node-agent/sdk@^0.1.1` and the bus and
+  node packages still have to be published. The runtime is already inside the launcher tarball. `npm publish --dry-run` for `@node-agent/local` passes.
 - **Licensing is in place.** Every workspace carries `LICENSE` (kept in step by `npm run licenses:sync`,
   verified by `npm run licenses:check`, refreshed in `prepack`), and the Docker image copies it to the
   root of its working directory.

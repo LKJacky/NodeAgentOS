@@ -34,7 +34,7 @@ import {
   type RuntimeServerOptions,
   type RuntimeState,
   type UserHandle,
-} from '@node-agent/runtime';
+} from './runtime/index.js';
 
 interface ProcessRecord {
   /** A child process, or a worker thread when the runtime is in one-process mode. */

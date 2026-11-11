@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@node-agent/sdk": "^0.1.1",
-    "node-agent-bus": "file:../../bus"
+    "node-agent-bus": "^0.1.0"
   },
   "publisher": "node-agent",
   "scripts": {

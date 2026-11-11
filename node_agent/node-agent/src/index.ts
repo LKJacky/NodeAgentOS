@@ -4,5 +4,5 @@
 export * from 'node-agent-bus';
 export * from 'node-agent-agent';
 export * from 'node-agent-history';
-export * from '@node-agent/runtime';
+export * from './runtime/index.js';
 export * from './local.js';

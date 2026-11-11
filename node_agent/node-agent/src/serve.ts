@@ -73,20 +73,27 @@ function untilStopped(): Promise<void> {
   });
 }
 
-/** Resolve a node package to its root: a sibling checkout when configured, else node resolution. */
+/** Resolve a node package to its root: env override, installed package, then a sibling checkout. */
 function rootOf(moduleName: string): string {
-  const sibling = SIBLINGS[moduleName];
-  if (sibling !== undefined) {
-    return (
-      process.env[sibling.env]?.trim() || fileURLToPath(new URL(sibling.fallback, import.meta.url))
-    );
+  const override = SIBLINGS[moduleName];
+  const configured = override === undefined ? undefined : process.env[override.env]?.trim();
+  if (configured) return configured;
+
+  // The published launcher installs every core node as a dependency. Resolve the package first;
+  // the sibling path below is only for a source checkout that has not run npm install yet.
+  try {
+    const require = createRequire(import.meta.url);
+    let root = dirname(require.resolve(moduleName));
+    while (!existsSync(join(root, 'package.json'))) root = dirname(root);
+    return root;
+  } catch {
+    const short = moduleName.startsWith('@')
+      ? (moduleName.split('/')[1] ?? moduleName)
+      : moduleName.replace(/^node-agent-/, '');
+    const local = fileURLToPath(new URL(`../../nodes/${short}`, import.meta.url));
+    if (existsSync(join(local, 'package.json'))) return local;
+    throw new Error(`cannot resolve Node package ${moduleName}`);
   }
-  const local = fileURLToPath(new URL(`../../nodes/${moduleName}`, import.meta.url));
-  if (existsSync(join(local, 'package.json'))) return local;
-  const require = createRequire(import.meta.url);
-  let root = dirname(require.resolve(moduleName));
-  while (!existsSync(join(root, 'package.json'))) root = dirname(root);
-  return root;
 }
 
 /** NODE_AGENT_PROXY_*: loopback HTTP by default, because the browser is normally on this host. */
@@ -138,11 +145,7 @@ async function main(): Promise<void> {
   try {
     // 2. Nodes: start and register globally. The service user is connected as each one arrives so
     // core nodes can call each other during their own startup.
-    const core = [
-      new URL('../../nodes/history', import.meta.url).pathname,
-      new URL('../../nodes/agent', import.meta.url).pathname,
-      new URL('../../nodes/system', import.meta.url).pathname,
-    ];
+    const core = ['node-agent-history', 'node-agent-agent', 'node-agent-system'].map(rootOf);
     const roots = [
       ...core,
       ...specs.filter((spec) => spec.module !== INTRODUCE).map((spec) => rootOf(spec.module)),

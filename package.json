@@ -15,7 +15,7 @@
   "scripts": {
     "licenses:sync": "node scripts/sync-licenses.mjs",
     "licenses:check": "node scripts/sync-licenses.mjs --check",
-    "build": "npm run build -w @node-agent/sdk && npm run build -w node-agent-bus && npm run build -w @node-agent/runtime && npm run build -w node-agent-agent && npm run build -w node-agent-history && npm run build -w node-agent-provider && npm run build -w @node-agent/shell && npm run build -w node-agent-system && npm run build -w node-agent-webui && npm run build -w node-agent-notes && npm run build -w node-agent-todo && npm run build -w node-agent-timer && npm run build -w node-agent-search && npm run build -w node-agent-introduce && npm run build -w node-agent && npm run build -w node-agent-example",
+    "build": "npm run build -w @node-agent/sdk && npm run build -w node-agent-bus && npm run build -w @node-agent/runtime && npm run build -w node-agent-agent && npm run build -w node-agent-history && npm run build -w node-agent-provider && npm run build -w @node-agent/shell && npm run build -w node-agent-system && npm run build -w node-agent-webui && npm run build -w node-agent-notes && npm run build -w node-agent-todo && npm run build -w node-agent-timer && npm run build -w node-agent-search && npm run build -w node-agent-introduce && npm run build -w @node-agent/local && npm run build -w node-agent-example",
     "test": "npm run build && npm test --workspaces --if-present",
     "start": "node node_agent/node-agent/dist/serve.js"
   },
