@@ -77,7 +77,7 @@
     "moveFailed": "could not move: {reason}"
   },
   "label": {
-    "node": "To-do",
+    "node": "Todo",
     "caps": {
       "today": "Today",
       "set-today": "Set today",

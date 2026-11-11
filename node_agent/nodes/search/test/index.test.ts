@@ -661,7 +661,7 @@ test('the manifest names this node and its capabilities in both languages', (t) 
   if (!existsSync(new URL('../dist/i18n/zh-CN.json', import.meta.url)))
     return t.skip('dist/i18n is only there after `npm run build`');
   const manifest = nodeManifestOfPackage(fileURLToPath(new URL('..', import.meta.url)));
-  assert.equal(manifest.labels?.node?.en, 'Web search');
+  assert.equal(manifest.labels?.node?.en, 'Search');
   assert.equal(manifest.labels?.node?.['zh-CN'], '联网搜索');
   assert.equal(manifest.labels?.caps?.ui?.['zh-CN'], '搜索页面');
   assert.equal(manifest.labels?.args?.search?.maxResults?.en, 'Max results');

@@ -16,6 +16,6 @@
   "chrome.online": "online",
   "chrome.offlineDot": "offline",
   "label": {
-    "node": "Web UI"
+    "node": "Webui"
   }
 }

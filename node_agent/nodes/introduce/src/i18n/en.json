@@ -50,7 +50,7 @@
   "copy.failed": "Copy failed",
   "footer": "This page only explains how to use it and how to attach a node: its copy buttons write to the clipboard and run nothing.",
   "label": {
-    "node": "Setup",
+    "node": "Introduce",
     "caps": {
       "ui": "Setup page",
       "setup": "Run the setup",

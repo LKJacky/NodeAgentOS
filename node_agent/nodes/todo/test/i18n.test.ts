@@ -96,7 +96,7 @@ test('the manifest names the node, every capability and every argument, in both 
   assert.ok(labels, 'the package declares its words, so the manifest carries labels');
 
   for (const locale of ['en', 'zh-CN'] as const) {
-    assert.equal(labelText(labels.node, locale), locale === 'en' ? 'To-do' : '待办');
+    assert.equal(labelText(labels.node, locale), locale === 'en' ? 'Todo' : '待办');
     for (const cap of Object.keys(manifest.caps)) {
       assert.ok(labelText(labels.caps?.[cap], locale), `${cap} is named in ${locale}`);
       const schema = manifest.caps[cap] as { properties?: Record<string, unknown> };

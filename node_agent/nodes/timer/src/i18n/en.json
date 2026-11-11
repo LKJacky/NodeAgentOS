@@ -80,7 +80,7 @@
   "toast.woke.next": "timer #{id} woke {target}, next {next}",
   "toast.woke.failed": "timer #{id} could not wake {target}: {error}",
   "label": {
-    "node": "Timers",
+    "node": "Timer",
     "caps": {
       "set": "Set a timer",
       "cancel": "Cancel a timer",
