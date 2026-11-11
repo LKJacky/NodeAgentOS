@@ -30,7 +30,7 @@
   },
   "dependencies": {
     "@node-agent/sdk": "^0.1.1",
-    "markdown-it": "^14.1.0"
+    "markdown-it": "^15.0.3"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
