@@ -117,6 +117,7 @@
   "cc.notSaved": "还没有保存：{warning}",
   "label": {
     "node": "终端",
+    "desc": "按绝对或相对路径读写本地文件，并运行命令",
     "caps": {
       "read": "读文件",
       "write": "写文件",

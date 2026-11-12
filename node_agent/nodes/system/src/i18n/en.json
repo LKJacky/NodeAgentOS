@@ -41,6 +41,7 @@
   },
   "label": {
     "node": "System",
+    "desc": "Privileged system node: user language/timezone and durable timers",
     "caps": {
       "settings": "Settings",
       "timers": "Timers",

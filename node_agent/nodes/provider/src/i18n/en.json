@@ -31,6 +31,13 @@
   },
   "thinking": {
     "default": "Provider default",
+    "none": "none",
+    "minimal": "minimal",
+    "low": "low",
+    "medium": "medium",
+    "high": "high",
+    "xhigh": "very high",
+    "max": "max",
     "custom": "Custom…"
   },
   "note": {
@@ -58,6 +65,7 @@
   },
   "label": {
     "node": "Provider",
+    "desc": "Named LLM serving: OpenAI, Anthropic and Responses behind one row",
     "caps": {
       "providers": "Providers",
       "chat": "Chat",

@@ -32,13 +32,13 @@
   "node": {
     "id": "introduce",
     "i18n": "dist/i18n",
-    "desc": "What's NodeAgent：怎么使用 node-agent",
+    "desc": "What NodeAgent is, how to use node-agent, and how to connect other nodes such as shell",
     "entry": "dist/index.js",
     "caps": {
       "ui": {
         "type": "object",
         "properties": {},
-        "description": "What's NodeAgent：怎么使用 node-agent，以及怎么把 shell 等外部节点接进来",
+        "description": "What NodeAgent is, how to use node-agent, and how to connect other nodes such as shell",
         "callers": [],
         "allow_edit_permission": false,
         "expose": false

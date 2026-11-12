@@ -33,6 +33,7 @@
   "footer": "这一页只介绍怎么用和怎么接入节点：页面里的复制按钮只写剪贴板，不执行命令。",
   "label": {
     "node": "初始化",
+    "desc": "NodeAgent 是什么、怎么使用 node-agent，以及怎么把 shell 等外部节点接进来",
     "caps": {
       "ui": "初始化页面",
       "setup": "执行初始化",
@@ -47,6 +48,7 @@
   "setup.starting": "正在初始化…",
   "setup.done": "完成，正在打开 node-agent…",
   "setup.failed": "初始化没有完成：",
+  "setup.refused": "这次调用被拒绝了",
   "setup.checkFailed": "读不到这个栈的状态：",
   "setup.note": "之后可以在 system 页面里改。",
   "what.connect": "连接你的电脑",
@@ -55,6 +57,7 @@
   "connect.osLinux": "Linux",
   "connect.osWindows": "Windows",
   "connect.busUrlLabel": "总线地址",
+  "connect.platform": "平台",
   "connect.tokenLabel": "加入 token",
   "copy.connect": "复制连接命令",
   "daily.chat": "左边对话，右边功能页；历史一直保留。"

@@ -33,6 +33,7 @@
   "footer": "This page only explains how to use it and how to attach a node: its copy buttons write to the clipboard and run nothing.",
   "label": {
     "node": "Introduce",
+    "desc": "What NodeAgent is, how to use node-agent, and how to connect other nodes such as shell",
     "caps": {
       "ui": "Setup page",
       "setup": "Run the setup",
@@ -47,6 +48,7 @@
   "setup.starting": "Setting up…",
   "setup.done": "Done. Opening node-agent…",
   "setup.failed": "The setup did not finish:",
+  "setup.refused": "the call was refused",
   "setup.checkFailed": "Could not read the status of this stack:",
   "setup.note": "You can change this later in the system page.",
   "what.connect": "Connect your computer",
@@ -55,6 +57,7 @@
   "connect.osLinux": "Linux",
   "connect.osWindows": "Windows",
   "connect.busUrlLabel": "Bus URL",
+  "connect.platform": "Platform",
   "connect.tokenLabel": "Join token",
   "copy.connect": "Copy connection commands",
   "daily.chat": "The chat is on the left, the feature pages on the right; history stays."

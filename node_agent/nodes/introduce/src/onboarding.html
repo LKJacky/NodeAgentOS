@@ -250,7 +250,7 @@
         });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const answer = await response.json();
-        if (!answer.ok) throw new Error(answer.error || 'the call was refused');
+        if (!answer.ok) throw new Error(answer.error || t('setup.refused', 'the call was refused'));
         return answer.value;
       }
 

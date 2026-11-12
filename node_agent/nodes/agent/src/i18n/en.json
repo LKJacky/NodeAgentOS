@@ -110,6 +110,7 @@
   },
   "label": {
     "node": "Agent",
+    "desc": "Hand a turn to the model: one that waits, one that just queues, chat history, what it is doing and what it has spent",
     "caps": {
       "chat": "Chat",
       "chat_no_wait": "Chat without waiting",

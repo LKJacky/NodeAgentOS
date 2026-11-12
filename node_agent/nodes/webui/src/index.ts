@@ -192,6 +192,9 @@ type Panel = {
   /** The display name the node publishes, per language (`labels.node` in its i18n files). The
    *  `node` field stays the canonical one: the shell addresses pages by it. */
   names?: Readonly<Record<string, string>>;
+  /** What the node says its page is for, per language (`labels.desc`); `desc` is the canonical
+   *  line, shown when a node published no words for this reader. */
+  descs?: Readonly<Record<string, string>>;
 };
 
 /** A page may name a capability the shell can poll for an online indicator. It has to be a plain
@@ -350,6 +353,7 @@ export class WebuiNode {
           icon: node.icon,
           parameters: cap.parameters as Record<string, unknown>,
           ...(node.labels?.node === undefined ? {} : { names: node.labels.node }),
+          ...(node.labels?.desc === undefined ? {} : { descs: node.labels.desc }),
         });
     }
     return entries;

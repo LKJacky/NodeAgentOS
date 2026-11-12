@@ -16,6 +16,7 @@
   "key.cleared": "已清除。",
   "label": {
     "node": "联网搜索",
+    "desc": "DeepSeek 网页搜索与安全的页面抓取，以及保存 API key 的页面",
     "caps": {
       "search": "搜索",
       "fetch": "抓取网页",

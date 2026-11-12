@@ -107,6 +107,7 @@
   },
   "label": {
     "node": "Notes",
+    "desc": "Persistent memos (notes): read / add / update / delete / search",
     "caps": {
       "list": "List",
       "get": "Get",
@@ -121,11 +122,26 @@
       "ui": "Notes page"
     },
     "args": {
-      "list": { "tag": "Tag" },
-      "get": { "id": "Note id" },
-      "read": { "id": "Note id", "offset": "Offset", "limit": "Limit" },
-      "search": { "query": "Query", "tag": "Tag" },
-      "add": { "title": "Title", "text": "Text", "tag": "Tag" },
+      "list": {
+        "tag": "Tag"
+      },
+      "get": {
+        "id": "Note id"
+      },
+      "read": {
+        "id": "Note id",
+        "offset": "Offset",
+        "limit": "Limit"
+      },
+      "search": {
+        "query": "Query",
+        "tag": "Tag"
+      },
+      "add": {
+        "title": "Title",
+        "text": "Text",
+        "tag": "Tag"
+      },
       "update": {
         "id": "Note id",
         "title": "Title",
@@ -139,8 +155,13 @@
         "new": "New text",
         "replaceAll": "Replace all"
       },
-      "append": { "id": "Note id", "text": "Text" },
-      "delete": { "id": "Note id" }
+      "append": {
+        "id": "Note id",
+        "text": "Text"
+      },
+      "delete": {
+        "id": "Note id"
+      }
     }
   }
 }

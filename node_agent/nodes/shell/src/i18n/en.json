@@ -117,6 +117,7 @@
   "cc.notSaved": "nothing saved yet: {warning}",
   "label": {
     "node": "Shell",
+    "desc": "Read and write local files at absolute or relative paths, and run commands",
     "caps": {
       "read": "Read a file",
       "write": "Write a file",

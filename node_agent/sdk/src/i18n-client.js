@@ -206,6 +206,12 @@ export function applyTranslations(root = typeof document === 'undefined' ? null 
     const text = keyText(key, locale, paramsOf(element));
     if (text !== null) element.setAttribute('aria-label', text);
   }
+  for (const element of root.querySelectorAll('[data-text-title-key]')) {
+    const key = element.getAttribute('data-text-title-key');
+    if (typeof key !== 'string' || key === '') continue;
+    const text = keyText(key, locale, paramsOf(element));
+    if (text !== null) element.setAttribute('title', text);
+  }
 
   for (const element of root.querySelectorAll('[data-text-en], [data-text-cn], [data-text-zh-CN]')) {
     const text = textOf(element);

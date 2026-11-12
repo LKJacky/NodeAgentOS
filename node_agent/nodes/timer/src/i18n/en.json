@@ -79,6 +79,7 @@
   "toast.woke.failed": "timer #{id} could not wake {target}: {error}",
   "label": {
     "node": "Timer",
+    "desc": "Timers: what is pending, how long is left, repeats, and a form to add one",
     "caps": {
       "set": "Set a timer",
       "cancel": "Cancel a timer",

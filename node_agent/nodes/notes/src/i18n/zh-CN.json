@@ -107,6 +107,7 @@
   },
   "label": {
     "node": "笔记",
+    "desc": "持久备忘（notes）：读取 / 新增 / 修改 / 删除 / 搜索",
     "caps": {
       "list": "列表",
       "get": "读取",
@@ -121,11 +122,26 @@
       "ui": "笔记页面"
     },
     "args": {
-      "list": { "tag": "标签" },
-      "get": { "id": "笔记 id" },
-      "read": { "id": "笔记 id", "offset": "偏移", "limit": "条数" },
-      "search": { "query": "查询", "tag": "标签" },
-      "add": { "title": "标题", "text": "正文", "tag": "标签" },
+      "list": {
+        "tag": "标签"
+      },
+      "get": {
+        "id": "笔记 id"
+      },
+      "read": {
+        "id": "笔记 id",
+        "offset": "偏移",
+        "limit": "条数"
+      },
+      "search": {
+        "query": "查询",
+        "tag": "标签"
+      },
+      "add": {
+        "title": "标题",
+        "text": "正文",
+        "tag": "标签"
+      },
       "update": {
         "id": "笔记 id",
         "title": "标题",
@@ -139,8 +155,13 @@
         "new": "新文本",
         "replaceAll": "全部替换"
       },
-      "append": { "id": "笔记 id", "text": "正文" },
-      "delete": { "id": "笔记 id" }
+      "append": {
+        "id": "笔记 id",
+        "text": "正文"
+      },
+      "delete": {
+        "id": "笔记 id"
+      }
     }
   }
 }

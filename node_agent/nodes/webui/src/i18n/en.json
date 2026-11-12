@@ -11,11 +11,13 @@
   "chrome.launcherPanel": "the nodes with a page",
   "chrome.pinnedView": "Pinned node page",
   "chrome.view": "Node page",
+  "chrome.onboarding": "Set up NodeAgent",
   "chrome.splitter": "Drag to resize · double-click to reset",
   "chrome.empty": "No node has a page yet: give a node a ui capability and it will.",
   "chrome.online": "online",
   "chrome.offlineDot": "offline",
   "label": {
-    "node": "Webui"
+    "node": "Webui",
+    "desc": "Generic browser front end: every node that declares a ui capability gets a panel"
   }
 }

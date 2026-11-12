@@ -718,8 +718,21 @@
         <iframe id="view" title="Node page" data-text-title-key="chrome.view" hidden></iframe>
       </div>
     </div>
-    <div id="onboarding" class="onboarding" role="dialog" aria-modal="true" aria-label="Set up NodeAgent" hidden>
-      <iframe id="onboarding-frame" title="Set up NodeAgent" tabindex="0"></iframe>
+    <div
+      id="onboarding"
+      class="onboarding"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Set up NodeAgent"
+      data-text-label-key="chrome.onboarding"
+      hidden
+    >
+      <iframe
+        id="onboarding-frame"
+        title="Set up NodeAgent"
+        data-text-title-key="chrome.onboarding"
+        tabindex="0"
+      ></iframe>
     </div>
     <script src="/webui/events-client.js"></script>
     <script src="/webui/events-broker.js"></script>
@@ -995,6 +1008,24 @@
         return panel.node;
       }
 
+      // What the node says its page is for, in the reader's language when it published one
+      // (`labels.desc`), else the canonical line from its manifest. Same order as the name: the
+      // reader's language, then English, then whatever the node did publish.
+      function descOf(panel) {
+        const descs = panel.descs;
+        if (descs === null || typeof descs !== 'object') return panel.desc;
+        const want = ['zh-CN', 'cn', 'zh'];
+        const order = String(shellLanguage).toLowerCase().startsWith('zh') ? want : ['en'];
+        for (const key of order) {
+          const text = descs[key];
+          if (typeof text === 'string' && text !== '') return text;
+        }
+        for (const text of Object.values(descs)) {
+          if (typeof text === 'string' && text !== '') return text;
+        }
+        return panel.desc;
+      }
+
       function glyph(drawing) {
         if (typeof drawing !== 'string') return null;
         const svg = drawing.trim();
@@ -1068,7 +1099,7 @@
         label.append(document.createTextNode(nameOf(panel)));
         // A tab is a picture and a name, not a sentence: what the node says its page is for is
         // worth keeping, so it waits in the hover title instead of taking a second line.
-        tab.title = panel.desc;
+        tab.title = descOf(panel);
         // The x, where there is one, is the same element it has always been — bound once, at creation.
         // The resident column's tab has none, so the label is the whole of it. Its name is what it
         // closes: the phrase is a resource key, so a reader in either language hears it whole.
@@ -1101,9 +1132,9 @@
         }
         name.append(document.createTextNode(nameOf(panel)));
         card.replaceChildren(tile, name);
-        card.title = panel.desc;
+        card.title = descOf(panel);
         card.setAttribute('aria-label', nameOf(panel));
-        card.setAttribute('aria-description', panel.desc);
+        card.setAttribute('aria-description', descOf(panel));
       }
 
       // The launcher's grid: one card per node that has a page and is not the resident one, in the

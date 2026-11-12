@@ -16,6 +16,7 @@
   "key.cleared": "Cleared.",
   "label": {
     "node": "Search",
+    "desc": "DeepSeek web search and safe page retrieval, plus the page the API key is saved on",
     "caps": {
       "search": "Search",
       "fetch": "Fetch a page",

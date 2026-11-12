@@ -78,6 +78,7 @@
   },
   "label": {
     "node": "Todo",
+    "desc": "Today card with free text and model-written buttons, plus a tickable list",
     "caps": {
       "today": "Today",
       "set-today": "Set today",

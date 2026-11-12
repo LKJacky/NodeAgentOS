@@ -1057,7 +1057,7 @@
             class="narrow"
             value="."
             title="cwd"
-            data-title-key="console.cwd"
+            data-text-title-key="console.cwd"
             autocomplete="off"
             spellcheck="false"
           />
@@ -1120,7 +1120,7 @@
                 id="tree-refresh"
                 type="button"
                 title="reload the tree"
-                data-title-key="files.reload"
+                data-text-title-key="files.reload"
               >
                 ↻
               </button>
@@ -1133,13 +1133,13 @@
                 id="tree-toggle"
                 type="button"
                 title="files"
-                data-title-key="files.head"
+                data-text-title-key="files.head"
                 data-text-key="files.open"
               >
                 ☰ Files
               </button>
               <span class="grow" id="preview-name" data-text-key="files.none">no file open</span>
-              <span class="dirty" id="dirty-dot" title="unsaved changes" data-title-key="files.dirty" hidden>●</span>
+              <span class="dirty" id="dirty-dot" title="unsaved changes" data-text-title-key="files.dirty" hidden>●</span>
               <span
                 class="mode"
                 id="mode"
@@ -1178,7 +1178,7 @@
             id="nodes-refresh"
             type="button"
             title="reload"
-            data-title-key="nodes.refresh"
+            data-text-title-key="nodes.refresh"
             data-text-key="common.refresh"
           >
             Refresh
@@ -1205,7 +1205,7 @@
             id="perm-refresh"
             type="button"
             title="read this tenant's saved permissions again"
-            data-title-key="perm.refresh"
+            data-text-title-key="perm.refresh"
             data-text-key="common.refresh"
           >
             Refresh
@@ -1312,15 +1312,9 @@
         document.addEventListener('node-agent:language', paint);
       }
 
-      // A tooltip has no marker of its own, so `data-title-key` names its words and the fallback is
-      // the text the tag already carries.
-      function paintTooltips() {
-        for (const element of document.querySelectorAll('[data-title-key]')) {
-          const key = element.dataset.titleKey;
-          if (key) element.title = t(key, element.title);
-        }
-      }
-      onLanguage(paintTooltips);
+      // A tooltip is a marker like any other now (`data-text-title-key`): the SDK paints it before
+      // the page leaves the node and redraws it on a change of language, so this page keeps no
+      // second copy of that rule.
 
       // Same as the agent's page: it only knows webui's generic POST /call, not who forwards it.
       async function call(tool, args) {
@@ -1797,9 +1791,16 @@
         // follow, and what comes before the bracket is still judged.
         out = out.replace(/\[([^\]\n]*)\]\(([^)\s]*)\)/g, (whole, label, target) => {
           const url = safeUrl(target);
-          return url === null
-            ? `<span class="refused" title="this page does not follow that link">${label}</span>`
-            : hold(anchor(url, label));
+          if (url !== null) return hold(anchor(url, label));
+          // The words of the refusal are the page's, so they follow the reader's language. The
+          // renderer is also lifted out of the page by its own test, where the page's `t` is not
+          // there: the English it is written with is then what the title says.
+          const refused = escapeHtml(
+            typeof t === 'function'
+              ? t('files.refusedLink', 'this page does not follow that link')
+              : 'this page does not follow that link',
+          );
+          return `<span class="refused" title="${refused}">${label}</span>`;
         });
 
         // `<https://example.com/x>` is a link because the angle brackets say so.

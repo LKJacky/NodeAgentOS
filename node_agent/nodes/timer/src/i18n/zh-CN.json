@@ -79,6 +79,7 @@
   "toast.woke.failed": "计时器 #{id}没能唤醒 {target}：{error}",
   "label": {
     "node": "计时器",
+    "desc": "定时器：还有什么在等待、还剩多久、重复规则，以及添加用的表单",
     "caps": {
       "set": "设定计时器",
       "cancel": "取消计时器",

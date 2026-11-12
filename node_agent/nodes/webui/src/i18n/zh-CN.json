@@ -11,11 +11,13 @@
   "chrome.launcherPanel": "有页面的节点",
   "chrome.pinnedView": "固定在左栏的节点页面",
   "chrome.view": "节点页面",
+  "chrome.onboarding": "初始化 NodeAgent",
   "chrome.splitter": "拖动调整宽度 · 双击复位",
   "chrome.empty": "还没有节点提供页面：给节点加上 ui 能力，它就有了。",
   "chrome.online": "在线",
   "chrome.offlineDot": "离线",
   "label": {
-    "node": "网页界面"
+    "node": "网页界面",
+    "desc": "通用浏览器前端：每个声明了 ui 能力的节点都会得到一块面板"
   }
 }

@@ -104,11 +104,15 @@ export type LocalizedText = Readonly<Record<string, string>>;
 /** A node's labels: its own name, its capabilities' names, and their arguments' names. */
 export interface NodeLabels {
   readonly node?: LocalizedText;
+  /** What this node's page is for, per language: the one line a shell shows beside (or instead of)
+   *  the canonical `desc` of the manifest. */
+  readonly desc?: LocalizedText;
   readonly caps?: Readonly<Record<string, LocalizedText>>;
   readonly args?: Readonly<Record<string, Readonly<Record<string, LocalizedText>>>>;
 }
 
-/** The label keys a resource file may carry: `label.node`, `label.caps.<cap>`, `label.args.<cap>.<arg>`. */
+/** The label keys a resource file may carry: `label.node`, `label.desc`, `label.caps.<cap>`,
+ *  `label.args.<cap>.<arg>`. */
 const LABEL_PREFIX = 'label.';
 
 /**
@@ -125,6 +129,7 @@ const LABEL_PREFIX = 'label.';
  */
 export function manifestLabels(resource: Resource): NodeLabels | undefined {
   const node: Record<string, string> = {};
+  const desc: Record<string, string> = {};
   const caps: Record<string, Record<string, string>> = {};
   const args: Record<string, Record<string, Record<string, string>>> = {};
 
@@ -133,6 +138,10 @@ export function manifestLabels(resource: Resource): NodeLabels | undefined {
       if (typeof value !== 'string' || value === '') continue;
       if (key === `${LABEL_PREFIX}node`) {
         node[locale] = value;
+        continue;
+      }
+      if (key === `${LABEL_PREFIX}desc`) {
+        desc[locale] = value;
         continue;
       }
       if (!key.startsWith(LABEL_PREFIX)) continue;
@@ -153,6 +162,7 @@ export function manifestLabels(resource: Resource): NodeLabels | undefined {
 
   const labels: NodeLabels = {
     ...(Object.keys(node).length > 0 ? { node } : {}),
+    ...(Object.keys(desc).length > 0 ? { desc } : {}),
     ...(Object.keys(caps).length > 0 ? { caps } : {}),
     ...(Object.keys(args).length > 0 ? { args } : {}),
   };
@@ -220,7 +230,7 @@ export function paintResource(
       const key = marker[2] ?? '';
       const text = texts[key]?.get(locale);
       if (text === undefined) continue;
-      const attribute = kind === 'placeholder' ? 'placeholder' : 'aria-label';
+      const attribute = kind === 'placeholder' ? 'placeholder' : kind === 'title' ? 'title' : 'aria-label';
       const quoted = `${attribute}="${escapeAttribute(text)}"`;
       const existing = new RegExp(`\\b${attribute}="[^"]*"`);
       out = existing.test(out)
@@ -231,13 +241,14 @@ export function paintResource(
   });
 }
 
-/** `data-text-placeholder-key` and `data-text-label-key`: the words a tag carries as an attribute. */
+/** `data-text-placeholder-key`, `data-text-title-key` and `data-text-label-key`: the words a tag
+ *  carries as an attribute. */
 /** One start tag, without its attributes being interpreted. */
 const TAG = /<[a-zA-Z][\w-]*\b[^>]*>/g;
 
-/** A tag's markers: `data-text-placeholder-key` fills `placeholder`, `data-text-label-key` the
- *  accessible name. */
-const ATTRIBUTE_MARKER = /\bdata-text-(placeholder|label)-key="([^"]+)"/g;
+/** A tag's markers: `data-text-placeholder-key` fills `placeholder`, `data-text-title-key` the hover
+ *  tooltip, `data-text-label-key` the accessible name. */
+const ATTRIBUTE_MARKER = /\bdata-text-(placeholder|label|title)-key="([^"]+)"/g;
 
 /** Put a sentence into an attribute without letting it end the attribute or the tag. */
 function escapeAttribute(text: string): string {
