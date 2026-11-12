@@ -19,11 +19,13 @@
   },
   "type": {
     "openai": "OpenAI-compatible",
+    "deepseek": "DeepSeek",
     "anthropic": "Anthropic (Claude)",
     "responses": "OpenAI (Responses API)"
   },
   "hint": {
     "openai": "OpenAI-compatible: any server that speaks /v1/chat/completions, a gateway included.",
+    "deepseek": "DeepSeek: the native chat-completions API, with its thinking switch handled for you. Leave the base URL blank to use api.deepseek.com; a gateway in front of DeepSeek takes its own address.",
     "anthropic": "Anthropic (Claude): the native Messages API. A gateway that routes Claude only there needs its own address (what comes before /v1/messages) and a model id as that gateway lists it.",
     "responses": "OpenAI (Responses API): posts to /responses instead of /chat/completions, for a deployment or gateway that serves a model there (e.g. MIOFFICE azure_openai/gpt-5.6-sol). The base URL is what comes before /responses."
   },

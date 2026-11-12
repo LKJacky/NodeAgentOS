@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   AnthropicProvider,
   buildProvider,
+  DeepSeekProvider,
   HttpError,
   OpenAIProvider,
   ResponsesProvider,
@@ -71,6 +72,84 @@ test('openai chat sends the neutral transcript and returns a neutral message', a
   assert.equal(body.messages[0].usage, undefined, 'local timing fields do not reach the wire');
   assert.equal(out.message.content, 'hello');
   assert.deepEqual(out.usage, { prompt_tokens: 3, completion_tokens: 2, total_tokens: 5 });
+});
+
+test('a deepseek row is the chat-completions wire with the DeepSeek house rules', async () => {
+  const seen: Seen[] = [];
+  const fetcher = (async (url: string | URL | Request, init?: RequestInit) => {
+    seen.push({ url: String(url), init: init ?? {} });
+    return json({ choices: [{ message: { role: 'assistant', content: 'ok' } }], usage: null });
+  }) as typeof fetch;
+
+  const row = { type: 'deepseek', api_key: 'sk-test', model_name: 'deepseek-flash' };
+  const provider = buildProvider(row, fetcher);
+  assert.ok(provider instanceof DeepSeekProvider, 'the row builds its own class');
+  assert.equal(provider.dump().type, 'deepseek', 'and saves itself under its own protocol');
+
+  await provider.chat(
+    [
+      { role: 'user', content: 'now?' },
+      // The model called a tool without thinking: the line never had the field.
+      { role: 'assistant', content: '', tool_calls: [{ id: 'call_1', type: 'function' }] },
+      { role: 'tool', tool_call_id: 'call_1', content: '12:00' },
+      // An ordinary answer is left exactly as it is.
+      { role: 'assistant', content: 'sure' },
+    ],
+    [{ type: 'function', function: { name: 'now' } }],
+    8,
+  );
+  assert.equal(
+    seen[0]?.url,
+    'https://api.deepseek.com/chat/completions',
+    'a row with no address still reaches DeepSeek',
+  );
+  const body = JSON.parse(String(seen[0]?.init.body));
+  assert.equal(body.messages[1].reasoning_content, '', 'the key DeepSeek insists on is filled in');
+  assert.equal('reasoning_content' in body.messages[3], false, 'a plain answer is untouched');
+
+  // The same transcript on the generic wire keeps no such field: it is DeepSeek's rule.
+  const generic = buildProvider(
+    {
+      type: 'openai',
+      api_key: 'sk-test',
+      model_name: 'gpt-test',
+      base_url: 'https://example.test/v1',
+    },
+    fetcher,
+  );
+  await generic.chat(
+    [{ role: 'assistant', content: '', tool_calls: [{ id: 'c', type: 'function' }] }],
+    null,
+    8,
+  );
+  const other = JSON.parse(String(seen[1]?.init.body));
+  assert.equal('reasoning_content' in other.messages[0], false);
+});
+
+test('a deepseek effort becomes its thinking switch, and none turns it off', async () => {
+  const bodies: any[] = [];
+  const fetcher = (async (_url: string | URL | Request, init?: RequestInit) => {
+    bodies.push(JSON.parse(String(init?.body)));
+    return json({ choices: [{ message: { role: 'assistant', content: 'ok' } }], usage: null });
+  }) as typeof fetch;
+  const build = (thinking_effort?: string) =>
+    buildProvider(
+      {
+        type: 'deepseek',
+        api_key: 'sk-test',
+        model_name: 'deepseek-flash',
+        ...(thinking_effort === undefined ? {} : { thinking_effort }),
+      },
+      fetcher,
+    );
+  await build().chat([{ role: 'user', content: 'x' }], null, 8);
+  assert.equal('thinking' in bodies[0], false, 'no effort leaves the endpoint default alone');
+  await build('medium').chat([{ role: 'user', content: 'x' }], null, 8);
+  assert.deepEqual(bodies[1].thinking, { type: 'enabled' });
+  assert.equal(bodies[1].reasoning_effort, 'high', 'the preset maps onto the DeepSeek ladder');
+  await build('none').chat([{ role: 'user', content: 'x' }], null, 8);
+  assert.deepEqual(bodies[2].thinking, { type: 'disabled' });
+  assert.equal('reasoning_effort' in bodies[2], false);
 });
 
 test('anthropic uses the official client and the Messages translation', async () => {

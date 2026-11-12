@@ -19,11 +19,13 @@
   },
   "type": {
     "openai": "OpenAI 兼容",
+    "deepseek": "DeepSeek",
     "anthropic": "Anthropic（Claude）",
     "responses": "OpenAI（Responses API）"
   },
   "hint": {
     "openai": "OpenAI 兼容：任何支持 /v1/chat/completions 的服务端，网关也包括在内。",
+    "deepseek": "DeepSeek：原生 chat-completions API，思考开关由本节点处理。基础 URL 留空即使用 api.deepseek.com；如果 DeepSeek 前面有网关，则填网关自己的地址。",
     "anthropic": "Anthropic（Claude）：原生 Messages API。只在它上面转发 Claude 的网关需要自己的地址（/v1/messages 之前的部分），以及该网关列出的模型 id。",
     "responses": "OpenAI（Responses API）：向 /responses 而不是 /chat/completions 提交请求，用于在 /responses 上提供某个模型的部署或网关（例如 MIOFFICE azure_openai/gpt-5.6-sol）。基础 URL 是 /responses 之前的部分。"
   },

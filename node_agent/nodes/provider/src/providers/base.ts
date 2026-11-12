@@ -933,17 +933,26 @@ export class OpenAIProvider extends Provider {
     };
   }
 
-  private body(messages: Message[], tools?: ToolSpec[] | null, limit?: number | null): JsonObject {
+  /** One transcript line as the endpoint reads it. Split out so a subclass can speak a wire whose
+   *  house rules differ from the generic one (DeepSeek, for instance, insists on a field a plain
+   *  chat-completions endpoint never heard of). */
+  protected wireMessage(message: Message): JsonObject {
+    const row = { ...message };
+    delete row.usage;
+    delete row.at;
+    delete row.took_ms;
+    return row;
+  }
+
+  protected body(
+    messages: Message[],
+    tools?: ToolSpec[] | null,
+    limit?: number | null,
+  ): JsonObject {
     if (this.modelName === '' || this.apiKey === null) throw new Error(blankProviderMessage());
     const body: JsonObject = {
       model: this.modelName,
-      messages: messages.map((message) => {
-        const row = { ...message };
-        delete row.usage;
-        delete row.at;
-        delete row.took_ms;
-        return row;
-      }),
+      messages: messages.map((message) => this.wireMessage(message)),
     };
     if (tools && tools.length > 0) body.tools = tools;
     if (limit !== null && limit !== undefined) body.max_completion_tokens = limit;

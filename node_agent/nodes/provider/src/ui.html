@@ -55,6 +55,7 @@
         <label><span data-text-key="form.name">Name</span><input id="provider-name" required maxlength="64" autocomplete="off" /></label>
         <label><span data-text-key="form.protocol">Protocol</span><select id="provider-type">
           <option value="openai" data-text-key="type.openai">OpenAI-compatible</option>
+          <option value="deepseek" data-text-key="type.deepseek">DeepSeek</option>
           <option value="anthropic" data-text-key="type.anthropic">Anthropic (Claude)</option>
           <option value="responses" data-text-key="type.responses">OpenAI (Responses API)</option>
         </select></label>
@@ -135,6 +136,10 @@ const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
     openai: {
       url:'https://api.openai.com/v1',
       hint:'hint.openai',
+    },
+    deepseek: {
+      url:'https://api.deepseek.com',
+      hint:'hint.deepseek',
     },
     anthropic: {
       url:'https://api.anthropic.com',
