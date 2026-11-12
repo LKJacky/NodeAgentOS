@@ -3,7 +3,6 @@
 // in the request. A local SQLite store uses the tenant as its namespace; an HTTP store gets one client
 // per tenant, and that tenant's token is its bearer.
 import { Node, type NodeContext, type NodeHandlers, type ToolArgs } from '@node-agent/sdk';
-import { HttpHistoryStore } from './http.js';
 import {
   SqliteHistoryStore,
   defaultHistoryPath,
@@ -20,9 +19,12 @@ export {
   UnitNotFoundError,
   defaultHistoryPath,
   nodeAgentHome,
+  identifier,
+  isRecord,
+  positiveInteger,
+  serializeMeta,
 } from './store.js';
 export type { HistoryStore, MaybePromise, PersistentUnit, PersistentUnitSummary } from './store.js';
-export { HttpHistoryStore } from './http.js';
 
 export const DEFAULT_HISTORY_USER = 'default';
 
@@ -31,20 +33,15 @@ export function defaultHistoryUser(): string {
 }
 
 export function defaultHistoryTarget(): string {
-  const url = process.env.NODE_AGENT_HISTORY_URL?.trim();
-  return url ? url : defaultHistoryPath();
+  return defaultHistoryPath();
 }
 
-export function openHistoryStore(
-  target: string,
-  token = process.env.NODE_AGENT_HISTORY_TOKEN?.trim() ?? process.env.NODE_AGENT_TOKEN?.trim(),
-): HistoryStore {
+export function openHistoryStore(target: string): HistoryStore {
   const named = target.trim();
-  if (named === '') throw new Error('a history target is either an http(s) URL or a file path');
-  if (/^https?:\/\//i.test(named)) return new HttpHistoryStore(named, { token });
+  if (named === '') throw new Error('a history target is a SQLite file path');
   if (named.includes('://')) {
     throw new Error(
-      `a history target is an http(s) URL or a SQLite file path, not ${JSON.stringify(target)}`,
+      `a local history node keeps a SQLite file; a network history client lives in the cloud deployment (got ${JSON.stringify(target)})`,
     );
   }
   return new SqliteHistoryStore(target);
@@ -61,26 +58,17 @@ interface HistoryState {
   userId: string;
 }
 
-function isHttpTarget(target: string): boolean {
-  return /^https?:\/\//i.test(target.trim());
-}
-
-/** One store per backend identity in this process. NodeHost creates a HistoryNode per invocation, so
- *  the store has to outlive the instance; the process ends it, not a handler. A local SQLite store is
- *  shared by all tenants and takes the tenant as a method argument; an HTTP store is one client per
- *  tenant because its bearer token is the tenant's identity. */
+/** One store per SQLite file in this process. NodeHost creates a HistoryNode per invocation, so the
+ *  store has to outlive the instance; the process ends it, not a handler. The SQLite store is shared
+ *  by all tenants and takes the tenant as a method argument. */
 const states = new Map<string, HistoryState>();
 
 function stateFor(target: string, userId: string): HistoryState {
   const user = identifier(userId, 'userId');
-  const key = isHttpTarget(target) ? `${target}\u0000${user}` : target;
-  let state = states.get(key);
+  let state = states.get(target);
   if (state === undefined) {
-    state = {
-      store: openHistoryStore(target, isHttpTarget(target) ? user : undefined),
-      userId: user,
-    };
-    states.set(key, state);
+    state = { store: openHistoryStore(target), userId: user };
+    states.set(target, state);
   }
   return state;
 }
