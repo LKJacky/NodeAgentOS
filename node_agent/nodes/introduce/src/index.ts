@@ -451,6 +451,18 @@ export async function readStatus(
 /** The stack's setup as a node: the page calls `setup` once its reader has chosen a language; the
  *  node stays on the bus with the page capability, and `status` says whether the setup has run. */
 export class IntroduceNode extends Node {
+  /** The page this node serves. A deployment may override it to add same-origin behaviour without
+   *  forking the setup, the words or the page itself. */
+  protected renderUi(args: ToolArgs): string {
+    return args.onboarding === true || args.onboarding === '1'
+      ? renderOnboardingPage(args)
+      : renderPage(
+          process.env.NODE_AGENT_BUS_URL?.trim() || 'ws://127.0.0.1:8788',
+          process.env.NODE_AGENT_JOIN_TOKEN?.trim() || '',
+          args,
+        );
+  }
+
   readonly handlers: NodeHandlers = {
     // The page calls this, after the reader chose a language and wrote it to the profile. It is
     // idempotent: a stack that is already set up answers `skipped` instead of filing twice.
@@ -460,14 +472,7 @@ export class IntroduceNode extends Node {
     status: () => readStatus(this.ctx),
     // The page is rendered from `ui.html` with the bus this worker joined. No other node is asked
     // anything; the only argument read is the language the shell sends with its visit.
-    ui: (args: ToolArgs) =>
-      args.onboarding === true || args.onboarding === '1'
-        ? renderOnboardingPage(args)
-        : renderPage(
-            process.env.NODE_AGENT_BUS_URL?.trim() || 'ws://127.0.0.1:8788',
-            process.env.NODE_AGENT_JOIN_TOKEN?.trim() || '',
-            args,
-          ),
+    ui: (args: ToolArgs) => this.renderUi(args),
   };
 }
 
