@@ -1,6 +1,6 @@
 {
   "label": {
-    "node": "History",
+    "node": "Storage",
     "desc": "Durable JSON units private to each node and user, each at a revision the caller names",
     "caps": {
       "load": "Load",

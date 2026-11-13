@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>History storage</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --page: #f5f7fb; --surface: #fff; --text: #171a23; --muted: #667085;
+    --line: #e4e8f0; --brand: #4f46e5; --soft: #eef2ff; --danger: #b42318;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --page: #0d0f15; --surface: #151820; --text: #f1f3f8; --muted: #9ca5b7;
+      --line: #292e3a; --brand: #8b83ff; --soft: #29254d; --danger: #ff6b85; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 24px; background: var(--page); color: var(--text);
+    font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; }
+  header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 22px; letter-spacing: -0.02em; }
+  p { margin: 4px 0 0; color: var(--muted); }
+  button { border: 1px solid var(--line); background: var(--surface); color: var(--text);
+    border-radius: 8px; padding: 7px 12px; font: inherit; cursor: pointer; }
+  button:hover { border-color: var(--brand); }
+  button.danger { color: var(--danger); padding: 4px 9px; font-size: 12px; }
+  button.danger:hover { border-color: var(--danger); }
+  .cards { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; }
+  .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+  .value { font-size: 24px; font-weight: 650; margin-top: 4px; }
+  .panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 11px 16px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-size: 12px; font-weight: 600; background: var(--soft); }
+  th:last-child, td:last-child { text-align: right; }
+  tr:last-child td { border-bottom: 0; }
+  code { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .status { white-space: nowrap; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px;
+    background: var(--muted); vertical-align: 1px; }
+  .dot.running { background: #16a34a; }
+  .dot.stopped { background: #98a2b3; }
+  .empty, .error { padding: 22px 16px; color: var(--muted); }
+  .error { color: var(--danger); }
+  @media (max-width: 520px) { body { padding: 16px; } .cards { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div><h1>History storage</h1><p>JSON units this history node keeps for you, by calling node.</p></div>
+    <button id="refresh" type="button">Refresh</button>
+  </header>
+  <section class="cards">
+    <div class="card"><div class="label">Total size</div><div class="value" id="bytes">—</div></div>
+    <div class="card"><div class="label">Nodes</div><div class="value" id="nodes">—</div></div>
+  </section>
+  <div class="panel">
+    <table>
+      <thead><tr><th>Node</th><th>Status</th><th>Units</th><th>Size</th><th>Actions</th></tr></thead>
+      <tbody id="rows"><tr><td class="empty" colspan="5">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<script>
+  const INJECTED = "__NODE__";
+  const NODE = INJECTED.startsWith('__') ? location.pathname.split('/')[2] || 'history' : INJECTED;
+
+  async function call(tool, args) {
+    const response = await fetch('/call', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ tool, args }),
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.json();
+  }
+
+  function size(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB'];
+    let value = bytes, at = 0;
+    while (value >= 1024 && at < units.length - 1) { value /= 1024; at += 1; }
+    return `${value.toFixed(at === 0 ? 0 : 1)} ${units[at]}`;
+  }
+
+  function draw(usage) {
+    const nodes = Array.isArray(usage?.nodes) ? usage.nodes : [];
+    document.getElementById('bytes').textContent = size(Number(usage?.bytes) || 0);
+    document.getElementById('nodes').textContent = String(nodes.length);
+    const rows = document.getElementById('rows');
+    rows.replaceChildren();
+    if (nodes.length === 0) {
+      const row = rows.insertRow();
+      row.innerHTML = '<td class="empty" colspan="5">No stored units yet.</td>';
+      return;
+    }
+    for (const node of nodes) {
+      const row = rows.insertRow();
+      const name = row.insertCell();
+      const code = document.createElement('code');
+      code.textContent = String(node.node ?? '');
+      name.append(code);
+      const status = row.insertCell();
+      status.className = 'status';
+      const dot = document.createElement('span');
+      const live = node.running === true ? 'running' : node.running === false ? 'stopped' : '';
+      dot.className = `dot ${live}`.trim();
+      status.append(dot, document.createTextNode(
+        live === 'running' ? 'Running' : live === 'stopped' ? 'Stopped' : 'Unknown',
+      ));
+      row.insertCell().textContent = String(Number(node.units) || 0);
+      row.insertCell().textContent = size(Number(node.bytes) || 0);
+      const action = row.insertCell();
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'danger';
+      reset.textContent = 'Reset';
+      reset.dataset.node = String(node.node ?? '');
+      action.append(reset);
+    }
+  }
+
+  async function resetNode(name) {
+    if (!name) return;
+    if (!confirm(`Delete all history units stored by ${name}? This cannot be undone.`)) return;
+    try {
+      const reply = await call(`${NODE}.reset`, { node: name });
+      if (reply?.ok !== true) throw new Error(reply?.error || 'history reset was refused');
+      const count = Number(reply.value?.deleted) || 0;
+      await load();
+      alert(`Deleted ${count} unit${count === 1 ? '' : 's'} from ${name}.`);
+    } catch (error) {
+      alert(`Could not reset ${name}: ${String(error.message || error)}`);
+    }
+  }
+
+  async function load() {
+    const button = document.getElementById('refresh');
+    button.disabled = true;
+    try {
+      const reply = await call(`${NODE}.usage`, {});
+      if (reply?.ok !== true) throw new Error(reply?.error || 'history usage was refused');
+      draw(reply.value);
+    } catch (error) {
+      document.getElementById('rows').innerHTML =
+        `<tr><td class="error" colspan="5">Could not read history usage: ${String(error.message || error)}</td></tr>`;
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  document.getElementById('refresh').addEventListener('click', load);
+  document.getElementById('rows').addEventListener('click', (event) => {
+    const button = event.target.closest('button[data-node]');
+    if (button) resetNode(button.dataset.node);
+  });
+  load();
+</script>
+</body>
+</html>

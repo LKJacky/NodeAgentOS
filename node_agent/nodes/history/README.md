@@ -53,6 +53,13 @@ and a client may not choose whose history its token reaches. So one shared serve
 people's histories, and one person's token cannot read another's however it spells a URL — there is
 no user anywhere in the API to spell.
 
+## Storage page and usage
+
+The node exposes `usage` — units and UTF-8 JSON bytes grouped by calling node for the current user —
+and `ui`, a small page that reads it. The page is served through the normal `/call` path, so it works
+inside the webui shell and never needs a second listener. `usage` is also what a cloud deployment uses
+to enforce a per-user storage ceiling before a write.
+
 ## Two backends
 
 Where the units live is a setting, not a second kind of node. `src/store.ts` defines one contract —

@@ -72,6 +72,39 @@ test('holds any JSON per unit and still has it after reopening SQLite', () => {
   rmSync(directory, { recursive: true });
 });
 
+test('reports how much each calling node stores for one user', () => {
+  const store = new SqliteHistoryStore(':memory:');
+  store.save('alice', 'search', 'settings', { limit: 1 });
+  store.save('alice', 'search', 'other', { limit: 2 });
+  store.save('alice', 'agent', 'conversation', { messages: 0 });
+  store.save('bob', 'search', 'settings', { secret: true });
+
+  const usage = store.usage('alice');
+  assert.deepEqual(usage.nodes.map((node) => [node.node, node.units]), [['agent', 1], ['search', 2]]);
+  assert.equal(usage.units, 3);
+  assert.equal(
+    usage.bytes,
+    Buffer.byteLength(JSON.stringify({ messages: 0 })) +
+      Buffer.byteLength(JSON.stringify({ limit: 1 })) +
+      Buffer.byteLength(JSON.stringify({ limit: 2 })),
+  );
+  assert.equal(store.usage('bob').units, 1, 'one user cannot see another user in the totals');
+});
+
+test('reset deletes every unit of one node for one user only', () => {
+  const store = new SqliteHistoryStore(':memory:');
+  store.save('alice', 'search', 'one', { limit: 1 });
+  store.save('alice', 'search', 'two', { limit: 2 });
+  store.save('alice', 'agent', 'conversation', { messages: 1 });
+  store.save('bob', 'search', 'one', { secret: true });
+
+  assert.equal(store.reset('alice', 'search'), 2);
+  assert.deepEqual(store.list('alice', 'search'), []);
+  assert.equal(store.list('alice', 'agent').length, 1);
+  assert.equal(store.list('bob', 'search').length, 1, 'another user keeps their units');
+  assert.equal(store.reset('alice', 'missing'), 0);
+});
+
 test('isolates units by user and node, and rejects stale writers', () => {
   const store = new SqliteHistoryStore(':memory:');
   store.save('alice', 'search', 'settings', { limit: 1 });
@@ -441,4 +474,39 @@ test('private callers are refused before history touches a unit', async () => {
     'shared-agent',
   );
   assert.ok((saved as { unit: unknown }).unit);
+});
+
+test('answers a storage page and its usage over the bus', async () => {
+  const fixture = await Fixture.open();
+  await startHistory(fixture);
+  const caller = await Caller.join(fixture);
+  try {
+    const saved = await caller.call('history.save', { unitId: 'settings', meta: { limit: 1 } });
+    assert.equal(saved.ok, true);
+
+    const usage = await caller.call('history.usage', {});
+    assert.equal(usage.ok, true, usage.ok ? '' : usage.error);
+    assert.deepEqual(usage.ok ? usage.value : null, {
+      nodes: [
+        {
+          node: 'caller',
+          units: 1,
+          bytes: Buffer.byteLength(JSON.stringify({ limit: 1 })),
+          running: true,
+        },
+      ],
+      units: 1,
+      bytes: Buffer.byteLength(JSON.stringify({ limit: 1 })),
+    });
+
+    const page = await caller.call('history.ui', {});
+    assert.equal(page.ok, true, page.ok ? '' : page.error);
+    assert.match(page.ok ? String(page.value) : '', /History storage/);
+    assert.match(page.ok ? String(page.value) : '', /Status/);
+    assert.match(page.ok ? String(page.value) : '', /Reset/);
+    assert.doesNotMatch(page.ok ? String(page.value) : '', /__NODE__/);
+  } finally {
+    await caller.close();
+    await fixture.close();
+  }
 });

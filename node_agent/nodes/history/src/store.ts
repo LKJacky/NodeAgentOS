@@ -41,6 +41,10 @@ export interface HistoryStore {
   ): MaybePromise<PersistentUnit>;
   delete(user: string, node: string, unit: string, expectedRevision: number): MaybePromise<void>;
   list(user: string, node: string): MaybePromise<PersistentUnitSummary[]>;
+  /** What this user keeps, grouped by calling node. Optional so a test double can omit it. */
+  usage?(user: string): MaybePromise<HistoryUsage>;
+  /** Delete every unit one calling node stored for this user, and answer how many were removed. */
+  reset?(user: string, node: string): MaybePromise<number>;
   close(): void;
 }
 
@@ -53,6 +57,9 @@ export class RevisionConflictError extends Error {}
 /** The unit the caller named is not there at all — the other way a write named by its revision is
  *  refused, and worth telling apart from a conflict: there is nothing to re-read and retry. */
 export class UnitNotFoundError extends Error {}
+
+/** A write would put one user over the storage ceiling the history server was given. */
+export class StorageLimitError extends Error {}
 
 const SCHEMA_VERSION = 4;
 
@@ -70,6 +77,22 @@ export type PersistentUnitSummary = {
   revision: number;
   createdAt: string;
   updatedAt: string;
+};
+
+/** What one calling node has stored for a user, measured as UTF-8 JSON bytes. */
+export type HistoryUsageNode = {
+  node: string;
+  units: number;
+  bytes: number;
+  /** Filled by the history node from the bus directory; absent when it cannot be read. */
+  running?: boolean;
+};
+
+/** The one account a history node serves: every calling node, its unit count and its JSON bytes. */
+export type HistoryUsage = {
+  nodes: HistoryUsageNode[];
+  units: number;
+  bytes: number;
 };
 
 /** One unit as an older schema held it, with its list of messages separated from the rest. */
@@ -246,6 +269,34 @@ export class SqliteHistoryStore implements HistoryStore {
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     }));
+  }
+
+  usage(user: string): HistoryUsage {
+    const rows = this.database
+      .prepare(
+        `SELECT node_name, COUNT(*) AS units, COALESCE(SUM(length(CAST(meta_json AS BLOB))), 0) AS bytes
+         FROM units WHERE user_id = ? GROUP BY node_name ORDER BY node_name`,
+      )
+      .all(user) as unknown as { node_name: string; units: number; bytes: number }[];
+    const nodes = rows.map((row) => ({
+      node: row.node_name,
+      units: row.units,
+      bytes: row.bytes,
+    }));
+    return {
+      nodes,
+      units: nodes.reduce((total, one) => total + one.units, 0),
+      bytes: nodes.reduce((total, one) => total + one.bytes, 0),
+    };
+  }
+
+  reset(user: string, node: string): number {
+    return this.transaction(() => {
+      const result = this.database
+        .prepare('DELETE FROM units WHERE user_id = ? AND node_name = ?')
+        .run(user, node);
+      return Number(result.changes);
+    });
   }
 
   close(): void {

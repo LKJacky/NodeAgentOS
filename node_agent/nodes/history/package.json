@@ -97,6 +97,40 @@
           "*"
         ],
         "allow_edit_permission": false
+      },
+      "usage": {
+        "type": "object",
+        "properties": {},
+        "description": "How many units each calling node stored for this user, and how many JSON bytes they occupy",
+        "callers": [
+          "*"
+        ],
+        "allow_edit_permission": false
+      },
+      "reset": {
+        "type": "object",
+        "required": [
+          "node"
+        ],
+        "properties": {
+          "node": {
+            "type": "string",
+            "description": "The calling node whose units should all be deleted"
+          }
+        },
+        "description": "Delete every unit one calling node stored for this user; returns the count",
+        "callers": [
+          "*"
+        ],
+        "allow_edit_permission": false,
+        "expose": false
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "History storage page: units and bytes per stored node",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#64748b\" stroke-width=\"2\"><ellipse cx=\"12\" cy=\"5\" rx=\"8\" ry=\"3\"/><path d=\"M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5\"/><path d=\"M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3\"/></svg>",
+        "expose": false
       }
     }
   },
