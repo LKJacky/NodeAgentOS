@@ -128,7 +128,7 @@
       "ui": {
         "type": "object",
         "properties": {},
-        "description": "History storage page: units and bytes per stored node",
+        "description": "Storage page: units and bytes per stored node",
         "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"#64748b\" stroke-width=\"2\"><ellipse cx=\"12\" cy=\"5\" rx=\"8\" ry=\"3\"/><path d=\"M4 5v14c0 1.7 3.6 3 8 3s8-1.3 8-3V5\"/><path d=\"M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3\"/></svg>",
         "expose": false
       }

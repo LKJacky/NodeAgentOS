@@ -22,5 +22,40 @@
         "expectedRevision": "Expected revision"
       }
     }
+  },
+  "title": "Storage",
+  "subtitle": "This node manages storage for node-agent.",
+  "refresh": "Refresh",
+  "cards": {
+    "size": "Total size",
+    "nodes": "Nodes"
+  },
+  "table": {
+    "node": "Node",
+    "status": "Status",
+    "units": "Units",
+    "size": "Size",
+    "actions": "Actions"
+  },
+  "loading": "Loading…",
+  "empty": "No stored units yet.",
+  "status": {
+    "running": "Running",
+    "stopped": "Stopped",
+    "unknown": "Unknown"
+  },
+  "action": {
+    "reset": "Reset"
+  },
+  "confirm": {
+    "reset": "Delete all history units stored by {node}? This cannot be undone."
+  },
+  "toast": {
+    "reset": "Deleted {count} unit(s) from {node}."
+  },
+  "error": {
+    "reset": "Could not reset {node}: {error}",
+    "usage": "Could not read history usage: {error}",
+    "refused": "history storage refused the request"
   }
 }

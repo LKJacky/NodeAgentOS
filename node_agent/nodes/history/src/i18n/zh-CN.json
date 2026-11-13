@@ -22,5 +22,40 @@
         "expectedRevision": "期望版本"
       }
     }
+  },
+  "title": "存储",
+  "subtitle": "这个节点负责管理 node-agent 的存储。",
+  "refresh": "刷新",
+  "cards": {
+    "size": "总大小",
+    "nodes": "节点"
+  },
+  "table": {
+    "node": "节点",
+    "status": "状态",
+    "units": "单元数",
+    "size": "大小",
+    "actions": "操作"
+  },
+  "loading": "加载中…",
+  "empty": "还没有保存的单元。",
+  "status": {
+    "running": "运行中",
+    "stopped": "已停止",
+    "unknown": "未知"
+  },
+  "action": {
+    "reset": "重置"
+  },
+  "confirm": {
+    "reset": "删除 {node} 保存的全部历史单元？此操作无法撤销。"
+  },
+  "toast": {
+    "reset": "已从 {node} 删除 {count} 个单元。"
+  },
+  "error": {
+    "reset": "无法重置 {node}：{error}",
+    "usage": "无法读取历史用量：{error}",
+    "refused": "历史存储拒绝了请求"
   }
 }

@@ -3,7 +3,15 @@
 // in the request. A local SQLite store uses the tenant as its namespace; an HTTP store gets one client
 // per tenant, and that tenant's token is its bearer.
 import { readFileSync } from 'node:fs';
-import { Node, type NodeContext, type NodeHandlers, type ToolArgs } from '@node-agent/sdk';
+import {
+  Node,
+  loadResource,
+  paintPage,
+  type NodeContext,
+  type NodeHandlers,
+  type Resource,
+  type ToolArgs,
+} from '@node-agent/sdk';
 import {
   SqliteHistoryStore,
   defaultHistoryPath,
@@ -41,6 +49,7 @@ export const DEFAULT_HISTORY_USER = 'default';
 /** The one capability whose answer is the history page itself. */
 const PANEL = 'ui';
 const PAGE = readFileSync(new URL('./ui.html', import.meta.url), 'utf8');
+const RESOURCE: Resource = loadResource(new URL('./i18n/', import.meta.url));
 
 export function defaultHistoryUser(): string {
   return process.env.NODE_AGENT_HISTORY_USER?.trim() || DEFAULT_HISTORY_USER;
@@ -149,15 +158,18 @@ export class HistoryNode extends Node {
     const node = identifier(from, 'calling node name');
     if (cap === 'list') return answer('units', store.list(user, node));
     if (cap === 'usage') {
-      if (typeof store.usage !== 'function') throw new Error('this history store cannot report usage');
+      if (typeof store.usage !== 'function')
+        throw new Error('this history store cannot report usage');
       return this.usageWithRunning(store.usage(user));
     }
     if (cap === 'reset') {
-      if (typeof store.reset !== 'function') throw new Error('this history store cannot reset a node');
+      if (typeof store.reset !== 'function')
+        throw new Error('this history store cannot reset a node');
       const target = identifier(args.node, 'node');
       return answer('deleted', store.reset(user, target));
     }
-    if (cap === PANEL) return PAGE.replace('__NODE__', () => this.ctx.nodeId);
+    if (cap === PANEL)
+      return paintPage(PAGE, RESOURCE, args).replace('__NODE__', () => this.ctx.nodeId);
 
     const unit = identifier(args.unitId, 'unitId');
     if (cap === 'load') return answer('unit', store.load(user, node, unit));

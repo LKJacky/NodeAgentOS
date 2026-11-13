@@ -80,7 +80,13 @@ test('reports how much each calling node stores for one user', () => {
   store.save('bob', 'search', 'settings', { secret: true });
 
   const usage = store.usage('alice');
-  assert.deepEqual(usage.nodes.map((node) => [node.node, node.units]), [['agent', 1], ['search', 2]]);
+  assert.deepEqual(
+    usage.nodes.map((node) => [node.node, node.units]),
+    [
+      ['agent', 1],
+      ['search', 2],
+    ],
+  );
   assert.equal(usage.units, 3);
   assert.equal(
     usage.bytes,
@@ -501,10 +507,17 @@ test('answers a storage page and its usage over the bus', async () => {
 
     const page = await caller.call('history.ui', {});
     assert.equal(page.ok, true, page.ok ? '' : page.error);
-    assert.match(page.ok ? String(page.value) : '', /History storage/);
+    assert.match(page.ok ? String(page.value) : '', /Storage/);
     assert.match(page.ok ? String(page.value) : '', /Status/);
     assert.match(page.ok ? String(page.value) : '', /Reset/);
     assert.doesNotMatch(page.ok ? String(page.value) : '', /__NODE__/);
+
+    const chinese = await caller.call('history.ui', { language: 'zh-CN' });
+    assert.equal(chinese.ok, true, chinese.ok ? '' : chinese.error);
+    const html = chinese.ok ? String(chinese.value) : '';
+    assert.match(html, /<html lang="zh-CN">/);
+    assert.match(html, /<title data-text-key="title">存储<\/title>/);
+    assert.match(html, /data-i18n-resource/);
   } finally {
     await caller.close();
     await fixture.close();
