@@ -133,18 +133,20 @@ class BusClient:
         args: Mapping[str, Any] | None = None,
         *,
         tenant: str = "*",
+        from_node: str | None = None,
     ) -> Any:
-        result = await self._request(
-            {
-                "id": uuid.uuid4().hex,
-                "type": "call",
-                "to": node,
-                "tenantId": tenant,
-                "deadline": _deadline(self.timeout),
-                "payload": {"cap": capability, "args": dict(args or {})},
-            }
-        )
-        return _ok(result)
+        """Call a node. Only a bus super connection may choose ``from_node``."""
+        frame = {
+            "id": uuid.uuid4().hex,
+            "type": "call",
+            "to": node,
+            "tenantId": tenant,
+            "deadline": _deadline(self.timeout),
+            "payload": {"cap": capability, "args": dict(args or {})},
+        }
+        if from_node is not None:
+            frame["from"] = from_node
+        return _ok(await self._request(frame))
 
     async def list_nodes(self, tenant: str = "*") -> list[Json]:
         result = await self._request(

@@ -59,6 +59,8 @@ interface EnvelopeRegistration {
   link: Link;
   /** Undefined for a shared node; otherwise the only user allowed to see this registration. */
   readonly tenantId?: string;
+  /** This registration presented the bus super token. */
+  readonly super: boolean;
 }
 
 const PRIVATE_TOKEN_PREFIX = 'private-node:';
@@ -200,6 +202,7 @@ class User {
       caller: EnvelopeRegistration;
       target: EnvelopeRegistration;
       id: string;
+      from: string;
       timer: NodeJS.Timeout;
     }
   >();
@@ -332,7 +335,7 @@ class User {
 
     // Every ordinary call is checked by the system node before it is forwarded. The system's own
     // calls are trusted for shared targets; a private target still follows its local expose rule.
-    if (caller.manifest.name !== SYSTEM_NODE || this.isPrivate(target)) {
+    if (!caller.super && (caller.manifest.name !== SYSTEM_NODE || this.isPrivate(target))) {
       this.authorizing.add(key);
       let verdict: AuthorizationVerdict;
       try {
@@ -366,8 +369,10 @@ class User {
     // still has the event loop those sockets keep alive.
     const timer = setTimeout(() => this.expire(key), expires - now);
     timer.unref();
-    this.pending.set(key, { caller, target, id: frame.id, timer });
-    tell(target.link, { ...frame, from: caller.manifest.name, tenantId: this.id });
+    const alias = typeof frame.from === 'string' ? frame.from.trim() : '';
+    const from = caller.super && alias !== '' && TOPIC.test(alias) ? alias : caller.manifest.name;
+    this.pending.set(key, { caller, target, id: frame.id, from, timer });
+    tell(target.link, { ...frame, from, tenantId: this.id });
   }
 
   /** The wait a call's frame allowed is over: drop it and tell the caller what became of it. */
@@ -381,9 +386,7 @@ class User {
   result(frame: ResultEnvelope, sender: EnvelopeRegistration): void {
     const pending = [...this.pending.entries()].find(
       ([, value]) =>
-        value.target === sender &&
-        value.id === (frame.replyTo ?? '') &&
-        value.caller.manifest.name === frame.to,
+        value.target === sender && value.id === (frame.replyTo ?? '') && value.from === frame.to,
     );
     if (pending === undefined) return;
     this.pending.delete(pending[0]);
@@ -565,6 +568,8 @@ export class Bus {
   readonly token: string;
   /** The runtime supervisor's credential; empty means this bus has no control connection at all. */
   readonly controlToken: string;
+  /** A bus-wide super credential; empty disables super connections. */
+  readonly superToken: string;
   /** The ceilings every user space on this bus is held to (see BusLimits). */
   readonly limits: Required<Omit<BusLimits, 'permissions'>>;
   /** The permission knobs: the default whitelist, and what to do without a system node. */
@@ -584,6 +589,7 @@ export class Bus {
     token: string,
     controlTokenOrLimits: string | BusLimits = '',
     limits: BusLimits = {},
+    superToken = '',
   ) {
     this.token = token;
     if (typeof controlTokenOrLimits === 'string') {
@@ -592,6 +598,7 @@ export class Bus {
       this.controlToken = '';
       limits = controlTokenOrLimits;
     }
+    this.superToken = superToken.trim();
     this.limits = {
       pendingPerUser:
         limits.pendingPerUser ?? limit('NODE_AGENT_BUS_MAX_PENDING', DEFAULT_PENDING_PER_USER),
@@ -832,6 +839,11 @@ class Connection {
     return this.bus.controlToken !== '' && this.link.token === this.bus.controlToken;
   }
 
+  /** The super connection bypasses call authorization and may choose the forwarded `from`. */
+  private get isSuper(): boolean {
+    return this.bus.superToken !== '' && this.link.token === this.bus.superToken;
+  }
+
   private onFrame(frame: Envelope): void {
     // A connection the bus has already closed (a destroyed user's private node) has no space left to
     // speak into: a late frame must not create one.
@@ -964,10 +976,15 @@ class Connection {
   private onRegister(frame: RegisterEnvelope): void {
     // A control connection is trusted: what it registers is a shared node like any other.
     const tenantId =
-      this.isControl || this.link.token === this.bus.token
+      this.isControl || this.isSuper || this.link.token === this.bus.token
         ? undefined
         : privateTenant(this.bus.token, this.link.token);
-    if (!this.isControl && this.link.token !== this.bus.token && tenantId === undefined)
+    if (
+      !this.isControl &&
+      !this.isSuper &&
+      this.link.token !== this.bus.token &&
+      tenantId === undefined
+    )
       return this.refuse(frame, 'wrong token');
 
     const manifest = frame.payload?.manifest;
@@ -1010,7 +1027,7 @@ class Connection {
       return this.refuse(frame, `the name "${name}" is already taken by another connection`);
 
     if (previous !== null) this.remove(previous, 'the node re-registered');
-    this.node = { id: randomUUID(), manifest, link: this.link, tenantId };
+    this.node = { id: randomUUID(), manifest, link: this.link, tenantId, super: this.isSuper };
     registry.set(name, this.node);
     busLog('info', 'node.register', {
       connection: this.id,

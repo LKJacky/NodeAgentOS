@@ -57,13 +57,6 @@ await node.stop()
 await runtime.stop()
 ```
 
-It also has a CLI:
-
-```bash
-python -m node_agent_sdk.serve node-agent --home /tmp/node-agent
-python -m node_agent_sdk.serve node my_package:Echo --bus-url ws://127.0.0.1:8788
-```
-
 The lower-level `BusClient` is available when a node wants to manage the socket itself:
 
 ```python

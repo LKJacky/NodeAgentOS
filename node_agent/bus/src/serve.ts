@@ -69,9 +69,14 @@ async function main(): Promise<void> {
   const controlToken = process.env.NODE_AGENT_CONTROL_TOKEN ?? '';
   let bus: Bus;
   try {
-    bus = await new Bus(ARGS.token, controlToken, {
-      permissions: { enforce: process.env.NODE_AGENT_BUS_PERMISSIONS_ENFORCE !== '0' },
-    }).listen(PORT, BIND);
+    bus = await new Bus(
+      ARGS.token,
+      controlToken,
+      {
+        permissions: { enforce: process.env.NODE_AGENT_BUS_PERMISSIONS_ENFORCE !== '0' },
+      },
+      process.env.NODE_AGENT_SUPER_TOKEN ?? '',
+    ).listen(PORT, BIND);
   } catch (e: unknown) {
     // The one failure a user causes by leaving an old run around, so answer it with a line.
     console.error(

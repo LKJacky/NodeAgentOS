@@ -178,7 +178,12 @@ async function main(): Promise<void> {
   // 1. Runtime: bind the one bus every node and every user shares.
   let bus;
   try {
-    bus = await runtime.launchBus({ host: BIND, port: PORT, token: ARGS.token });
+    bus = await runtime.launchBus({
+      host: BIND,
+      port: PORT,
+      token: ARGS.token,
+      superToken: process.env.NODE_AGENT_SUPER_TOKEN,
+    });
   } catch (e: unknown) {
     await runtimeApi.stop();
     console.error(
@@ -196,7 +201,7 @@ async function main(): Promise<void> {
 
   // Resolve every requested name before starting any node, so a typo fails the whole start rather
   // than leaving half a stack behind. The client still launches by name; this is only a preflight.
-  const core = ['history', 'agent', 'system', 'webui'];
+  const core = ['history', 'agent', 'system', 'node-agent-webui'];
   const refs = [...new Set([...core, ...specs.map((spec) => spec.module)])];
 
   // Only the page node needs the deployment user's identity before its first call. Keep the switch

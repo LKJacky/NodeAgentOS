@@ -43,6 +43,8 @@ export interface BusOptions {
   host?: string;
   port?: number;
   token?: string;
+  /** Enables the bus super role; only the runtime supervisor should hold this. */
+  superToken?: string;
   env?: Env;
 }
 

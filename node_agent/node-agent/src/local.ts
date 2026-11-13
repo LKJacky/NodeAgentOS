@@ -502,7 +502,7 @@ export class LocalRuntime implements Runtime {
     const port =
       options.port ?? (await allocatePort(host, this.options.basePort, this.options.portSpan));
     const token = options.token ?? this.tokenFor();
-    const bus = new Bus(token);
+    const bus = new Bus(token, '', {}, options.superToken ?? '');
     try {
       await bus.listen(port, host);
     } catch (error) {

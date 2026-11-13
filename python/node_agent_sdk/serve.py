@@ -13,9 +13,7 @@ NodeAgent process and returns its runtime/bus/webui addresses; ``launch_node`` s
 
 from __future__ import annotations
 
-import argparse
 import asyncio
-import importlib
 import os
 import secrets
 import shlex
@@ -136,6 +134,7 @@ async def launch_node_agent(
     home: str | Path | None = None,
     runtime_token: str | None = None,
     bus_token: str | None = None,
+    super_token: str | None = None,
     user: str = "default",
     nodes: Sequence[str] | str | None = None,
     timeout: float = 60.0,
@@ -175,13 +174,15 @@ async def launch_node_agent(
         "NODE_AGENT_HOME": str(home_path),
         "NODE_AGENT_BUS_PORT": "0",
         "NODE_AGENT_RUNTIME_PORT": "0",
-        "NODE_AGENT_WEBUI_PORT": "0",
         "NODE_AGENT_RUNTIME_SERVICE_TOKEN": runtime_token,
         "NODE_AGENT_TOKEN": bus_token,
         "NODE_AGENT_USER": user,
     }
+    child_env.setdefault("NODE_AGENT_WEBUI_PORT", "0")
     if nodes is not None:
         child_env["NODE_AGENT_NODES"] = nodes if isinstance(nodes, str) else ",".join(nodes)
+    if super_token is not None:
+        child_env["NODE_AGENT_SUPER_TOKEN"] = super_token
 
     process = await asyncio.create_subprocess_exec(
         *argv,
@@ -208,7 +209,7 @@ async def launch_node_agent(
         runtime_url = await _wait_line(lines, "runtime: ", process, timeout)
         bus_line = await _wait_line(lines, "bus: ", process, timeout)
         await _wait_line(lines, "Ready to connect", process, timeout)
-    except Exception:
+    except Exception as error:
         if process.returncode is None:
             try:
                 process.terminate()
@@ -222,6 +223,9 @@ async def launch_node_agent(
         reader.cancel()
         if owned_home:
             shutil.rmtree(home_path, ignore_errors=True)
+        tail = "\n".join(lines[-20:])
+        if tail:
+            raise RuntimeError(f"{tail}\n{error}") from error
         raise
 
     webui_url: str | None = None
@@ -273,83 +277,3 @@ async def launch_node(
             pass
         raise
     return RunningNode(host=host, task=task)
-
-
-def _load_node(spec: str) -> type[Node]:
-    module_name, separator, class_name = spec.partition(":")
-    if not separator or not module_name or not class_name:
-        raise SystemExit("node must be module:Class")
-    module = importlib.import_module(module_name)
-    value = getattr(module, class_name)
-    if not isinstance(value, type) or not issubclass(value, Node):
-        raise SystemExit(f"{spec} is not a Node class")
-    return value
-
-
-async def _node_agent_main(args: argparse.Namespace) -> int:
-    runtime = await launch_node_agent(
-        root=args.root,
-        home=args.home,
-        user=args.user,
-        nodes=args.nodes,
-        timeout=args.timeout,
-        echo=True,
-    )
-    print(f"runtime: {runtime.runtime_url}")
-    print(f"bus:     {runtime.bus_url}")
-    if runtime.webui_url:
-        print(f"webui:   {runtime.webui_url}")
-    try:
-        await asyncio.Event().wait()
-    finally:
-        await runtime.stop()
-    return 0
-
-
-async def _node_main(args: argparse.Namespace) -> int:
-    node = await launch_node(
-        _load_node(args.node),
-        args.bus_url,
-        args.bus_token,
-        name=args.name,
-        timeout=args.timeout,
-    )
-    print(f"node {node.name}: joined {args.bus_url}")
-    try:
-        await asyncio.Event().wait()
-    finally:
-        await node.stop()
-    return 0
-
-
-def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Launch a NodeAgent runtime or one Python node")
-    sub = parser.add_subparsers(dest="what", required=True)
-
-    runtime = sub.add_parser(
-        "node-agent", aliases=["runtime"], help="start @node-agent/local and its bus"
-    )
-    runtime.add_argument("--root")
-    runtime.add_argument("--home")
-    runtime.add_argument("--user", default="default")
-    runtime.add_argument("--nodes", help="comma-separated extra node packages")
-    runtime.add_argument("--timeout", type=float, default=60.0)
-    runtime.set_defaults(run=_node_agent_main)
-
-    node = sub.add_parser("node", help="start one Python Node class")
-    node.add_argument("node", help="module:Class")
-    node.add_argument("--bus-url", required=True)
-    node.add_argument("--bus-token", default="")
-    node.add_argument("--name")
-    node.add_argument("--timeout", type=float, default=30.0)
-    node.set_defaults(run=_node_main)
-
-    args = parser.parse_args(argv)
-    try:
-        return asyncio.run(args.run(args))
-    except KeyboardInterrupt:
-        return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
