@@ -107,6 +107,12 @@ export interface Runtime {
   disconnect(user: string, node: string): Promise<void>;
   /** One user's table, or every user's table when no user is named. */
   sessions(user?: string): Promise<Record<string, unknown>>;
+  /** The bus tenant id that represents this user. */
+  tenant(user: string): Promise<string>;
+  /** Whether this runtime can resolve a node package name or id. */
+  hasNode(node: string): Promise<boolean>;
+  /** A node process's captured output, or undefined when it never started. */
+  output(node: string): Promise<string | undefined>;
 }
 
 export type RuntimeErrorCode =
@@ -117,7 +123,8 @@ export type RuntimeErrorCode =
   | 'node_not_running'
   | 'node_start_failed'
   | 'package_failed'
-  | 'spawn_failed';
+  | 'spawn_failed'
+  | 'internal';
 
 /** A refusal a caller can show: code is stable, message is for a human. */
 export class RuntimeError extends Error {

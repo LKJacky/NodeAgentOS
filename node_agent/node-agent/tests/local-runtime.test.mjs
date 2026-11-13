@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { RuntimeError, RuntimeServer } from '../dist/runtime/index.js';
+import { RuntimeClient, RuntimeError, RuntimeServer } from '../dist/runtime/index.js';
 import { LocalRuntime } from '../dist/local.js';
 
 test('user and node names are refused before a process starts', async () => {
@@ -47,6 +47,22 @@ test('connect starts a bus and a shared node; disconnect keeps the node', async 
   }
 });
 
+
+test('discovery finds local nodes, and launchNode accepts just a name', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'node-agent-runtime-discover-'));
+  const runtime = new LocalRuntime({ home });
+  try {
+    const nodes = await runtime.discoverNodes();
+    assert.equal(new Set(nodes.map((node) => node.dir)).size, nodes.length);
+    assert.ok(nodes.some((node) => node.name === 'history' && node.package === 'node-agent-history'));
+    assert.ok(nodes.some((node) => node.name === 'webui' && node.package === 'node-agent-webui'));
+    const webui = await runtime.launchNode('webui', { env: { NODE_AGENT_WEBUI_PORT: '0' } });
+    assert.equal(webui.name, 'webui');
+  } finally {
+    await runtime.stopAll();
+    await rm(home, { recursive: true, force: true });
+  }
+});
 
 test('a generated bus token survives a restart, so a user keeps one history partition', async () => {
   const home = await mkdtemp(join(tmpdir(), 'node-agent-runtime-token-'));
@@ -205,6 +221,35 @@ test('createUser makes a home and destroyUser removes it', async () => {
     await runtime.destroyUser('bob');
     assert.equal(existsSync(user.home), false);
   } finally {
+    await runtime.stopAll();
+    await rm(home, { recursive: true, force: true });
+  }
+});
+
+
+test('RuntimeClient speaks the same contract over HTTP', async () => {
+  const home = await mkdtemp(join(tmpdir(), 'node-agent-runtime-client-'));
+  const runtime = new LocalRuntime({ home });
+  const server = new RuntimeServer({ runtime, token: 'client-token' });
+  try {
+    const address = await server.start();
+    const client = new RuntimeClient({ url: address.url, token: 'client-token' });
+    await client.launchBus();
+    assert.equal(await client.tenant('alice'), runtime.busUser('alice'));
+    assert.equal(await client.hasNode('webui'), true);
+    assert.equal(await client.hasNode('not-a-node'), false);
+    await client.createUser('alice');
+    const node = await client.launchNode('webui', { env: { NODE_AGENT_WEBUI_PORT: '0' } });
+    assert.equal(node.name, 'webui');
+    assert.match(await client.output('webui'), /webui:/);
+    await client.connect('alice', 'webui');
+    const session = await client.sessions('alice');
+    const nodes = Array.isArray(session.nodes) ? session.nodes : [];
+    assert.ok(nodes.some((one) => one && one.name === 'webui'));
+    await client.disconnect('alice', 'webui');
+    await client.stopBus();
+  } finally {
+    await server.stop();
     await runtime.stopAll();
     await rm(home, { recursive: true, force: true });
   }

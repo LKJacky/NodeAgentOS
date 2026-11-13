@@ -90,6 +90,7 @@ function busView(handle: BusHandle): Record<string, unknown> {
     host: handle.host,
     port: handle.port,
     url: handle.url,
+    token: handle.token,
     pid: handle.pid ?? null,
     state: handle.state,
   };
@@ -369,6 +370,22 @@ export class RuntimeServer {
         const node = text(body.node ?? body.name, 'name');
         await this.runtime.disconnect(user, node);
         json(res, 200, { ok: true, user, name: node, stopped: true });
+        return;
+      }
+
+      if (req.method === 'GET' && path === '/users/tenant') {
+        const user = text(url.searchParams.get('user'), 'user');
+        json(res, 200, { user, tenant: await this.runtime.tenant(user) });
+        return;
+      }
+      if (req.method === 'GET' && path === '/node/has') {
+        const node = text(url.searchParams.get('node'), 'node');
+        json(res, 200, { node, found: await this.runtime.hasNode(node) });
+        return;
+      }
+      if (req.method === 'GET' && path === '/node/output') {
+        const node = text(url.searchParams.get('node'), 'node');
+        json(res, 200, { node, output: (await this.runtime.output(node)) ?? null });
         return;
       }
 

@@ -6,3 +6,4 @@
 // The local, single-user implementation lives in the `node-agent` package.
 export * from './base.js';
 export * from './server.js';
+export * from './client.js';

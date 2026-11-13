@@ -8,10 +8,11 @@
 //   3. the deployment's user is created
 //   4. that user is connected to the nodes this process started
 //
-// A node is a package root with `dist/serve.js`; the runtime starts it as a worker and waits for its manifest to
-// appear in the global registry. `NODE_AGENT_NODES` names extra package roots (comma separated);
-// `NODE_AGENT_USER` names the deployment user. Core nodes are connected to a private runtime service
-// user while they start, so system can call history before the deployment user exists.
+// A node is a package with `dist/serve.js`; the runtime discovers its root by package name or node id,
+// starts it as a worker and waits for its manifest to appear in the global registry. `NODE_AGENT_NODES`
+// names extra nodes (comma separated); `NODE_AGENT_USER` names the deployment user. Core nodes are
+// connected to a private runtime service user while they start, so system can call history before the
+// deployment user exists.
 //
 //   NODE_AGENT_NODES=node-agent-webui node-agent
 //
@@ -19,18 +20,81 @@
 // login page, /bus and /events piped through. Unset, nothing is added and no port is opened.
 //
 // Stopping is SIGINT / SIGTERM, and nothing else.
-import { createRequire } from 'node:module';
-import { dirname, join } from 'node:path';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { SERVICE_TENANT, privateNodeToken } from './bus/index.js';
-import { busArgsOrExit } from './index.js';
+import { randomBytes } from 'node:crypto';
+import { privateNodeToken } from './bus/index.js';
+import { RuntimeClient, RuntimeServer, UsageError, busArgsOrExit, busUsage } from './index.js';
 import { LocalRuntime } from './local.js';
 import { startProxy, type ProxyHandle, type ProxyOptions } from './proxy.js';
 
-const ARGS = busArgsOrExit('node-agent', { ownsBus: true });
+const RUNTIME_USAGE = '[--runtime-port <port>] [--runtime-token <token>] [--runtime-bind <host>]';
+const ARGS = busArgsOrExit('node-agent', {
+  ownsBus: true,
+  allowsRest: true,
+  extra: RUNTIME_USAGE,
+});
 const PORT = ARGS.bind?.port ?? Number(process.env.NODE_AGENT_BUS_PORT ?? 0);
 const BIND = ARGS.bind?.host ?? process.env.NODE_AGENT_BUS_BIND ?? '127.0.0.1';
+
+interface RuntimeApiConfig {
+  readonly host: string;
+  readonly port: number;
+  readonly token: string;
+}
+
+/** The optional HTTP runtime API. The port is the switch; when it is set a service token is required. */
+function runtimeApiConfig(
+  rest: readonly string[],
+  env: NodeJS.ProcessEnv,
+): RuntimeApiConfig | null {
+  let host = env.NODE_AGENT_RUNTIME_BIND?.trim() || '127.0.0.1';
+  let portText = env.NODE_AGENT_RUNTIME_PORT?.trim() ?? '';
+  let token = env.NODE_AGENT_RUNTIME_SERVICE_TOKEN?.trim() ?? '';
+  let tokenFlag = false;
+
+  for (let at = 0; at < rest.length; at += 1) {
+    const arg = rest[at] ?? '';
+    const equals = arg.startsWith('--') ? arg.indexOf('=') : -1;
+    const name = equals === -1 ? arg : arg.slice(0, equals);
+    const inline = equals === -1 ? undefined : arg.slice(equals + 1);
+    const value = (): string => {
+      if (inline !== undefined) return inline;
+      const next = rest[at + 1];
+      if (next === undefined) throw new UsageError(`${name} wants a value`);
+      at += 1;
+      return next;
+    };
+    if (name === '--runtime-port') portText = value();
+    else if (name === '--runtime-token') {
+      token = value();
+      tokenFlag = true;
+    } else if (name === '--runtime-bind') host = value();
+    else throw new UsageError(`unknown option: ${arg}`);
+  }
+
+  if (portText === '') {
+    if (tokenFlag) throw new UsageError('--runtime-token needs --runtime-port');
+    return null;
+  }
+  const port = Number(portText);
+  if (!Number.isInteger(port) || port < 0 || port > 65535)
+    throw new UsageError(`--runtime-port wants a port, not "${portText}"`);
+  if (token === '')
+    throw new UsageError(
+      'the runtime API needs --runtime-token or NODE_AGENT_RUNTIME_SERVICE_TOKEN',
+    );
+  if (host.trim() === '') throw new UsageError('--runtime-bind wants a host');
+  return { host, port, token };
+}
+
+let RUNTIME_API: RuntimeApiConfig | null;
+try {
+  RUNTIME_API = runtimeApiConfig(ARGS.rest, process.env);
+} catch (error) {
+  if (!(error instanceof UsageError)) throw error;
+  console.error(`node-agent: ${error.message}`);
+  console.error(busUsage('node-agent', RUNTIME_USAGE));
+  process.exit(2);
+}
 // No store node here: this is the personal build, whose third-party nodes dial the local bus
 // themselves (`npx @node-agent/sdk .`) instead of being published and connected through a store.
 /** The package that runs the stack's setup once, after everything else is up. */
@@ -38,19 +102,6 @@ const INTRODUCE = 'node-agent-introduce';
 
 const DEFAULT_NODES =
   'node-agent-provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce';
-
-/** A project that is a sibling checkout rather than a workspace package. */
-interface SiblingNode {
-  env: string;
-  fallback: string;
-}
-
-const SIBLINGS: Record<string, SiblingNode> = {
-  'node-agent-provider': {
-    env: 'NODE_AGENT_PROVIDER_ROOT',
-    fallback: '../../nodes/provider',
-  },
-};
 
 interface NodeSpec {
   module: string;
@@ -71,29 +122,6 @@ function untilStopped(): Promise<void> {
     process.once('SIGINT', () => resolve());
     process.once('SIGTERM', () => resolve());
   });
-}
-
-/** Resolve a node package to its root: env override, installed package, then a sibling checkout. */
-function rootOf(moduleName: string): string {
-  const override = SIBLINGS[moduleName];
-  const configured = override === undefined ? undefined : process.env[override.env]?.trim();
-  if (configured) return configured;
-
-  // The published launcher installs every core node as a dependency. Resolve the package first;
-  // the sibling path below is only for a source checkout that has not run npm install yet.
-  try {
-    const require = createRequire(import.meta.url);
-    let root = dirname(require.resolve(moduleName));
-    while (!existsSync(join(root, 'package.json'))) root = dirname(root);
-    return root;
-  } catch {
-    const short = moduleName.startsWith('@')
-      ? (moduleName.split('/')[1] ?? moduleName)
-      : moduleName.replace(/^node-agent-/, '');
-    const local = fileURLToPath(new URL(`./nodes/${short}`, import.meta.url));
-    if (existsSync(join(local, 'package.json'))) return local;
-    throw new Error(`cannot resolve Node package ${moduleName}`);
-  }
 }
 
 /** NODE_AGENT_PROXY_*: loopback HTTP by default, because the browser is normally on this host. */
@@ -117,18 +145,42 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const runtime = new LocalRuntime({
+  const localRuntime = new LocalRuntime({
     host: BIND,
     basePort: PORT,
     token: ARGS.token,
     logger: console,
   });
 
+  // The server is the boundary: everything below starts nodes and creates users through the same
+  // HTTP client a store or another process would use. It always binds loopback; a configured port
+  // only makes it reachable to callers outside this process.
+  const runtimeToken = RUNTIME_API?.token ?? randomBytes(24).toString('hex');
+  const runtimeApi = new RuntimeServer({
+    runtime: localRuntime,
+    token: runtimeToken,
+    host: RUNTIME_API?.host ?? '127.0.0.1',
+    port: RUNTIME_API?.port ?? 0,
+    logger: console,
+  });
+  let address;
+  try {
+    address = await runtimeApi.start();
+    console.log(`runtime: ${address.url}`);
+  } catch (error) {
+    console.error(
+      `runtime api failed to start: ${error instanceof Error ? error.message : String(error)}`,
+    );
+    process.exit(1);
+  }
+  const runtime = new RuntimeClient({ url: address.url, token: runtimeToken, logger: console });
+
   // 1. Runtime: bind the one bus every node and every user shares.
   let bus;
   try {
     bus = await runtime.launchBus({ host: BIND, port: PORT, token: ARGS.token });
   } catch (e: unknown) {
+    await runtimeApi.stop();
     console.error(
       `runtime failed to start (port ${PORT}): ${e instanceof Error ? e.message : String(e)}`,
     );
@@ -137,29 +189,37 @@ async function main(): Promise<void> {
 
   const names: string[] = [];
   const userId = process.env.NODE_AGENT_USER?.trim() || 'default';
-  const userTenant = runtime.busUser(userId);
+  const userTenant = await runtime.tenant(userId);
   // The page advertises this, never the shared bus token: a node that presents it registers
   // privately in this user's space and therefore appears in this user's UI.
   const joinToken = privateNodeToken(bus.token, userTenant);
 
+  // Resolve every requested name before starting any node, so a typo fails the whole start rather
+  // than leaving half a stack behind. The client still launches by name; this is only a preflight.
+  const core = ['history', 'agent', 'system'];
+  const refs = [
+    ...core,
+    ...specs.filter((spec) => spec.module !== INTRODUCE).map((spec) => spec.module),
+  ];
   try {
-    // 2. Nodes: start and register globally. The service user is connected as each one arrives so
-    // core nodes can call each other during their own startup.
-    const core = ['node-agent-history', 'node-agent-agent', 'node-agent-system'].map(rootOf);
-    const roots = [
-      ...core,
-      ...specs.filter((spec) => spec.module !== INTRODUCE).map((spec) => rootOf(spec.module)),
-    ];
-    for (const root of roots) {
+    for (const ref of refs) {
+      if (!(await runtime.hasNode(ref))) throw new Error(`not a node package: ${ref}`);
+    }
+    for (const spec of specs) {
+      if (!(await runtime.hasNode(spec.module)))
+        throw new Error(`not a node package: ${spec.module}`);
+    }
+
+    // 2. Nodes: names only. LocalRuntime discovers the package root, whether it is bundled,
+    // a workspace sibling, or a version the runtime installed for a user.
+    for (const ref of refs) {
       // NODE_AGENT_USER_TENANT is the deployment user's bus id: a node that has to speak as that
       // user before anyone has called it (introduce seeds the user's transcript) needs the identity the
       // caller would otherwise hand it.
-      const handle = await runtime.launchNode(root, {
-        dir: root,
+      const handle = await runtime.launchNode(ref, {
         env: { NODE_AGENT_USER_TENANT: userTenant, NODE_AGENT_JOIN_TOKEN: joinToken },
       });
       names.push(handle.name);
-      runtime.bus?.user(SERVICE_TENANT, true)?.connect(handle.name);
     }
 
     // 3. The deployment user exists only after the shared nodes do.
@@ -172,31 +232,35 @@ async function main(): Promise<void> {
     //    a language there, and the node files the stack's first documents then. Nothing at startup
     //    calls it -- a stack that is never visited stays uninitialized, and says so on its page.
     for (const spec of specs.filter((one) => one.module === INTRODUCE)) {
-      const root = rootOf(spec.module);
-      const handle = await runtime.launchNode(root, {
-        dir: root,
+      const handle = await runtime.launchNode(spec.module, {
         env: { NODE_AGENT_USER_TENANT: userTenant, NODE_AGENT_JOIN_TOKEN: joinToken },
       });
       names.push(handle.name);
       await runtime.connect(userId, handle.name);
     }
   } catch (e: unknown) {
-    await runtime.stopAll();
+    await runtime.stopBus().catch(() => undefined);
+    await runtimeApi.stop();
     console.error(`node-agent failed to come up: ${e instanceof Error ? e.message : String(e)}`);
     process.exit(1);
   }
 
   console.log(`bus: ${BIND}:${bus.port}`);
   console.log(`nodes: ${names.join(', ')}`);
-  const user = runtime.bus?.user(runtime.busUser(userId));
-  console.log(`user: ${userId} -> ${[...(user?.nodes ?? [])].join(', ')}`);
+  const session = (await runtime.sessions(userId)) as {
+    nodes?: Array<{ name?: unknown }>;
+  };
+  const connected = (session.nodes ?? [])
+    .map((node) => (typeof node.name === 'string' ? node.name : ''))
+    .filter((name) => name !== '');
+  console.log(`user: ${userId} -> ${connected.join(', ')}`);
 
   // The webui prints the address it actually bound (port 0 gets a real port), so surface that line
   // once it has had a moment to flush, without duplicating every node's log.
   let webui: string | undefined;
   if (names.includes('webui')) {
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      const match = runtime.nodeOutput('webui')?.match(/webui: (http:\/\/\S+)/);
+      const match = (await runtime.output('webui'))?.match(/webui: (http:\/\/\S+)/);
       if (match !== null && match !== undefined) {
         webui = match[1];
         console.log(`webui: ${webui}`);
@@ -236,7 +300,11 @@ async function main(): Promise<void> {
 
   await untilStopped();
   await proxy?.close();
-  await runtime.stopBus();
+  try {
+    await runtime.stopBus();
+  } finally {
+    await runtimeApi.stop();
+  }
 }
 
 await main();

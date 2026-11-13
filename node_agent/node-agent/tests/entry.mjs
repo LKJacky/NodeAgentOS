@@ -19,11 +19,11 @@ export function stateDir(t) {
 }
 
 /** Start the entry and collect its output lines. */
-export function start(env = {}) {
+export function start(env = {}, args = []) {
   const clean = Object.fromEntries(
     Object.entries(process.env).filter(([key]) => !key.startsWith('NODE_AGENT_')),
   );
-  const child = spawn(process.execPath, [ENTRY], {
+  const child = spawn(process.execPath, [ENTRY, ...args], {
     env: {
       ...clean,
       NODE_AGENT_BUS_PORT: '0',
@@ -65,12 +65,15 @@ export async function line(entry, prefix, timeout = 20_000) {
 export const portOf = (busLine) => Number(busLine.slice(busLine.lastIndexOf(':') + 1));
 
 /** Every test that starts the entry needs a bus port and a place for the history database. */
-export function tenant(t, env = {}) {
+export function tenant(t, env = {}, args = []) {
   const state = stateDir(t);
-  const entry = start({
-    NODE_AGENT_HOME: state,
-    ...env,
-  });
+  const entry = start(
+    {
+      NODE_AGENT_HOME: state,
+      ...env,
+    },
+    args,
+  );
   t.after(() => entry.child.kill('SIGKILL'));
   return { ...entry, home: state };
 }

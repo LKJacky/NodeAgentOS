@@ -11,6 +11,7 @@ import {
   readFileSync,
   readdirSync,
   writeFileSync,
+  type Dirent,
 } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import { createRequire } from 'node:module';
@@ -310,6 +311,15 @@ async function waitForNode(
   throw new RuntimeError('node_start_failed', `${name} did not register within ${timeoutMs}ms`);
 }
 
+export interface LocalNode {
+  /** Bus/node id from package.json's `node.id`. */
+  readonly name: string;
+  /** Package name, so both `history` and `node-agent-history` resolve. */
+  readonly package: string;
+  readonly version: string;
+  readonly dir: string;
+}
+
 export class LocalRuntime implements Runtime {
   /** One node launch at a time: two users asking at startup must not spawn the same shared node twice. */
   private launchQueue: Promise<void> = Promise.resolve();
@@ -356,6 +366,23 @@ export class LocalRuntime implements Runtime {
     return user === SERVICE_TENANT ? SERVICE_TENANT : this.busUser(user);
   }
 
+  async tenant(user: string): Promise<string> {
+    return this.busUser(user);
+  }
+
+  async hasNode(node: string): Promise<boolean> {
+    try {
+      this.resolveNode(node);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async output(node: string): Promise<string | undefined> {
+    return this.nodeOutput(node);
+  }
+
   busUser(user: string): string {
     userName(user);
     if (this.busRecord === undefined)
@@ -390,6 +417,81 @@ export class LocalRuntime implements Runtime {
       );
     }
     return generated;
+  }
+
+  /** Every node package this machine has: the bundled core, workspace siblings, and packages the
+   *  runtime has installed for any user. A launch by `history` or `node-agent-history` finds it. */
+  async discoverNodes(): Promise<LocalNode[]> {
+    const found = new Map<string, LocalNode>();
+    for (const root of this.candidateRoots()) this.scanNodes(root, found, 0);
+    return [...new Map([...found.values()].map((node) => [node.dir, node])).values()].sort((a, b) =>
+      a.name.localeCompare(b.name),
+    );
+  }
+
+  private candidateRoots(): string[] {
+    const here = dirname(fileURLToPath(import.meta.url));
+    return [
+      join(here, 'nodes'),
+      fileURLToPath(new URL('../../nodes', import.meta.url)),
+      join(runtimeRoot(this.options.home), 'packages'),
+    ];
+  }
+
+  private scanNodes(root: string, found: Map<string, LocalNode>, depth: number): void {
+    if (depth > 4) return;
+    let entries: Dirent<string>[];
+    try {
+      entries = readdirSync(root, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    if (entries.some((entry) => entry.isFile() && entry.name === 'package.json')) {
+      this.addNode(root, found);
+      return;
+    }
+    for (const entry of entries) {
+      if (entry.isDirectory() && !entry.name.startsWith('.')) {
+        this.scanNodes(join(root, entry.name), found, depth + 1);
+      }
+    }
+  }
+
+  private addNode(root: string, found: Map<string, LocalNode>): void {
+    try {
+      const json = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')) as {
+        name?: unknown;
+        version?: unknown;
+        node?: { id?: unknown };
+      };
+      const id = json.node?.id;
+      if (typeof id !== 'string' || id === '') return;
+      const pkg = typeof json.name === 'string' ? json.name : id;
+      const node: LocalNode = {
+        name: nodeName(id),
+        package: pkg,
+        version: typeof json.version === 'string' ? json.version : '',
+        dir: root,
+      };
+      found.set(node.dir, node);
+      found.set(node.name, node);
+      found.set(node.package, node);
+      if (node.package.startsWith('node-agent-'))
+        found.set(node.package.slice('node-agent-'.length), node);
+    } catch {
+      // not a readable node package
+    }
+  }
+
+  /** Resolve a package name, node id or package root to the directory holding package.json. */
+  resolveNode(ref: string): string {
+    const direct = resolve(ref);
+    if (existsSync(join(direct, 'package.json'))) return direct;
+    const cache = new Map<string, LocalNode>();
+    for (const root of this.candidateRoots()) this.scanNodes(root, cache, 0);
+    const found = cache.get(ref) ?? cache.get(`node-agent-${ref}`);
+    if (found !== undefined) return found.dir;
+    return packageRoot(ref);
   }
 
   async launchBus(options: BusOptions = {}): Promise<BusHandle> {
@@ -455,7 +557,7 @@ export class LocalRuntime implements Runtime {
   }
 
   private async launchNodeNow(node: string, options: NodeOptions = {}): Promise<NodeHandle> {
-    const root = packageRoot(options.dir ?? node);
+    const root = this.resolveNode(options.dir ?? node);
     const name = nodeName(options.name ?? manifestName(root));
     const version = manifestVersion(root);
     const existing = this.nodes.get(name);

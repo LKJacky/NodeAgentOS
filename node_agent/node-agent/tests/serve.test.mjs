@@ -106,8 +106,44 @@ test("this entry does not know a standalone reader's page", async () => {
   // The bus comes up before the first node is resolved, so that one line is expected; what must not
   // appear is a stack claiming it started, or a page it does not know.
   assert.deepEqual(
-    page.lines.filter((one) => !one.startsWith('bus: ')),
+    page.lines.filter(
+      (one) =>
+        !one.startsWith('bus: ') &&
+        !one.startsWith('runtime api: ') &&
+        !one.startsWith('runtime: '),
+    ),
     [],
     'nothing was started, let alone a page',
   );
+});
+
+test('--runtime-port serves the runtime API with its own token', async (t) => {
+  const entry = tenant(t, { NODE_AGENT_NODES: '' }, [
+    '--runtime-port',
+    '0',
+    '--runtime-token',
+    'runtime-secret',
+  ]);
+  await line(entry, 'Ready to connect');
+  const url = (await line(entry, 'runtime: ')).slice('runtime: '.length);
+  assert.match(url, /^http:\/\/127\.0\.0\.1:\d+$/);
+
+  const refused = await fetch(`${url}/whoami`);
+  assert.equal(refused.status, 401);
+  const allowed = await fetch(`${url}/whoami`, {
+    headers: { authorization: 'Bearer runtime-secret' },
+  });
+  assert.equal(allowed.status, 200);
+  assert.deepEqual(await allowed.json(), { ok: true, service: 'runtime' });
+
+  const stopped = once(entry.child, 'exit');
+  entry.child.kill('SIGTERM');
+  assert.equal((await stopped)[0], 0);
+});
+
+test('--runtime-port without a token is refused before the bus starts', async () => {
+  const entry = start({ NODE_AGENT_NODES: '' }, ['--runtime-port', '0']);
+  const [code] = await once(entry.child, 'exit');
+  assert.equal(code, 2);
+  assert.match(entry.errors.join(''), /runtime API needs --runtime-token/);
 });
