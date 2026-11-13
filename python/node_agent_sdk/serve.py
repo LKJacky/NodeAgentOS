@@ -1,10 +1,10 @@
 """Launch the NodeAgent runtime, and launch one Python node on its bus.
 
-This is the Python equivalent of the small ``serve`` entry points: ``launch_runtime`` starts the
+This is the Python equivalent of the small ``serve`` entry points: ``launch_node_agent`` starts the
 NodeAgent process and returns its runtime/bus/webui addresses; ``launch_node`` starts a
 ``Node`` class through ``Host`` and waits until it has registered.
 
-    runtime = await launch_runtime(home="/tmp/na")
+    runtime = await launch_node_agent(home="/tmp/na")
     node = await launch_node(Echo, runtime.bus_url, runtime.bus_token)
     ...
     await node.stop()
@@ -48,7 +48,10 @@ class RuntimeProcess:
 
     async def stop(self) -> None:
         if self.process.returncode is None:
-            self.process.terminate()
+            try:
+                self.process.terminate()
+            except ProcessLookupError:
+                pass
             try:
                 await asyncio.wait_for(self.process.wait(), timeout=10)
             except asyncio.TimeoutError:
@@ -127,7 +130,7 @@ async def _wait_line(lines: list[str], prefix: str, process: asyncio.subprocess.
     raise RuntimeError(f"node-agent did not print {prefix!r} within {timeout:.0f}s")
 
 
-async def launch_runtime(
+async def launch_node_agent(
     *,
     root: str | Path | None = None,
     home: str | Path | None = None,
@@ -143,16 +146,22 @@ async def launch_runtime(
     """Start the NodeAgent runtime and wait until its addresses are known.
 
     ``command`` overrides the executable (for a wrapper or a bundled install). The default is
-    ``node <root>/node_agent/node-agent/dist/serve.js``.
+    the installed ``@node-agent/local`` package, falling back to ``npx --yes @node-agent/local``.
     """
-    cwd = _root(root, require_serve=command is None)
-    serve = os.environ.get("NODE_AGENT_SERVE") or str(cwd / "node_agent" / "node-agent" / "dist" / "serve.js")
+    cwd = _root(root, require_serve=False)
     if isinstance(command, str):
         argv = shlex.split(command)
     elif command is not None:
         argv = list(command)
+    elif os.environ.get("NODE_AGENT_COMMAND"):
+        argv = shlex.split(os.environ["NODE_AGENT_COMMAND"])
     else:
-        argv = [os.environ.get("NODE_AGENT_NODE", "node"), serve]
+        package = cwd / "node_modules" / "@node-agent" / "local" / "dist" / "serve.js"
+        argv = (
+            [os.environ.get("NODE_AGENT_NODE", "node"), str(package)]
+            if package.exists()
+            else ["npx", "--yes", "@node-agent/local"]
+        )
 
     owned_home = home is None
     home_path = Path(home) if home is not None else Path(tempfile.mkdtemp(prefix="node-agent-"))
@@ -200,7 +209,11 @@ async def launch_runtime(
         bus_line = await _wait_line(lines, "bus: ", process, timeout)
         await _wait_line(lines, "Ready to connect", process, timeout)
     except Exception:
-        process.terminate()
+        if process.returncode is None:
+            try:
+                process.terminate()
+            except ProcessLookupError:
+                pass
         try:
             await asyncio.wait_for(process.wait(), timeout=10)
         except asyncio.TimeoutError:
@@ -273,8 +286,8 @@ def _load_node(spec: str) -> type[Node]:
     return value
 
 
-async def _runtime_main(args: argparse.Namespace) -> int:
-    runtime = await launch_runtime(
+async def _node_agent_main(args: argparse.Namespace) -> int:
+    runtime = await launch_node_agent(
         root=args.root,
         home=args.home,
         user=args.user,
@@ -313,13 +326,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Launch a NodeAgent runtime or one Python node")
     sub = parser.add_subparsers(dest="what", required=True)
 
-    runtime = sub.add_parser("runtime", help="start node-agent and its bus")
+    runtime = sub.add_parser(
+        "node-agent", aliases=["runtime"], help="start @node-agent/local and its bus"
+    )
     runtime.add_argument("--root")
     runtime.add_argument("--home")
     runtime.add_argument("--user", default="default")
     runtime.add_argument("--nodes", help="comma-separated extra node packages")
     runtime.add_argument("--timeout", type=float, default=60.0)
-    runtime.set_defaults(run=_runtime_main)
+    runtime.set_defaults(run=_node_agent_main)
 
     node = sub.add_parser("node", help="start one Python Node class")
     node.add_argument("node", help="module:Class")

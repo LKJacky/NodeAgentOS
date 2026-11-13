@@ -48,9 +48,9 @@ asyncio.run(Host(Echo, "ws://127.0.0.1:8788", "bus-token").run())
 `serve.py` starts the NodeAgent runtime and a Python node against the bus it prints.
 
 ```python
-from node_agent_sdk import launch_node, launch_runtime
+from node_agent_sdk import launch_node, launch_node_agent
 
-runtime = await launch_runtime(home="/tmp/node-agent")
+runtime = await launch_node_agent(home="/tmp/node-agent")
 node = await launch_node(Echo, runtime.bus_url, runtime.bus_token)
 print(runtime.runtime_url, runtime.webui_url)
 await node.stop()
@@ -60,7 +60,7 @@ await runtime.stop()
 It also has a CLI:
 
 ```bash
-python -m node_agent_sdk.serve runtime --home /tmp/node-agent
+python -m node_agent_sdk.serve node-agent --home /tmp/node-agent
 python -m node_agent_sdk.serve node my_package:Echo --bus-url ws://127.0.0.1:8788
 ```
 

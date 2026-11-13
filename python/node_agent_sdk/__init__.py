@@ -6,7 +6,7 @@ from .node import CallContext, Node, NodeContext
 
 
 def __getattr__(name: str):
-    if name in {"RunningNode", "RuntimeProcess", "launch_node", "launch_runtime"}:
+    if name in {"RunningNode", "RuntimeProcess", "launch_node", "launch_node_agent"}:
         from . import serve
 
         return getattr(serve, name)
@@ -23,5 +23,5 @@ __all__ = [
     "RunningNode",
     "RuntimeProcess",
     "launch_node",
-    "launch_runtime",
+    "launch_node_agent",
 ]

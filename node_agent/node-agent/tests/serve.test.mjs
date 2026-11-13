@@ -21,7 +21,7 @@ import { TOKEN, connectProbe } from './probe.mjs';
 // home set: the reader's connect page is inside introduce, so there is no standalone userpage module
 // for this entry to know.
 const DEFAULT_NODES =
-  'history, agent, system, provider, webui, notes, todo, timer, search, introduce';
+  'history, agent, system, webui, provider, notes, todo, timer, search, introduce';
 
 test('the default is the whole set, and it survives /dev/null on stdin', async (t) => {
   const entry = tenant(t);
@@ -44,15 +44,12 @@ test('the default is the whole set, and it survives /dev/null on stdin', async (
   assert.equal((await stopped)[0], 0);
 });
 
-test('NODE_AGENT_NODES= is the bare core', async (t) => {
+test('NODE_AGENT_NODES= is the core, including the web UI', async (t) => {
   const entry = tenant(t, { NODE_AGENT_NODES: '' });
 
-  assert.equal(await line(entry, 'nodes: '), 'nodes: history, agent, system');
-  assert.deepEqual(
-    entry.lines.filter((l) => l.startsWith('webui: ')),
-    [],
-    'the bare core opens no web UI',
-  );
+  assert.equal(await line(entry, 'nodes: '), 'nodes: history, agent, system, webui');
+  const page = (await line(entry, 'webui: ')).slice('webui: '.length);
+  assert.equal((await fetch(page)).status, 200);
 });
 
 test('the loaded nodes are really on the bus, not just printed', async (t) => {

@@ -101,7 +101,7 @@ try {
 const INTRODUCE = 'node-agent-introduce';
 
 const DEFAULT_NODES =
-  'node-agent-provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce';
+  'node-agent-provider,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce';
 
 interface NodeSpec {
   module: string;
@@ -196,8 +196,8 @@ async function main(): Promise<void> {
 
   // Resolve every requested name before starting any node, so a typo fails the whole start rather
   // than leaving half a stack behind. The client still launches by name; this is only a preflight.
-  const core = ['history', 'agent', 'system'];
-  const refs = [...core, ...specs.map((spec) => spec.module)];
+  const core = ['history', 'agent', 'system', 'webui'];
+  const refs = [...new Set([...core, ...specs.map((spec) => spec.module)])];
 
   // Only the page node needs the deployment user's identity before its first call. Keep the switch
   // by node name so adding a special case stays local to the launch loop.
@@ -205,7 +205,10 @@ async function main(): Promise<void> {
     if (name === INTRODUCE) {
       return { NODE_AGENT_USER_TENANT: userTenant, NODE_AGENT_JOIN_TOKEN: joinToken };
     } else if (name === 'node-agent-webui') {
-      return { NODE_AGENT_USER_TENANT: userTenant };
+      return {
+        NODE_AGENT_USER_TENANT: userTenant,
+        NODE_AGENT_WEBUI_PORT: process.env.NODE_AGENT_WEBUI_PORT ?? '8790',
+      };
     } else {
       return {};
     }
