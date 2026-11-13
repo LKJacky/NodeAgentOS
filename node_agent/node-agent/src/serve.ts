@@ -197,47 +197,39 @@ async function main(): Promise<void> {
   // Resolve every requested name before starting any node, so a typo fails the whole start rather
   // than leaving half a stack behind. The client still launches by name; this is only a preflight.
   const core = ['history', 'agent', 'system'];
-  const refs = [
-    ...core,
-    ...specs.filter((spec) => spec.module !== INTRODUCE).map((spec) => spec.module),
-  ];
+  const refs = [...core, ...specs.map((spec) => spec.module)];
+
+  // Only the page node needs the deployment user's identity before its first call. Keep the switch
+  // by node name so adding a special case stays local to the launch loop.
+  const nodeEnv = (name: string): Record<string, string> => {
+    if (name === INTRODUCE) {
+      return { NODE_AGENT_USER_TENANT: userTenant, NODE_AGENT_JOIN_TOKEN: joinToken };
+    } else if (name === 'node-agent-webui') {
+      return { NODE_AGENT_USER_TENANT: userTenant };
+    } else {
+      return {};
+    }
+  };
+
   try {
+    // Resolve every requested name before starting any node, so a typo fails the whole start.
     for (const ref of refs) {
       if (!(await runtime.hasNode(ref))) throw new Error(`not a node package: ${ref}`);
-    }
-    for (const spec of specs) {
-      if (!(await runtime.hasNode(spec.module)))
-        throw new Error(`not a node package: ${spec.module}`);
     }
 
     // 2. Nodes: names only. LocalRuntime discovers the package root, whether it is bundled,
     // a workspace sibling, or a version the runtime installed for a user.
     for (const ref of refs) {
-      // NODE_AGENT_USER_TENANT is the deployment user's bus id: a node that has to speak as that
-      // user before anyone has called it (introduce seeds the user's transcript) needs the identity the
-      // caller would otherwise hand it.
-      const handle = await runtime.launchNode(ref, {
-        env: { NODE_AGENT_USER_TENANT: userTenant, NODE_AGENT_JOIN_TOKEN: joinToken },
-      });
+      const handle = await runtime.launchNode(ref, { env: nodeEnv(ref) });
       names.push(handle.name);
     }
 
     // 3. The deployment user exists only after the shared nodes do.
     await runtime.createUser(userId);
 
-    // 4. Then grant that user every node this process started.
+    // 4. Then grant that user every node this process started. The page node's setup is the page's
+    // to run; a stack that is never visited stays uninitialized and says so on its page.
     for (const name of names) await runtime.connect(userId, name);
-
-    // 5. Last, start the node that owns the page. Its setup is the page's to run: the reader picks
-    //    a language there, and the node files the stack's first documents then. Nothing at startup
-    //    calls it -- a stack that is never visited stays uninitialized, and says so on its page.
-    for (const spec of specs.filter((one) => one.module === INTRODUCE)) {
-      const handle = await runtime.launchNode(spec.module, {
-        env: { NODE_AGENT_USER_TENANT: userTenant, NODE_AGENT_JOIN_TOKEN: joinToken },
-      });
-      names.push(handle.name);
-      await runtime.connect(userId, handle.name);
-    }
   } catch (e: unknown) {
     await runtime.stopBus().catch(() => undefined);
     await runtimeApi.stop();
