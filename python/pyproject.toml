@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "node-agent-python"
+version = "0.1.0"
+description = "Python SDK and runtime client for NodeAgent"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+bus = ["aiohttp>=3.9"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["node_agent_runtime*", "node_agent_sdk*"]

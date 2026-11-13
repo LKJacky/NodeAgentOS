@@ -17,3 +17,4 @@
 
 # Local git worktrees used during development.
 /worktrees/
+**/__pycache__/

@@ -64,6 +64,7 @@ class Host:
         self._after_register = after_register
         self._timeout = timeout
         self._stopped = asyncio.Event()
+        self.ready = asyncio.Event()
         self._started = False
         root = os.environ.get("NODE_AGENT_HOME") or str(Path.home() / ".node_agent")
         self.node_agent_home = root
@@ -82,6 +83,7 @@ class Host:
         try:
             await self.bus.register(self.manifest)
             self._started = True
+            self.ready.set()
             if self._after_register is not None:
                 value = self._after_register(self)
                 if inspect.isawaitable(value):
@@ -123,6 +125,7 @@ class Host:
             except Exception:
                 pass
         self._started = False
+        self.ready.clear()
         await self.bus.close()
 
     def _context(self, call: Mapping[str, Any], deadline: int, signal: asyncio.Event) -> NodeContext:

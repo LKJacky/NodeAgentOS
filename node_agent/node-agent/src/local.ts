@@ -671,10 +671,27 @@ export class LocalRuntime implements Runtime {
     this.knownUsers.add(user);
     // A connect by node name must reuse the already-running shared node; only a launch by package
     // root needs package resolution.
-    const existing = this.nodes.get(nodeName(node));
+    const name = nodeName(node);
+    const existing = this.nodes.get(name);
+    // A bus node another process owns (the Python runtime node, for example) is already running.
+    // Connect it to this user's table instead of trying to launch a package with its name.
+    if (existing === undefined) {
+      const external = this.busRecord?.bus.envelopeNodes.get(name);
+      if (external !== undefined) {
+        this.busRecord!.bus.user(this.busId(user), true)!.connect(name);
+        return {
+          kind: 'node',
+          name,
+          version: external.manifest.version,
+          dir: '',
+          pid: undefined,
+          state: 'running',
+          stop: async () => undefined,
+        };
+      }
+    }
     let resolved = options;
     if (existing === undefined || existing.state !== 'running' || existing.exitCode !== null) {
-      const name = nodeName(node);
       const installed = this.installedPackage(user, name);
       if (installed !== undefined) resolved = { ...options, dir: installed };
     }
