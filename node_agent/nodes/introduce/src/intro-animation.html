@@ -10,6 +10,22 @@
 @media(max-width:700px){.film{width:100vw;height:min(100svh,900px);aspect-ratio:auto;grid-template-columns:1fr;grid-template-rows:56% 44%}header{padding:0 8%;flex-basis:58px}.wordmark{font-size:18px}.wordmark svg{width:28px;height:28px}.edition{font-size:9px}.narration{border-left:0;border-top:1px solid #ffffff12;padding:7% 8%;justify-content:flex-start}.scene-meta{margin-bottom:14px;font-size:9px}.counter{font-size:28px}.caption{min-height:3em;font-size:clamp(21px,5.8vw,29px);line-height:1.45}.progress{margin-top:18px}.controls{left:8%;right:8%;bottom:7%}button{font-size:11px;padding:8px 13px}.final-mark{width:140px}.final-name{font-size:30px}}
 @media(min-width:701px) and (max-height:450px) and (min-aspect-ratio:1/1){.film{width:min(100vw,177.7778vh);height:auto;aspect-ratio:16/9;grid-template-columns:62% 38%;grid-template-rows:1fr}.narration{border-top:0;border-left:1px solid #ffffff12;padding:10%}.scene-meta{margin-bottom:8px;font-size:8px}.counter{font-size:20px}.caption{font-size:clamp(12px,2.7vw,20px);min-height:3.6em}.progress{margin-top:12px}.controls{left:10%;right:10%;bottom:6%}button{font-size:9px;padding:5px 8px}.edition{display:none}.wordmark{font-size:13px}.wordmark svg{width:22px;height:22px}.final-mark{width:100px}.final-name{font-size:22px;top:100%}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{transition:none!important}}
+/* Fixed composition: the animation keeps the top, its narration always sits below it. */
+.film{width:100%;height:100%;aspect-ratio:auto;grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto;border:0}
+header{flex-basis:clamp(42px,5vw,56px);padding:0 5%}
+.wordmark{font-size:clamp(14px,1.35vw,17px)}
+.wordmark svg{width:25px;height:25px}
+.edition{font-size:9px}
+.narration{justify-content:flex-start;padding:10px 5% 14px;border-left:0;border-top:1px solid #ffffff12}
+.scene-meta{margin-bottom:7px;font-size:9px}
+.counter{font-size:18px}
+.total{font-size:10px}
+.caption{min-height:0;font-size:clamp(15px,1.55vw,20px);line-height:1.4}
+.progress{margin-top:10px}
+.controls,button{display:none!important}
+.final-name{font-size:clamp(24px,2.5vw,34px)}
+@media(max-width:700px){.film{width:100%;height:100%;grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}.narration{padding:9px 5% 12px}.caption{font-size:clamp(15px,4.3vw,19px)}}
+@media(min-width:701px) and (max-height:450px) and (min-aspect-ratio:1/1){.film{width:100%;height:100%;aspect-ratio:auto;grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) auto}.narration{border-top:1px solid #ffffff12;border-left:0;padding:8px 5% 10px}}
 </style>
 </head>
 <body>
@@ -76,9 +92,8 @@
 <div class="scene-meta" aria-hidden="true"><span class="counter">01</span><span class="total">/ 05</span><span>INTRODUCTION</span></div>
 <p class="caption" aria-live="polite" aria-atomic="true">单一回合，做最懂你的 Agent</p>
 <div class="progress" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
-<div class="controls"><button id="pause" type="button" aria-label="暂停动画">Ⅱ 暂停</button><button id="replay" type="button" aria-label="重新播放动画">↻ replay</button></div>
 </aside>
-<span class="sr-only">五幕介绍：单一回合，做最懂你的 Agent；云端在线，多端融合；连接应用，你的超级 Agent；应用扩展，无限可能；Node，你的专属 Agent。可暂停或重新播放。</span>
+<span class="sr-only">五幕介绍：单一回合，做最懂你的 Agent；云端在线，多端融合；连接应用，你的超级 Agent；应用扩展，无限可能；Node，你的专属 Agent。</span>
 </main>
 <script>
 /* Standalone. API scene numbers are 1–5. goTo() seeks without changing playback.
@@ -90,22 +105,20 @@
 'use strict';
 const canvas=document.querySelector('canvas'),ctx=canvas.getContext('2d');
 const caption=document.querySelector('.caption'),counter=document.querySelector('.counter');
-const bars=[...document.querySelectorAll('.progress i')],pauseButton=document.querySelector('#pause');
-const finalName=document.querySelector('.final-name'),replayButton=document.querySelector('#replay');
+const bars=[...document.querySelectorAll('.progress i')];
+const finalName=document.querySelector('.final-name');
 const COPY={
  'zh-CN':{
   captions:['单一回合，做最懂你的 Agent','云端在线，多端融合','连接应用，你的超级 Agent','应用扩展，无限可能','Node，你的专属 Agent'],
   devices:['台式机','笔记本','手机'],apps:['备忘录','Todo','计时器'],agent:'Agent',node:'Node',introLabel:'介绍',
-  pause:'Ⅱ 暂停',play:'▷ 播放',replay:'↻ replay',pauseAria:'暂停动画',playAria:'播放动画',replayAria:'重新播放动画',
   filmAria:'Node 品牌介绍动画',stageAria:'动画舞台',narrationAria:'场景旁白',
-  sr:'五幕介绍：单一回合，做最懂你的 Agent；云端在线，多端融合；连接应用，你的超级 Agent；应用扩展，无限可能；Node，你的专属 Agent。可暂停或重新播放。'
+  sr:'五幕介绍：单一回合，做最懂你的 Agent；云端在线，多端融合；连接应用，你的超级 Agent；应用扩展，无限可能；Node，你的专属 Agent。'
  },
  en:{
   captions:['One turn. An agent that knows you.','Online in the cloud, across every device.','Connect your apps. Your super agent.','Apps expand. Infinite possibilities.','Node. Your own agent.'],
   devices:['Desktop','Laptop','Phone'],apps:['Notes','Todo','Timer'],agent:'Agent',node:'Node',introLabel:'INTRODUCTION',
-  pause:'Ⅱ Pause',play:'▷ Play',replay:'↻ Replay',pauseAria:'Pause animation',playAria:'Play animation',replayAria:'Replay animation',
   filmAria:'Node brand introduction animation',stageAria:'Animation stage',narrationAria:'Scene narration',
-  sr:'Five scenes: One turn. An agent that knows you. Online in the cloud, across every device. Connect your apps. Your super agent. Apps expand. Infinite possibilities. Node. Your own agent. Pause or replay at any time.'
+  sr:'Five scenes: One turn. An agent that knows you. Online in the cloud, across every device. Connect your apps. Your super agent. Apps expand. Infinite possibilities. Node. Your own agent.'
  }
 };
 function copy(){return COPY[lang]}
@@ -232,18 +245,16 @@ function setLanguage(next){
  document.querySelector('.stage').setAttribute('aria-label',copy().stageAria);
  document.querySelector('.narration').setAttribute('aria-label',copy().narrationAria);
  document.querySelector('.scene-meta span:last-child').textContent=copy().introLabel;
- replayButton.textContent=copy().replay;replayButton.setAttribute('aria-label',copy().replayAria);
  document.querySelector('.sr-only').textContent=copy().sr;
- const n=shown>=0?shown:scene;shown=-1;setCaption(n,true);syncButton();render();
+ const n=shown>=0?shown:scene;shown=-1;setCaption(n,true);render();
 }
-function syncButton(){pauseButton.textContent=playing?copy().pause:copy().play;pauseButton.setAttribute('aria-label',playing?copy().pauseAria:copy().playAria)}
 function frame(now){raf=0;if(!playing)return;if(last){const delta=Math.min((now-last)/1000,.1);time+=delta*(reduced?total/50:playbackRate)}last=now;
  if(time>=total){time%=total;completionSent=false}
  if(time>=31.5&&!completionSent){completionSent=true;if(parent!==window)parent.postMessage({kind:'node-agent:intro-done'},'*')}
  render();raf=requestAnimationFrame(frame);
 }
-function play(){if(playing&&raf)return;playing=true;last=0;syncButton();raf=requestAnimationFrame(frame)}
-function pause(){playing=false;cancelAnimationFrame(raf);raf=0;last=0;syncButton();render()}
+function play(){if(playing&&raf)return;playing=true;last=0;raf=requestAnimationFrame(frame)}
+function pause(){playing=false;cancelAnimationFrame(raf);raf=0;last=0;render()}
 function replay(){time=0;completionSent=false;shown=-1;setCaption(0,true);render();play()}
 function goTo(value){const n=Number(value);if(!Number.isInteger(n)||n<1||n>5)throw new RangeError('scene must be an integer from 1 to 5');time=starts[n-1]+samples[n-1];completionSent=false;last=0;setCaption(n-1,true);render()}
 window.IntroAnimation={play,pause,replay,goTo,setLanguage};
@@ -251,7 +262,6 @@ window.addEventListener('message',(event)=>{const data=event.data;if(data&&data.
 function onMotion(e){reduced=e.matches;render()}
 if(motion.addEventListener)motion.addEventListener('change',onMotion);
 new ResizeObserver(resize).observe(canvas);
-pauseButton.addEventListener('click',()=>playing?pause():play());document.querySelector('#replay').addEventListener('click',replay);
 document.addEventListener('visibilitychange',()=>{last=0});
 setLanguage(lang);setCaption(scene,true);resize();if(playing)play();
 })();
