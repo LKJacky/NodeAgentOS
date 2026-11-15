@@ -2,10 +2,9 @@
   "title": "Agent · node_agent",
   "usage": {
     "label": "session token usage and active provider",
-    "input": "in ≈",
+    "input": "in",
     "output": "out",
-    "total": "total ≈",
-    "provider": "provider",
+    "total": "total",
     "loading": "Loading providers…",
     "activeProvider": "Active provider",
     "noProviders": "No providers available",
@@ -58,7 +57,7 @@
   },
   "msg": {
     "from": "From {from}",
-    "usage": "New input ≈{input} · output {output} · total ≈{total} Tokens",
+    "usage": "New input {input} · output {output} · total {total} Tokens",
     "took": " · {seconds}s"
   },
   "copy": {

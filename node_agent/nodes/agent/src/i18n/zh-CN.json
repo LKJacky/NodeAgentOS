@@ -2,10 +2,9 @@
   "title": "智能体 · node_agent",
   "usage": {
     "label": "本次会话的 token 用量和当前模型服务",
-    "input": "输入 ≈",
+    "input": "输入",
     "output": "输出",
-    "total": "合计 ≈",
-    "provider": "模型服务",
+    "total": "合计",
     "loading": "正在加载模型服务…",
     "activeProvider": "当前模型服务",
     "noProviders": "没有可用的模型服务",
@@ -58,7 +57,7 @@
   },
   "msg": {
     "from": "来自 {from}",
-    "usage": "新增输入 ≈{input} · 输出 {output} · 合计 ≈{total} Tokens",
+    "usage": "新增输入 {input} · 输出 {output} · 合计 {total} Tokens",
     "took": " · {seconds} 秒"
   },
   "copy": {

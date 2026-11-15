@@ -143,11 +143,6 @@
         padding-left: 10px;
         border-left: 1px solid var(--line);
       }
-      .usage-provider .provider-label {
-        color: var(--muted);
-        font-size: 9px;
-        letter-spacing: 0.04em;
-      }
       /* A message's own token usage is one more item on the label row (see .role), so it carries no
          margin of its own and undoes the label's small caps: it is numbers a reader reads as written. */
       .token-usage {
@@ -1280,7 +1275,7 @@
         <!-- The word and the count are two elements: a mark that wrapped the word *and* the number
              would be redrawn by its key, and take the number with it. -->
         <span>
-          <span data-text-key="usage.input">in ≈</span>
+          <span data-text-key="usage.input">in</span>
           <strong id="prompt-tokens">—</strong>
         </span>
         <span>
@@ -1288,12 +1283,11 @@
           <strong id="completion-tokens">—</strong>
         </span>
         <span>
-          <span data-text-key="usage.total">total ≈</span>
+          <span data-text-key="usage.total">total</span>
           <strong id="total-tokens">—</strong>
         </span>
       </span>
       <span class="usage-provider">
-        <span class="provider-label" data-text-key="usage.provider">provider</span>
         <select
           id="provider-switch"
           title="Active provider"
