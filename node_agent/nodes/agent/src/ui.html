@@ -3042,6 +3042,28 @@
         return head.trim() ? [renderMarkdown(head), box] : [box];
       }
 
+      // A system line is instructions, not prose: keep its text literal and fold its tail when it is
+      // longer than an answer may be on screen. The role line stays visible above the fold.
+      function systemParts(source, streaming) {
+        const text = String(source ?? '');
+        const cut = responseCut(text);
+        if (cut >= text.length) return [el('div', 'plain', text)];
+
+        const hidden = text.slice(cut);
+        const box = fold(el('details', 'long'), Boolean(streaming), 'system');
+        const summary = el('summary');
+        summary.append(
+          el('span', 'long-label', t('fold.showRest', { count: hidden.length })),
+          el('span', 'long-text', hidden.replace(/\s+/g, ' ').trim().slice(0, 160)),
+        );
+        box.append(summary, el('div', 'plain', hidden));
+
+        const head = text.slice(0, cut);
+        return head.trim()
+          ? [el('div', 'plain', head), box]
+          : [box];
+      }
+
       // Parse Markdown into a heading tree. A section holds its body in document order, so any
       // prose that follows a subsection stays where it was written. Headings inside a fence are
       // code, not structure.
@@ -3203,7 +3225,11 @@
         const pushed = msg.role === 'user' ? splitPushMeta(msg.content) : null;
         const body = pushed ? pushed.body : (msg.content ?? '');
         const content =
-          msg.role === 'assistant' ? responseParts(body, streaming) : [el('div', 'plain', body)];
+          msg.role === 'assistant'
+            ? responseParts(body, streaming)
+            : msg.role === 'system'
+              ? systemParts(body, streaming)
+              : [el('div', 'plain', body)];
         box.append(roleLine(roles()[msg.role] ?? msg.role, msg, pushed), ...thought, ...content);
         // The end of the message: its time and the way to copy it, as one row (see `messageFoot`).
         const foot = messageFoot(msg, body, t('copy.thisMessage'));

@@ -423,6 +423,33 @@ test('a stopping node hides Stop and keeps Send closed until it is idle', async 
   assert.equal(page.stop.hidden, true, 'and there is still nothing to stop');
 });
 
+// A system line is often the long instruction the agent was started with. It folds its tail like an
+// answer, while its role line stays in place; a short system line stays plain.
+test('a long system message folds, a short one does not', async () => {
+  const longPage = await openPage({
+    history: [{ role: 'system', content: 'rule '.repeat(500) }],
+  });
+  await settle();
+  let article = pageBoxes(longPage)
+    .logOf(0)
+    .children.filter((child) => child.className === 'msg system')
+    .at(-1);
+  assert.ok(article, 'the long system message is drawn');
+  let details = article.children.find((child) => child.tagName === 'DETAILS');
+  assert.ok(details, 'a long system message has a fold');
+  assert.equal(details.open, false, 'and it starts folded');
+
+  const shortPage = await openPage({ history: [{ role: 'system', content: 'short' }] });
+  await settle();
+  article = pageBoxes(shortPage)
+    .logOf(0)
+    .children.filter((child) => child.className === 'msg system')
+    .at(-1);
+  assert.ok(article, 'the short system message is drawn');
+  details = article.children.find((child) => child.tagName === 'DETAILS');
+  assert.equal(details, undefined, 'a short system message stays plain');
+});
+
 // The state the page holds is the node's, so a snapshot still on screen cannot keep Stop alive for a turn
 // the node has already finished: the streaming tail is the page's own guess, and `idle` overrules it.
 test('a status that turns idle takes Stop away from a streaming answer', async () => {
