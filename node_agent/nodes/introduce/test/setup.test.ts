@@ -47,6 +47,12 @@ function wired(
     language?: string | Error;
     /** The instruction documents an older version filed, for the adoption path. */
     documents?: { title?: string }[];
+    /** Any notes already present, read without a tag. */
+    notes?: { title?: string }[];
+    /** How many model calls the agent already made. */
+    modelCalls?: number;
+    /** How many timers are already pending. */
+    timers?: number;
     /** The one call that is refused, named `node.cap`. */
     refuse?: string;
   } = {},
@@ -83,7 +89,25 @@ function wired(
         }
       }
 
-      if (node === 'notes' && cap === 'list') return (options.documents ?? []) as T;
+      if (node === 'notes' && cap === 'list') {
+        return (
+          args.tag === 'instruction' ? (options.documents ?? []) : (options.notes ?? [])
+        ) as T;
+      }
+
+      if (node === 'nodes' && cap === 'list') return [{ name: 'notes' }] as T;
+
+      if (node === 'agent' && cap === 'status') {
+        return {
+          state: 'idle',
+          queued: [],
+          usage: { model_calls: options.modelCalls ?? 0 },
+        } as T;
+      }
+
+      if (node === 'timer' && cap === 'list') {
+        return Array.from({ length: options.timers ?? 0 }, () => ({})) as T;
+      }
 
       if (node === 'system' && cap === 'language') {
         const answer = options.language ?? 'en';
@@ -132,6 +156,8 @@ test('a new stack is set up once, in the language the system resolved, and the m
     'history.load',
     'system.language',
     'notes.list',
+    'agent.status',
+    'timer.list',
     'history.save',
     'notes.add',
     'notes.add',
@@ -142,33 +168,33 @@ test('a new stack is set up once, in the language the system resolved, and the m
   ]);
   // The instruction first, then the two documents the reader's stack starts with -- titles as well
   // as texts from the resource, so a Chinese stack is filed in Chinese words.
-  assert.deepEqual(calls[4]?.args, {
+  assert.deepEqual(calls[6]?.args, {
     title: words('zh-CN').instructionTitle,
     text: words('zh-CN').instruction,
     tag: 'instruction',
   });
   assert.deepEqual(
-    calls.slice(5, 7).map((one) => one.args),
+    calls.slice(7, 9).map((one) => one.args),
     [
       { title: words('zh-CN').profileTitle, text: words('zh-CN').profileText, tag: 'profile' },
       { title: words('zh-CN').diaryTitle, text: words('zh-CN').diaryText, tag: 'profile' },
     ],
   );
-  const timer = calls[7]?.args ?? {};
+  const timer = calls[9]?.args ?? {};
   assert.equal(timer.message, words('zh-CN').heartbeat);
   assert.equal(timer.repeat, 'every:3600');
   assert.equal(timer.name, 'heartbeat');
   assert.equal(timer.node, 'agent');
   assert.equal(timer.after_seconds, 3600);
-  assert.deepEqual(calls[8]?.args, {
+  assert.deepEqual(calls[10]?.args, {
     msg: { role: 'system', content: words('zh-CN').instruction },
     priority: 'queue',
   });
 
   // The marker is claimed before the first document and finished after the last call: two writes
   // of the one unit, the first of them create-only.
-  assert.equal(calls[3]?.args.expectedRevision, 0);
-  assert.equal(calls[9]?.args.expectedRevision, 1);
+  assert.equal(calls[5]?.args.expectedRevision, 0);
+  assert.equal(calls[11]?.args.expectedRevision, 1);
   const marker = units.get(SETUP_UNIT)?.meta as SetupMarker;
   assert.equal(units.get(SETUP_UNIT)?.revision, 2);
   assert.equal(marker.initialized, true);
@@ -200,30 +226,6 @@ test('a marker that says an earlier start stopped keeps the next start out too',
   assert.equal(outcome, 'skipped');
   assert.deepEqual(order(calls), ['history.load']);
   assert.match(lines.join('\n'), /stopped half way, leaving what it filed alone/);
-});
-
-test('a stack an older version set up is adopted, not set up a second time', async () => {
-  // Before there was a marker, the instruction document was the marker: such a stack is marked as
-  // it stands, and none of its documents, its timer or its system line is filed again.
-  const { caller, calls, units } = wired({
-    documents: [{ title: '服务指南', tag: 'instruction' }],
-  });
-  const lines: string[] = [];
-  const outcome = await runSetup(caller, { log: (line) => lines.push(line) });
-  assert.equal(outcome, 'skipped');
-  assert.deepEqual(order(calls), ['history.load', 'system.language', 'notes.list', 'history.save']);
-  assert.equal(calls[3]?.args.expectedRevision, 0);
-  const marker = units.get(SETUP_UNIT)?.meta as SetupMarker;
-  assert.equal(marker.initialized, true);
-  assert.equal(marker.adopted, true);
-  assert.match(lines.join('\n'), /before the marker existed, adopting it/);
-
-  // The title that stack filed is the one this file used to hold; it is still recognised.
-  assert.equal(LEGACY_INSTRUCTION_TITLE, '服务指南');
-
-  // A document of the reader's own, filed under another title, is not this stack's setup.
-  const other = wired({ documents: [{ title: '我的笔记', tag: 'instruction' }] });
-  assert.equal(await runSetup(other.caller), 'ran');
 });
 
 test('a stack set up in English is filed in English words, titles included', async () => {
@@ -325,6 +327,8 @@ test('a resource without the words fails, and gives the claim back', async () =>
     'history.load',
     'system.language',
     'notes.list',
+    'agent.status',
+    'timer.list',
     'history.save',
     'history.delete',
   ]);
@@ -341,6 +345,8 @@ test('a refused call stops the setup, and the marker keeps the next start out', 
     'history.load',
     'system.language',
     'notes.list',
+    'agent.status',
+    'timer.list',
     'history.save',
     'notes.add',
     'history.save',
@@ -421,6 +427,40 @@ test('after the setup, status says the stack is set up in that language', async 
   assert.equal(await runSetup(caller), 'skipped');
 });
 
+test('agent usage adopts the stack without filing setup twice', async () => {
+  const { caller, calls, units } = wired({ modelCalls: 1 });
+  assert.equal(await runSetup(caller), 'skipped');
+  assert.equal(
+    calls.filter((one) => one.node === 'notes' && one.cap === 'add').length,
+    0,
+    'a reasoning agent is not a new stack',
+  );
+  assert.equal((units.get(SETUP_UNIT)?.meta as SetupMarker).adopted, true);
+  assert.match(calls.map((one) => `${one.node}.${one.cap}`).join('\n'), /agent\.status/);
+});
+
+test('an existing timer adopts the stack without adding a second heartbeat', async () => {
+  const { caller, calls, units } = wired({ timers: 1 });
+  assert.equal(await runSetup(caller), 'skipped');
+  assert.equal(
+    calls.filter((one) => one.node === 'timer' && one.cap === 'set').length,
+    0,
+    'the existing timer is the heartbeat',
+  );
+  assert.equal((units.get(SETUP_UNIT)?.meta as SetupMarker).adopted, true);
+});
+
+test('existing notes adopt the stack without filing the setup again', async () => {
+  const { caller, calls, units } = wired({ notes: [{ title: 'already here' }] });
+  assert.equal(await runSetup(caller), 'skipped');
+  assert.equal(
+    calls.filter((one) => one.node === 'notes' && one.cap === 'add').length,
+    0,
+    'notes already exist',
+  );
+  assert.equal((units.get(SETUP_UNIT)?.meta as SetupMarker).adopted, true);
+});
+
 // The setup is page-called; the page is what this node has to offer after it. It reads the bus
 // this process joined, not an argument from the caller -- and, when the shell sends one, the language
 // of the visit. A visit that names none is drawn in the resource's own default, English.
@@ -443,7 +483,8 @@ test('it offers the runtime setup entry and the introduction/connect page', () =
   assert.doesNotMatch(html, /第一次使用|常用配置|npm install|npm run build/);
   assert.match(html, /npx @node-agent\/shell --name computer/);
   assert.equal((html.match(/class="os-tab"/g) ?? []).length, 3);
-  for (const platform of ['posix', 'windows']) assert.match(html, new RegExp(`data-os-target="${platform}"`));
+  for (const platform of ['posix', 'windows'])
+    assert.match(html, new RegExp(`data-os-target="${platform}"`));
   assert.match(html, /NODE_AGENT_BUS_URL/);
   // The guide is its own page now; the first-visit gate is not mixed into it.
   assert.doesNotMatch(html, /id="onboarding"|id="onboarding-language"/);
@@ -599,4 +640,9 @@ test('the page is drawn in the language of the visit, marker by marker', () => {
 test('a stack with no join token says so, in the reader language', () => {
   assert.match(renderPage('ws://127.0.0.1:8788', ''), /join token is not configured/);
   assert.match(renderPage('ws://127.0.0.1:8788', '', { language: 'zh-CN' }), /未配置 join token/);
+});
+
+test('an unreadable agent status does not block a new setup', async () => {
+  const { caller } = wired({ refuse: 'agent.status' });
+  assert.equal(await runSetup(caller), 'ran');
 });

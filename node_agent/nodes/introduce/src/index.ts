@@ -180,6 +180,66 @@ interface UnitAnswer {
   readonly unit?: { readonly revision?: number; readonly meta?: unknown } | null;
 }
 
+/** The part of the agent's status that says it has reasoned before. */
+interface AgentStatusAnswer {
+  readonly usage?: { readonly model_calls?: unknown } | null;
+}
+
+/** Whether the agent has already talked to a model, even if the setup marker is missing. A stack
+ *  that has reasoned before is not new, and filing the setup a second time would duplicate it. */
+async function agentHasReasoned(
+  caller: IntroduceCaller,
+  log: (line: string) => void,
+): Promise<boolean> {
+  try {
+    const answer = await caller.call<AgentStatusAnswer>('agent', 'status', {});
+    const calls = answer?.usage?.model_calls;
+    return typeof calls === 'number' && calls > 0;
+  } catch (error) {
+    log(
+      'introduce: could not check the agent status: ' +
+        (error instanceof Error ? error.message : String(error)),
+    );
+    return false;
+  }
+}
+
+/** Whether the notes node already holds anything. Notes are filed only after the claim, so a note
+ *  means an earlier setup got that far even if its marker is missing. */
+async function notesAlreadyExist(
+  caller: IntroduceCaller,
+  log: (line: string) => void,
+): Promise<boolean> {
+  try {
+    const answer = await caller.call<unknown>('notes', 'list', {});
+    return Array.isArray(answer) && answer.length > 0;
+  } catch (error) {
+    log(
+      'introduce: could not check the notes: ' +
+        (error instanceof Error ? error.message : String(error)),
+    );
+    return false;
+  }
+}
+
+/** Whether any timer is already pending. The setup files the heartbeat; a pending timer means this
+ *  stack has been through at least part of a setup before, even if the marker is missing. */
+async function timerAlreadyExists(
+  caller: IntroduceCaller,
+  log: (line: string) => void,
+): Promise<boolean> {
+  try {
+    const answer = await caller.call<unknown>('timer', 'list', {});
+    return Array.isArray(answer) && answer.length > 0;
+  } catch (error) {
+    log(
+      'introduce: could not check the timers: ' +
+        (error instanceof Error ? error.message : String(error)),
+    );
+    return false;
+  }
+}
+
 /**
  * The language in force for the user, as the system node resolved it: the tag the profile stores,
  * or the SDK's default while nothing has been chosen.
@@ -315,26 +375,19 @@ export async function runSetup(
       );
       return 'skipped';
     }
-
     language = await languageInForce(caller);
-
-    // A stack the version before this one set up has no marker: its marker was the instruction
-    // document itself. Adopt it -- and write the unit it is missing -- instead of filing the
-    // documents, the heartbeat and the system line a second time.
-    const documents = await caller.call<{ title?: string }[]>('notes', 'list', {
-      tag: 'instruction',
-    });
     const instructionTitle = textOf(resource, INSTRUCTION_TITLE_KEY, language);
-    if (
-      Array.isArray(documents) &&
-      documents.some(
-        (one) =>
-          one.title === LEGACY_INSTRUCTION_TITLE ||
-          (instructionTitle !== undefined && one.title === instructionTitle),
-      )
-    ) {
+    const existingReason = (await notesAlreadyExist(caller, log))
+      ? 'notes already exist, adopting this stack'
+      : (await agentHasReasoned(caller, log))
+        ? 'the agent already has model usage, adopting this stack'
+        : (await timerAlreadyExists(caller, log))
+          ? 'a timer already exists, adopting this stack'
+          : null;
+
+    if (existingReason !== null) {
       await adoptMarker(caller, language, log);
-      log('introduce: this stack was set up before the marker existed, adopting it');
+      log(`introduce: ${existingReason}`);
       return 'skipped';
     }
 
@@ -356,6 +409,7 @@ export async function runSetup(
     const heartbeat = sentence(resource, HEARTBEAT_KEY, language);
 
     filed = true;
+
     await caller.call('notes', 'add', {
       title: sentence(resource, INSTRUCTION_TITLE_KEY, language),
       text: instruction,
@@ -371,6 +425,7 @@ export async function runSetup(
       text: sentence(resource, DIARY_TEXT_KEY, language),
       tag: 'profile',
     });
+
     await caller.call('timer', 'set', {
       mode: 'countdown',
       after_seconds: 3600,
