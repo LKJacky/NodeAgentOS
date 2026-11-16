@@ -1,6 +1,6 @@
 {
   "name": "@node-agent/provider",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "description": "Independent named LLM provider node (TypeScript)",
   "publisher": "node-agent",
@@ -188,5 +188,8 @@
   ],
   "publishConfig": {
     "access": "public"
+  },
+  "bin": {
+    "provider": "dist/index.js"
   }
 }
