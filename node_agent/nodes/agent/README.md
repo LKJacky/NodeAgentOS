@@ -11,7 +11,8 @@ there is no bus here, no host here, and no socket here.
 | `chat`         | hand the agent one message; answers with the lines its turn added                          |
 | `chat_no_wait` | hand it one message and do not wait; answers `queued` / `interpreted`                      |
 | `history`      | a bounded window of the transcript (`from`, `count`, at most 200 lines)                    |
-| `status`       | `idle` / `generating` / `tool` / `stopping`, the queue behind it, cumulative usage         |
+| `status`       | `idle` / `generating` / `tool` / `stopping`, the queue behind it, cumulative usage, and where the answer being written has got to (`stream`: its id and last seq, no text) |
+| `stream`       | the answer being written right now, in full and once (`{stream: {id, messageId, seq, content, reasoning_content, tool_calls}}`, or `{stream: null}`): what a page asks for to fill a gap in the deltas. Hidden from other nodes (`expose: false`, like `ui`): it is the page's own read, not a tool |
 | `stop`         | cut that agent's turn short — and nothing else: the sub-agents, the queue behind it and the runtime itself are left alone |
 | `provider`     | list the provider rows this agent can use, or select one                                   |
 | `answer`       | the page's way back in: the answer to a question the model asked                           |
@@ -99,9 +100,49 @@ belongs to whoever started the node) and markdown-it inlined, so the page draws 
 second HTTP route. When markdown-it is not installed the page gets an escaped-text renderer with the
 same `window.markdownit(...).render(text)` surface.
 
-The page follows the node over its own topic: transcript lines, `{type: 'stream'}` snapshots while
-an answer streams, `{type: 'ask'}` when the model asks a question and `{type: 'ask_timeout'}` when
-nobody answered in time.
+The page follows the node over its own topic: transcript lines, the deltas of an answer being written, `{type: 'ask'}` when the model asks a question and `{type: 'ask_timeout'}` when nobody answered in time.
+
+### What an answer costs on the bus
+
+An answer used to be published as a full snapshot of itself on every token — the whole message rebuilt and
+serialised per chunk, so one frame per token grew with the length of the answer. What goes out now is the
+increment, numbered:
+
+```
+{ type: 'stream_start', id, agent, messageId, role: 'assistant', seq: 0 }
+{ type: 'stream_delta', id, agent, messageId, seq: 1, content: 'Hel' }
+{ type: 'stream_delta', id, agent, messageId, seq: 2, content: 'lo' }
+{ type: 'stream_delta', id, agent, messageId, seq: 3, reasoning_content: 'hmm' }
+{ type: 'stream_delta', id, agent, messageId, seq: 4, tool_calls: [{ index: 0, id, name, arguments: '{"comm' }] }
+{ type: 'stream_end',   id, agent, messageId, seq: 5, canceled: false }
+```
+
+- A delta carries only what just arrived (`content` / `reasoning_content` / one call's new fragment) and
+the `seq` that orders it. The line so far is never sent as part of it.
+- The assembled line is still committed the way every line is — an array of messages on the same topic
+(`onCommit`) — and that is what a page draws. `stream_end` says the draft is done; `canceled: true` means
+the committed line is the partial answer a stop left behind.
+- A page that receives anything but the next `seq` (a lost frame, a reconnected stream, a stream it never
+saw start) does **not** append: it asks `status` for the live stream's id/seq and `stream` for the line as
+it stands, and adopts that. Nothing is glued together silently. `stream` is `expose: false` (and
+`allow_edit_permission: false`), like `ui`: the bus's `authorize` lets the page's own front end (`webui`)
+call it, while sibling nodes never see it in the directory and the model is never offered it as a tool —
+the one payload that carries the line so far is reachable only by the page it is for.
+- `src/stream.ts` holds the protocol and the assembly (`StreamAssembly`); the page carries the same rule in
+its own script (`<script id="page-model">`), and `tests/retention.test.mjs` runs both over one set of
+deltas so the two cannot drift.
+
+A page also keeps a bounded amount of it: at most 200 messages per agent (`RETENTION.maxMessages`), oldest
+first and only when the reader is at the tail, and a page nobody has looked at for five minutes lets go of
+its messages, draft and boxes entirely (`RETENTION.idleTtlMs`) and reads its window again when the reader
+comes back. Both numbers can be overridden with `globalThis.AGENT_RETENTION` (that is how the tests run a
+cap of three and a TTL of milliseconds).
+
+**Compatibility.** The protocol is additive for the node's own page and a break for anything else that
+read `{type: 'stream', message}`: an old page draws nothing from the new events (it treats each as
+"something changed" and re-reads `history`, so it stays correct but pays a read per token), and the new
+page ignores a legacy snapshot for the same reason. Reload the page after upgrading; no other node and no
+part of `@node-agent/sdk` reads these events.
 
 ## The session and its two owners
 
@@ -160,7 +201,16 @@ node whose units are a map, an injectable provider and a log of what the agent p
   ordinary capabilities as the parent, is reached by `run_on_node` without a frame, keeps its own
   transcript and status, cannot create a sub-agent, and takes its units with it when destroyed;
 - `ui.test.mjs`, `ask-card.test.mjs` — the page's own markup, the agent switch row and the question
-  card.
+  card; the deltas of a stream assembled into the tail and a gap resynced (never appended), the end of
+  a stream, a reconnected page joining one, the fixed message cap, the viewport rule, the TTL that lets
+  an unseen page go, and a streaming page that is never let go;
+- `stream.test.ts` — the delta protocol on the bus: consecutive chunks publish only what arrived and no
+  frame carries the line so far, the whole line is still committed, two subscribers accumulate the same
+  answer, `status`/`stream` say where a stream stands, a stop ends the stream with the partial answer,
+  and a sub-agent streams on its own topic;
+- `retention.test.mjs` — the page's two pure halves on their own: the cap (`trimPrefix`, with the lines
+  that may not go), the TTL (`releaseDue`, `plan`), the delta assembly and the gap rule — and the page's
+  assembly run against the node's over the same deltas.
 
 ## Diagnostic log
 

@@ -64,6 +64,29 @@ test('the manifest declares the capabilities this package serves', () => {
   assert.match(String(manifest.caps['chat']?.description), /hand this agent one message/);
 });
 
+test('the stream capability is the page\u2019s own: hidden from other nodes, still served to the page', () => {
+  const manifest = manifestFromPackage(
+    JSON.parse(readFileSync(new URL('package.json', ROOT), 'utf8')),
+    { directory: fileURLToPath(ROOT) },
+  );
+  const stream = manifest.caps['stream'] as Record<string, unknown>;
+  assert.ok(stream, 'the page has a way to fill a gap in the deltas');
+  // It carries the line so far, so it is not something a sibling node or the model may ask for - and
+  // there is no permission row that could grant it. The page (webui) reaches it the way it reaches
+  // `ui`: a page's own read, not a door in the directory.
+  assert.equal(stream.expose, false, 'not offered to sibling nodes');
+  assert.equal(stream.allow_edit_permission, false, 'and not a policy anybody can edit');
+  assert.match(
+    String(stream.description),
+    /gap|delta/i,
+    'it is for resyncing a stream, not a transcript read',
+  );
+  assert.ok(
+    SOURCE.includes('${NODE}.stream'),
+    'the page is the caller: one read, only when a delta went missing',
+  );
+});
+
 test('the page calls only capabilities this node has', () => {
   const called = new Set(
     [...SOURCE.matchAll(/\$\{NODE\}\.([a-z_]+)/g)].map((match) => match[1] as string),
@@ -72,7 +95,15 @@ test('the page calls only capabilities this node has', () => {
   for (const cap of called) {
     assert.ok((CAPABILITIES as readonly string[]).includes(cap), `page calls ${cap}`);
   }
-  for (const wanted of ['chat_no_wait', 'history', 'status', 'stop', 'provider', 'answer']) {
+  for (const wanted of [
+    'chat_no_wait',
+    'history',
+    'status',
+    'stream',
+    'stop',
+    'provider',
+    'answer',
+  ]) {
     assert.ok(called.has(wanted), `the page uses ${wanted}`);
   }
 });

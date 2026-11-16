@@ -38,7 +38,16 @@ import {
   StreamHub,
   type ModelOptions,
 } from './model.js';
-import type { Message, Provider, ToolCall, UsageSummary } from './types.js';
+import {
+  StreamAssembly,
+  type StreamDelta,
+  type StreamDeltaEvent,
+  type StreamEnd,
+  type StreamEventOut,
+  type StreamStart,
+  type StreamState,
+} from './stream.js';
+import type { Message, Provider, ToolCall, ToolSpec, UsageSummary } from './types.js';
 
 /** How many messages one `history` answer may carry. */
 export const HISTORY_MAX = 200;
@@ -84,21 +93,27 @@ export type RuntimeOptions = {
   readonly icon?: string;
   /** Called with every line committed to the transcript, for the page. */
   readonly onCommit?: ModelOptions['onCommit'];
-  readonly onUpdate?: ModelOptions['onUpdate'];
+  /** Called with every stream event published on this agent's topic, for an embedder that draws its
+   *  own page. The bus is the default: the events go to whoever subscribed. */
+  readonly onStream?: (event: StreamEventOut) => void;
 };
 
-/** What `agent.status` answers: what the agent is doing, what is waiting behind it, what it spent. */
+/** What `agent.status` answers: what the agent is doing, what is waiting behind it, what it spent,
+ *  and where the answer it is writing has got to. */
 export type AgentStatus = {
   state: 'idle' | 'generating' | 'tool' | 'stopping';
   queued: Message[];
   usage: UsageSummary;
+  /** The stream a page can join: its id, the line it will become, and the last seq published. No
+   *  text: the whole draft is only ever sent when a page asks for it (`stream`). */
+  stream: { id: string; messageId: string; seq: number } | null;
 };
 
 /** One row of the page's agent switch: who is there to look at, and what each one is doing. */
 export type AgentRow = {
   /** What an `agent` argument names it with. */
   name: string;
-  /** The topic its transcript, snapshots and questions are published on. */
+  /** The topic its transcript, its stream and its questions are published on. */
   topic: string;
   /** The agent that started it, or null for the main agent. */
   parent: string | null;
@@ -258,6 +273,10 @@ export class AgentRuntime {
   #idleWaiters: (() => void)[] = [];
   #pumping = false;
   #seq = 0;
+  /** The answer this runtime is writing right now, or null between rounds. One per runtime: a
+   *  sub-agent's page sees only its own topic, so two answers never meet in one assembly. */
+  #live: StreamAssembly | null = null;
+  #streamSeq = 0;
   #step: { controller: AbortController; tool: ToolCall | null } | null = null;
   #duringStop = false;
   #closed = false;
@@ -367,7 +386,7 @@ export class AgentRuntime {
       compressionThreshold: this.options.compressionThreshold,
       compressionTokens: this.options.compressionTokens,
       onCommit: this.options.onCommit ?? ((messages) => this.#announce(messages)),
-      onUpdate: this.options.onUpdate ?? ((message) => this.#announceStream(message)),
+      onDelta: (delta) => this.#announceDelta(delta),
     };
     let model: CachedModel =
       history === null
@@ -429,13 +448,83 @@ export class AgentRuntime {
     }
   }
 
-  /** A snapshot of the answer while it streams. Not a transcript entry. */
-  #announceStream(message: Message): void {
-    try {
-      this.scope.publish(this.identity.topic, { type: 'stream', message });
-    } catch {
-      // Same: watching a turn is a convenience, not a deliverable.
+  /** Publish one stream event, on this agent's topic and to an embedder that asked for them. A bus
+   *  that cannot publish is not a failed turn: watching one is a convenience, not a deliverable. */
+  #announceStream(event: StreamEventOut): void {
+    const onStream = this.options.onStream;
+    if (onStream !== undefined) {
+      try {
+        onStream(event);
+      } catch {
+        // An embedder that throws must not fail the turn it was watching.
+      }
     }
+    try {
+      this.scope.publish(this.identity.topic, event);
+    } catch {
+      // A listener that is gone is not a turn that failed.
+    }
+  }
+
+  /** The start of one round's answer: the id a delta names, the agent writing it and the line it will
+   *  become when the round commits. Published lazily - on the first delta - so a round that streams
+   *  no news spends no events on an empty draft. */
+  #startStream(): StreamAssembly {
+    this.#streamSeq += 1;
+    const id = `${this.name}#${this.#streamSeq}`;
+    const live = new StreamAssembly(id, this.name, `m${this.#streamSeq}`);
+    this.#live = live;
+    const start: StreamStart = {
+      type: 'stream_start',
+      id,
+      agent: this.name,
+      messageId: live.messageId,
+      role: 'assistant',
+      seq: 0,
+    };
+    this.#announceStream(start);
+    return live;
+  }
+
+  /** One delta of the answer being written: only what just arrived, and the seq that says which one
+   *  it is. This is the whole point of the protocol - the accumulated line is never republished. */
+  #announceDelta(delta: StreamDelta): void {
+    const live = this.#live ?? this.#startStream();
+    live.apply(delta);
+    live.seq += 1;
+    const event: StreamDeltaEvent = {
+      type: 'stream_delta',
+      id: live.id,
+      agent: live.agent,
+      messageId: live.messageId,
+      seq: live.seq,
+      ...delta,
+    };
+    this.#announceStream(event);
+  }
+
+  /** The round is over: its line is committed (or a stop cut it short) and the draft is done. The
+   *  transcript is the truth from here, so this only tells a page to drop the tail it assembled. */
+  #endStream(canceled: boolean): void {
+    const live = this.#live;
+    this.#live = null;
+    if (live === null) return;
+    const end: StreamEnd = {
+      type: 'stream_end',
+      id: live.id,
+      agent: live.agent,
+      messageId: live.messageId,
+      seq: live.seq + 1,
+      canceled,
+    };
+    this.#announceStream(end);
+  }
+
+  /** What is being written right now, as it stands, or null between rounds. The one payload that
+   *  carries the line so far: a page that lost a delta - a dropped frame, a reconnected stream, a
+   *  gap in the seq - asks for it once instead of guessing what it missed. */
+  streamState(): StreamState | null {
+    return this.#live === null ? null : this.#live.state();
   }
 
   /** History files units under the calling node, and the whole family shares one calling node: the
@@ -930,7 +1019,7 @@ export class AgentRuntime {
     const model = await this.#ensureModel();
     const tools = this.env?.tools ?? [];
     agentLog('debug', 'step.start', { agent: this.name, tools: tools.length });
-    const { message, canceled: streamed } = await model.chatStream(tools, { signal });
+    const { message, canceled: streamed } = await this.#runRound(model, tools, signal);
     agentLog('debug', 'step.end', {
       agent: this.name,
       canceled: streamed,
@@ -983,6 +1072,25 @@ export class AgentRuntime {
       return true;
     }
     return calls.length === 0;
+  }
+
+  /** One model round with its stream closed whatever happens: a round that raised after publishing
+   *  some deltas still has to tell the page to stop drawing a tail that will never be committed, and
+   *  a stopped round says so in the event that ends it. */
+  async #runRound(
+    model: CachedModel,
+    tools: readonly ToolSpec[],
+    signal: AbortSignal,
+  ): Promise<{ message: Message; canceled: boolean }> {
+    let round: { message: Message; canceled: boolean };
+    try {
+      round = await model.chatStream(tools, { signal });
+    } catch (error) {
+      this.#endStream(signal.aborted);
+      throw error;
+    }
+    this.#endStream(round.canceled);
+    return round;
   }
 
   /** Put a round that raised into the transcript, so the turn does not end on silence. */
@@ -1046,10 +1154,15 @@ export class AgentRuntime {
 
   status(): AgentStatus {
     const model = this.model;
+    const live = this.#live;
     return {
       state: this.phase(),
       queued: this.queuedMessages(),
       usage: { ...(model?.usage ?? emptyUsage()) },
+      stream:
+        live === null
+          ? null
+          : { id: live.id, messageId: live.messageId, seq: live.seq },
     };
   }
 
@@ -1087,6 +1200,8 @@ export class AgentRuntime {
   /** Stop and close: nothing queued runs, and every caller is answered. */
   async close(): Promise<void> {
     this.#closed = true;
+    // A page still drawing a tail has to be told the turn it was watching is over.
+    this.#endStream(true);
     for (const child of this.#children.values()) await child.close();
     this.#children.clear();
     this.#step?.controller.abort(new Error('agent is closed'));

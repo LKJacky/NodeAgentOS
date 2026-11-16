@@ -121,8 +121,20 @@
             "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
           }
         },
-        "description": "read this agent's state (idle / generating / calling a tool / stopping), the messages waiting behind it, and cumulative token usage",
+        "description": "read this agent's state (idle / generating / calling a tool / stopping), the messages waiting behind it, cumulative token usage, and where the answer it is writing has got to (its stream id and last seq)",
         "expose": true
+      },
+      "stream": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "the answer this agent is writing right now, in full and once: the stream id, the seq it has reached, and the text so far. The page asks for it to fill a gap in the deltas it received (a lost frame, a reconnected stream); a delta event itself never carries the whole line",
+        "expose": false,
+        "allow_edit_permission": false
       },
       "stop": {
         "type": "object",

@@ -123,6 +123,12 @@ export class AgentNode extends Node {
       chat_no_wait: (args: ToolArgs) => this.#chatNoWait(args),
       history: async (args: ToolArgs) => (await this.#target(args)).history(args),
       status: async (args: ToolArgs) => (await this.#target(args)).status(),
+      // The answer being written right now, as it stands, or `{stream: null}` between rounds. This is
+      // the node's own read for its page - `expose: false`, like `ui` - so it is not offered to
+      // sibling nodes or to the model as a tool. A page asks for it once when it has a gap in the
+      // deltas to fill (a lost frame, a reconnected stream): the one call that carries the line so
+      // far, and no token ever goes through it.
+      stream: async (args: ToolArgs) => ({ stream: (await this.#target(args)).streamState() }),
       stop: async (args: ToolArgs) => this.#stop(args),
       provider: async (args: ToolArgs) => (await this.#target(args)).handleProvider(args),
       answer: async (args: ToolArgs) => (await this.#target(args)).answer(args),

@@ -6,6 +6,7 @@
 import type { BindingScope } from '@node-agent/sdk';
 import type { CacheHistory } from './cache.js';
 import { emptyUsage, tokenUsage, utcNow } from './helpers.js';
+import { isEmptyDelta, type StreamDelta } from './stream.js';
 import type {
   ChatReply,
   ChatRequest,
@@ -99,8 +100,10 @@ export type ModelOptions = {
   readonly compressionTokens?: number;
   /** Called with every line as it is committed: the page hears a turn happen without polling. */
   readonly onCommit?: (messages: readonly Message[]) => Promise<void> | void;
-  /** Called with a snapshot of the answer while it streams. Not a transcript entry. */
-  readonly onUpdate?: (message: Message) => Promise<void> | void;
+  /** Called with each increment of the answer while it streams — the text that just arrived, or one
+   *  tool call's new fragment. Never the line so far: publishing that per token is what made one bus
+   *  frame per token grow with the answer. Not a transcript entry. */
+  readonly onDelta?: (delta: StreamDelta) => Promise<void> | void;
 };
 
 /** One round's outcome: the assistant line it committed, and whether the turn was cut short. */
@@ -118,14 +121,14 @@ export class CachedModel {
   readonly compressionTokens: number;
   nextForgetIndex = -1;
   readonly #onCommit: ModelOptions['onCommit'];
-  readonly #onUpdate: ModelOptions['onUpdate'];
+  readonly #onDelta: ModelOptions['onDelta'];
 
   constructor(provider: Provider, options: ModelOptions = {}) {
     this.provider = provider;
     this.compressionThreshold = options.compressionThreshold ?? 128 * 1024;
     this.compressionTokens = options.compressionTokens ?? 32 * 1024;
     this.#onCommit = options.onCommit;
-    this.#onUpdate = options.onUpdate;
+    this.#onDelta = options.onDelta;
   }
 
   /** Point the model at another provider. A size belongs to the provider that measured it, so the
@@ -205,19 +208,32 @@ export class CachedModel {
           canceled = true;
           break;
         }
-        if (event.type === 'content') content += event.text;
-        else if (event.type === 'reasoning') reasoning += event.text;
-        else if (event.type === 'tool_call') {
+        if (event.type === 'content') {
+          content += event.text;
+          await this.#delta({ content: event.text });
+        } else if (event.type === 'reasoning') {
+          reasoning += event.text;
+          await this.#delta({ reasoning_content: event.text });
+        } else if (event.type === 'tool_call') {
           const call = calls.get(event.index) ?? { id: '', name: '', arguments: '' };
           calls.set(event.index, {
             id: event.id ?? call.id,
             name: event.name ?? call.name,
             arguments: call.arguments + (event.arguments ?? ''),
           });
+          await this.#delta({
+            tool_calls: [
+              {
+                index: event.index,
+                ...(event.id !== undefined ? { id: event.id } : {}),
+                ...(event.name !== undefined ? { name: event.name } : {}),
+                ...(event.arguments !== undefined ? { arguments: event.arguments } : {}),
+              },
+            ],
+          });
         } else if (event.type === 'usage') rawUsage = event.usage;
         else if (event.type === 'state') providerState = event.state;
         else if (event.type === 'end') nextResponseId = event.previous_response_id ?? null;
-        if (this.#onUpdate !== undefined) await this.#onUpdate(snapshot());
       }
     } catch (error) {
       // A stream the reader stopped throws whatever the transport calls an abort; the partial answer
@@ -261,6 +277,13 @@ export class CachedModel {
       this.sentMessages = nextResponseId != null ? this.activeMessages().length : 0;
     }
     return { message, canceled };
+  }
+
+  /** One increment to the watcher, if there is one. A chunk that carries nothing is not news: it is
+   *  not published, and no seq is spent on it. */
+  async #delta(delta: StreamDelta): Promise<void> {
+    if (this.#onDelta === undefined || isEmptyDelta(delta)) return;
+    await this.#onDelta(delta);
   }
 
   /** Commit lines to the transcript. The line's time is written where it joins the transcript, so a

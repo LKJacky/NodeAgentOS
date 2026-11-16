@@ -35,6 +35,14 @@ const t = (key, params) => {
   return text === undefined ? key : text.get('en', params);
 };
 
+//: The two pure halves of the page - how a stream is assembled out of deltas, and how much one page
+//: keeps. They are their own script on purpose: a test reads them directly (`page.retention`), and the
+//: page's own script only reads the page's numbers and writes the result.
+const PAGE_MODEL = HTML.slice(
+  HTML.indexOf('<script id="page-model">') + '<script id="page-model">'.length,
+  HTML.indexOf('</script>', HTML.indexOf('<script id="page-model">')),
+);
+
 //: The elements the page looks up by id. `text` is the composer, `send` and `stop` are the controls.
 const IDS = [
   'pages',
@@ -182,6 +190,10 @@ async function openPage({
   //: flight: on a bus that read is a round trip, and the page has to land it anyway.
   historyDelayMs = 0,
   hiddenLayout = false,
+  //: The page's own retention numbers, for a test that cannot wait five minutes: `maxMessages` is the
+  //: fixed cap and `idleTtlMs` the TTL of a page nobody is looking at. `sweepMs` is how often the page
+  //: asks itself whether anything is due.
+  retention = {},
 } = {}) {
   const status = { state };
   const dom = {
@@ -259,20 +271,36 @@ async function openPage({
 
   const calls = [];
   const feeds = [];
+  // What `agent.stream` answers: a test sets `streamState.value` to put a draft in front of the page
+  // (what a node answers when a page asks where the stream it is writing has got to).
+  const streamState = { value: null };
   const values = {
     // The one read these tests are about: the node's word for what it is doing.
     'agent.status': (args) => ({
       state: agentStates[args?.agent] ?? status.state,
       queued: [],
       usage: { prompt_tokens: 1, completion_tokens: 2, total_tokens: 3 },
+      stream: streamState.status ?? null,
     }),
     'agent.history': async (args) => {
       if (historyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, historyDelayMs));
       const held = args?.agent === undefined ? history : (agentHistory[args.agent] ?? history);
-      return { from: 0, total: held.length, messages: held };
+      // A window of the transcript, the way the node answers one: `from`/`count` are absolute indexes,
+      // and a read without `from` is the newest `count` lines (or all of them, without a count).
+      const count = Number.isInteger(args?.count) ? args.count : null;
+      const from = Number.isInteger(args?.from)
+        ? Math.min(Math.max(0, args.from), held.length)
+        : count === null
+          ? 0
+          : Math.max(0, held.length - count);
+      const end = count === null ? held.length : Math.min(held.length, from + count);
+      return { from, total: held.length, messages: held.slice(from, end) };
     },
     'agent.chat_no_wait': () => 'queued',
     'agent.stop': () => 'stopping the running turn',
+    // The answer being written right now, as it stands: what a page asks for when it has a gap in the
+    // deltas. `streamState` is a test's handle on it; the default is "nothing is being written".
+    'agent.stream': () => ({ stream: streamState.value }),
     'agent.provider': () => ({
       active: 'default',
       providers: [{ name: 'default', active: true }],
@@ -310,19 +338,68 @@ async function openPage({
       const value = values[tool] === undefined ? null : await values[tool](args);
       return { ok: true, json: async () => ({ ok: true, value }) };
     },
-    // The node's events: a snapshot or an announced line, delivered by hand.
+    // The node's events: a delta of an answer being written, an announced line, a question — delivered
+    // by hand. `chunk()` writes the answer as it stands, and the stand-in turns that into the deltas a
+    // real node publishes (see `EventSource.send`), so a test says `chunk('one two')` and the page sees
+    // `+two`, exactly as it would over the bus.
     EventSource: class {
       constructor(url) {
         this.url = url;
+        this.live = new Map();
         feeds.push(this);
       }
       send(value, topic = 'agent', node = 'agent') {
-        this.onmessage({ data: JSON.stringify({ node, topic, value }) });
+        for (const event of this.translate(value, topic)) {
+          this.onmessage({ data: JSON.stringify({ node, topic, value: event }) });
+        }
+      }
+      /** A test writes the answer as it stands; the page is handed what a node would have sent for
+       *  it — one `stream_start` for a stream, then a delta carrying only what was added. */
+      translate(value, topic) {
+        if (value?.type !== 'stream') return [value];
+        const text = String(value.message?.content ?? '');
+        const reasoning = String(value.message?.reasoning_content ?? '');
+        const held = this.live.get(topic);
+        if (held === undefined || !text.startsWith(held.text)) {
+          const id = `s${(held?.round ?? 0) + 1}`;
+          this.live.set(topic, { id, round: (held?.round ?? 0) + 1, seq: 0, text: '', reasoning: '' });
+          return [
+            {
+              type: 'stream_start',
+              id,
+              agent: topic === 'agent' ? 'agent' : topic.split('.').at(-1),
+              messageId: `m${id}`,
+              role: 'assistant',
+              seq: 0,
+            },
+            ...this.translate(value, topic),
+          ];
+        }
+        const added = text.slice(held.text.length);
+        const thought = reasoning.slice(held.reasoning.length);
+        held.text = text;
+        held.reasoning = reasoning;
+        if (added === '' && thought === '') return [];
+        held.seq += 1;
+        return [
+          {
+            type: 'stream_delta',
+            id: held.id,
+            agent: topic === 'agent' ? 'agent' : topic.split('.').at(-1),
+            messageId: `m${held.id}`,
+            seq: held.seq,
+            ...(added !== '' ? { content: added } : {}),
+            ...(thought !== '' ? { reasoning_content: thought } : {}),
+          },
+        ];
       }
       close() {
         this.closed = true;
       }
       open() {
+        // A reconnected feed knows nothing about the stream the page was assembling: the sequence
+        // starts over, as it does on the bus.
+        this.live.clear();
         this.onopen();
       }
     },
@@ -338,11 +415,14 @@ async function openPage({
     clearInterval: () => {},
     alert: () => {},
     console,
+    // The page's own retention numbers, before it reads them (`RETENTION` spreads this over its defaults).
+    AGENT_RETENTION: retention,
   };
 
   sandbox.window.NodeAgentEvents = { connect: (url) => new sandbox.EventSource(url) };
   vm.createContext(sandbox);
   vm.runInContext(MATH_RULES, sandbox);
+  vm.runInContext(PAGE_MODEL, sandbox);
   vm.runInContext(SCRIPT, sandbox);
   await settle();
 
@@ -351,6 +431,12 @@ async function openPage({
     calls,
     status,
     feeds,
+    //: The page's pure halves, run in the same sandbox the page ran in: a test can assemble a stream or
+    //: ask what a page may drop without a browser in between.
+    stream: sandbox.agentStream,
+    retention: sandbox.agentRetention,
+    /** What `agent.stream` answers, and the last status a test made the node report. */
+    streamState,
     agents: dom.ids.get('agents'),
     // What a right click on a sub-agent's tab opens, and the question the delete asks afterwards.
     menu: dom.ids.get('agent-menu'),
@@ -1345,4 +1431,277 @@ test('a burst of snapshots is not a burst of calls', async () => {
     .children.map((child) => child.dataset?.group)
     .filter(Boolean);
   assert.deepEqual(groups, ['m0', 'm1'], 'and the last snapshot is the tail on screen');
+});
+
+/** The group keys one page's transcript is drawing, in order. */
+function groupsOf(logBox) {
+  return logBox.children.map((child) => child.dataset?.group).filter(Boolean);
+}
+
+/** The words inside a stand-in box, however deep they were built. A message's text sits either in a
+ *  leaf the page wrote (`textContent`) or in the markdown it set on one (`innerHTML`, which this
+ *  stand-in does not parse into children), so both are read. */
+function textOf(box) {
+  if (box === null || box === undefined) return '';
+  const inner = (box.children ?? []).map(textOf).filter((text) => text !== '');
+  if (inner.length > 0) return inner.join(' ');
+  if (typeof box.innerHTML === 'string' && box.innerHTML !== '') return box.innerHTML;
+  return typeof box.textContent === 'string' ? box.textContent : '';
+}
+
+/** One page's tail: the box the page drew for the draft it is assembling. */
+function tailOf(logBox) {
+  return textOf(logBox.children.find((child) => child.dataset?.group === 'm1'));
+}
+
+// The page no longer receives the answer so far: a node sends `stream_start`, then one `stream_delta`
+// per chunk, and the tail on screen is what the page adds up. A delta that is not the next one - a lost
+// frame, a stream this page never saw start - is never appended to: the page asks the node where the
+// stream stands and adopts that line whole, because two halves glued together would say something the
+// model never said.
+test('deltas are assembled into the tail, and a gap is resynced instead of appended', async () => {
+  const page = await openPage({ state: 'generating', history: [{ role: 'user', content: 'hi' }] });
+  await settle(120);
+  const logBox = page.dom.ids.get('log');
+  const delta = (seq, content) => ({
+    type: 'stream_delta',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    seq,
+    content,
+  });
+
+  page.feed.send({
+    type: 'stream_start',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    role: 'assistant',
+    seq: 0,
+  });
+  page.feed.send(delta(1, 'half'));
+  page.feed.send(delta(2, ' an'));
+  await settle(120);
+  assert.deepEqual(groupsOf(logBox), ['m0', 'm1'], 'the committed line and the tail');
+  assert.match(tailOf(logBox), /half an/, 'the page added the two deltas up');
+
+  // seq 4, with 3 missing. What the page holds is not the answer any more.
+  page.streamState.value = {
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    role: 'assistant',
+    seq: 4,
+    content: 'half an answer',
+    reasoning_content: '',
+    tool_calls: [],
+  };
+  page.feed.send(delta(4, ' answer'));
+  await settle(180);
+
+  assert.ok(
+    page.calls.some(({ tool }) => tool === 'agent.stream'),
+    'the page asked the node where the stream stands',
+  );
+  assert.match(tailOf(logBox), /half an answer/, 'and drew the line the node has');
+  assert.doesNotMatch(tailOf(logBox), /half anhalf|half an half/, 'nothing was glued together');
+
+  // Back in step: the next delta lands on top of what was adopted.
+  page.feed.send(delta(5, '!'));
+  await settle(120);
+  assert.match(tailOf(logBox), /half an answer!/);
+
+  // Nothing left to resync (the round ended while this page was not looking, or a caller that may not
+  // read `stream` asked): the tail is dropped and the transcript is read - the page never keeps a
+  // draft it cannot vouch for.
+  page.streamState.value = null;
+  const reads = () => page.calls.filter(({ tool }) => tool === 'agent.history').length;
+  const before = reads();
+  page.feed.send({ ...delta(9, ' stray'), id: 's2' });
+  await settle(180);
+  assert.ok(reads() > before, 'a gap with no live stream reads the transcript');
+  assert.deepEqual(groupsOf(logBox), ['m0'], 'and no unverifiable tail is left on screen');
+});
+
+// A stream that ends is not a line the page keeps drawing: the transcript carries it now, so the tail is
+// dropped and the window is read again.
+test('the end of a stream drops the tail and reads the transcript', async () => {
+  const page = await openPage({ state: 'generating', history: [{ role: 'user', content: 'hi' }] });
+  await settle(120);
+  const logBox = page.dom.ids.get('log');
+  const reads = () => page.calls.filter(({ tool }) => tool === 'agent.history').length;
+
+  page.feed.send({
+    type: 'stream_start',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    role: 'assistant',
+    seq: 0,
+  });
+  page.feed.send({
+    type: 'stream_delta',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    seq: 1,
+    content: 'an answer',
+  });
+  await settle(120);
+  assert.deepEqual(groupsOf(logBox), ['m0', 'm1'], 'the draft is the tail');
+
+  const before = reads();
+  page.feed.send({
+    type: 'stream_end',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    seq: 2,
+    canceled: false,
+  });
+  await settle(180);
+  assert.ok(reads() > before, 'the transcript is read when the stream ends');
+  assert.deepEqual(groupsOf(logBox), ['m0'], 'and the assembled tail is gone');
+});
+
+// A page that comes back to a stream already being written has no draft and no seq. It joins at the
+// node's own seq - `status` says which stream, one `stream` read says where it stands - instead of
+// starting from the middle and dropping what it missed.
+test('a reconnected page joins the stream the node is writing', async () => {
+  const page = await openPage({ state: 'generating', history: [{ role: 'user', content: 'hi' }] });
+  await settle(120);
+  const logBox = page.dom.ids.get('log');
+  page.streamState.status = { id: 's1', messageId: 'm1', seq: 2 };
+  page.streamState.value = {
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    role: 'assistant',
+    seq: 2,
+    content: 'already written',
+    reasoning_content: '',
+    tool_calls: [],
+  };
+
+  page.feed.open();
+  await settle(220);
+
+  assert.ok(page.calls.some(({ tool }) => tool === 'agent.stream'), 'the page asked for the draft');
+  assert.match(tailOf(logBox), /already written/, 'and drew what the node had written so far');
+
+  // The next delta is the one after the adopted seq, so it lands on top.
+  page.feed.send({
+    type: 'stream_delta',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    seq: 3,
+    content: ' and more',
+  });
+  await settle(120);
+  assert.match(tailOf(logBox), /already written and more/);
+});
+
+// ---- what one page keeps ----
+//
+// A transcript is unbounded and a browser is not. A page holds a fixed number of lines, a page nobody is
+// looking at is let go of after a while, and both decisions are made by `agentRetention`, which is
+// tested on its own in `retention.test.mjs`. These tests run the whole page with a cap of three and a
+// TTL of milliseconds, so the behaviour is visible here rather than in five minutes.
+
+/** One page's transcript box, and the names of the lines it is drawing. */
+const LINES = Array.from({ length: 8 }, (_, at) => ({
+  role: at % 2 === 0 ? 'user' : 'assistant',
+  content: `line ${at}`,
+}));
+
+test('a page keeps its cap of messages and lets the oldest go', async () => {
+  const history = [...LINES];
+  const page = await openPage({ history, retention: { maxMessages: 3 } });
+  await settle(150);
+  const logBox = page.dom.ids.get('log');
+  assert.equal(groupsOf(logBox).length, 3, 'three lines, not eight');
+  assert.match(textOf(logBox.children.at(-1)), /line 7/, 'the newest line is still there');
+
+  // A line arrives. The page asks for what it is missing from where its window stops, and drops one more
+  // of the oldest to stay inside the cap.
+  history.push({ role: 'user', content: 'a new line' });
+  page.feed.send([{ role: 'user', content: 'a new line' }]);
+  await settle(180);
+  const reload = page.calls.filter(({ tool }) => tool === 'agent.history').at(-1);
+  assert.equal(reload.args.from, 8, 'the read starts where the window the page held stopped');
+  assert.equal(groupsOf(logBox).length, 3, 'and it is still three lines');
+  assert.match(textOf(logBox.children.at(-1)), /a new line/, 'with the newest line at its end');
+});
+
+test('a reader scrolled up keeps the lines around them, even over the cap', async () => {
+  const history = [...LINES];
+  const page = await openPage({ history, retention: { maxMessages: 3 } });
+  await settle(150);
+  const logBox = page.dom.ids.get('log');
+  assert.equal(groupsOf(logBox).length, 3, 'the page opened inside its cap');
+
+  // The reader is reading the top of the window: what is in front of them is not taken away.
+  logBox.scrollTop = 0;
+  history.push({ role: 'user', content: 'a new line' });
+  page.feed.send([{ role: 'user', content: 'a new line' }]);
+  await settle(180);
+  assert.equal(groupsOf(logBox).length, 4, 'nothing above the reader was let go of');
+
+  // At the tail the lines above them are off screen, and that is when the oldest go.
+  logBox.scrollTop = logBox.scrollHeight;
+  history.push({ role: 'user', content: 'another line' });
+  page.feed.send([{ role: 'user', content: 'another line' }]);
+  await settle(180);
+  assert.equal(groupsOf(logBox).length, 3, 'back inside the cap once the reader is at the tail');
+  assert.match(textOf(logBox.children.at(-1)), /another line/, 'and the newest line is drawn');
+});
+
+test('a page nobody is looking at is let go, and reads its window again when they come back', async () => {
+  const page = await openPage({
+    agents: twoAgents(),
+    agentHistory: { helper: [{ role: 'user', content: 'in the helper' }] },
+    retention: { idleTtlMs: 20, sweepMs: 10 },
+  });
+  await settle(180);
+  const { logOf } = pageBoxes(page);
+  assert.ok(logOf(0).children.length > 0, 'the main agent has its window');
+
+  // Off to the helper: nobody is looking at the main agent page, and after the TTL it holds nothing.
+  page.agents.children[1].dispatchEvent({ type: 'click' });
+  await settle(220);
+  assert.equal(logOf(0).children.length, 0, 'its messages, draft and boxes were let go');
+
+  // Back: the page reads the transcript again, and draws it at its newest line.
+  const reads = () =>
+    page.calls.filter(({ tool, args }) => tool === 'agent.history' && args.agent === undefined).length;
+  const before = reads();
+  page.agents.children[0].dispatchEvent({ type: 'click' });
+  await settle(220);
+  assert.ok(reads() > before, 'coming back reads the history again');
+  assert.ok(logOf(0).children.length > 0, 'and the window is drawn again');
+});
+
+test('a page that is streaming is never let go', async () => {
+  const page = await openPage({
+    state: 'generating',
+    agentStates: { helper: 'idle' },
+    agents: twoAgents(),
+    retention: { idleTtlMs: 20, sweepMs: 10 },
+  });
+  await settle(180);
+  const { logOf } = pageBoxes(page);
+  page.feed.send(chunk('half an answer'));
+  await settle(120);
+
+  page.agents.children[1].dispatchEvent({ type: 'click' });
+  await settle(250);
+  assert.ok(logOf(0).children.length > 0, 'the page kept the draft it is writing');
+
+  // The turn ends and nobody is looking: now it is a page like any other, and the TTL applies.
+  page.status.state = 'idle';
+  page.feed.send([{ role: 'assistant', content: 'half an answer' }]);
+  await settle(250);
+  assert.equal(logOf(0).children.length, 0, 'a finished, unseen page holds nothing');
 });

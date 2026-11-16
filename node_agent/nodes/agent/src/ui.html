@@ -1503,6 +1503,157 @@
         window.agentMath = { plugin, svg, whenReady };
       })();
     </script>
+    <script id="page-model">
+      // The two pure halves of this page, kept out of the DOM so they can be read and tested on their
+      // own: how an answer is assembled out of deltas, and how much of a transcript one page keeps.
+      // Neither touches a box, an element or a timer: the paint around them is in the script below,
+      // and everything that decides *what* to let go of is here.
+      //
+      // `agentStream` is the browser half of the node's delta protocol (`src/stream.ts`): a delta
+      // carries only what just arrived, and its `seq` says which one it is. A reader handed anything
+      // but the next one has a gap - a lost frame, a stream it never saw start, a reconnect - and
+      // resyncs instead of gluing two halves of an answer together.
+      //
+      // An IIFE, like the formula rules above: a top-level `const` in a classic script shares the
+      // global lexical scope with every later script, and this page's own script declares these two
+      // names for itself.
+      (() => {
+      const agentStream = {
+        /** A empty draft line for a stream that just started. */
+        draft(role) {
+          return { role: typeof role === 'string' && role !== '' ? role : 'assistant', content: '' };
+        },
+
+        /** Where a `stream_start` says the stream is: its id, the line it becomes, and its seq. */
+        start(value) {
+          return {
+            id: typeof value?.id === 'string' ? value.id : '',
+            messageId: typeof value?.messageId === 'string' ? value.messageId : null,
+            seq: Number.isInteger(value?.seq) ? value.seq : 0,
+          };
+        },
+
+        /** One delta added to the draft. A new message comes back: what was drawn is never mutated. */
+        apply(message, delta) {
+          const out = { ...(message ?? this.draft('assistant')) };
+          if (typeof delta?.content === 'string' && delta.content !== '') {
+            out.content = (typeof out.content === 'string' ? out.content : '') + delta.content;
+          }
+          if (typeof delta?.reasoning_content === 'string' && delta.reasoning_content !== '') {
+            out.reasoning_content = (out.reasoning_content ?? '') + delta.reasoning_content;
+          }
+          const parts = Array.isArray(delta?.tool_calls) ? delta.tool_calls : [];
+          if (parts.length > 0) {
+            const calls = (Array.isArray(out.tool_calls) ? out.tool_calls : []).map((call) => ({
+              ...call,
+              function: { ...(call.function ?? {}) },
+            }));
+            for (const part of parts) {
+              const at = Number.isInteger(part?.index) && part.index >= 0 ? part.index : 0;
+              const call = calls[at] ?? {
+                id: '',
+                type: 'function',
+                function: { name: '', arguments: '' },
+              };
+              if (typeof part?.id === 'string' && part.id !== '') call.id = part.id;
+              if (typeof part?.name === 'string' && part.name !== '') call.function.name = part.name;
+              if (typeof part?.arguments === 'string' && part.arguments !== '') {
+                call.function.arguments += part.arguments;
+              }
+              calls[at] = call;
+            }
+            out.tool_calls = calls;
+          }
+          return out;
+        },
+
+        /** What one delta does to a reader: `{state, apply, gap}`. `apply` is false when the delta is
+         *  not the one that follows - which is the whole signal this protocol has - and the reader then
+         *  asks the node for the line instead of appending what it received. */
+        accept(state, delta) {
+          if (state === null || state === undefined) return { state, apply: false, gap: true };
+          if (typeof delta?.id !== 'string' || delta.id !== state.id) {
+            return { state, apply: false, gap: true };
+          }
+          const seq = Number(delta.seq);
+          if (!Number.isInteger(seq) || seq !== state.seq + 1) {
+            return { state, apply: false, gap: true };
+          }
+          return {
+            state: {
+              id: state.id,
+              messageId: state.messageId ?? delta.messageId ?? null,
+              seq,
+            },
+            apply: true,
+            gap: false,
+          };
+        },
+
+        /** The draft a resync answer describes: the line as the node has it, in the shape the
+         *  transcript commits it. */
+        adopt(state) {
+          const line = this.draft(state?.role);
+          if (typeof state?.content === 'string') line.content = state.content;
+          if (typeof state?.reasoning_content === 'string' && state.reasoning_content !== '') {
+            line.reasoning_content = state.reasoning_content;
+          }
+          if (Array.isArray(state?.tool_calls) && state.tool_calls.length > 0) {
+            line.tool_calls = state.tool_calls.map((call) => ({
+              ...call,
+              function: { ...(call.function ?? {}) },
+            }));
+          }
+          return line;
+        },
+      };
+      globalThis.agentStream = agentStream;
+
+      // How much one page keeps. A transcript is unbounded and a browser is not: past the cap the
+      // oldest lines a reader is not looking at are let go of (they are still one `history` call
+      // away), and a page nobody has looked at for the TTL lets go of everything. The numbers are
+      // the page's constants; a test may hand its own in `globalThis.AGENT_RETENTION`.
+      const agentRetention = {
+        DEFAULT_MAX_MESSAGES: 200,
+        DEFAULT_IDLE_TTL_MS: 5 * 60 * 1000,
+
+        /** How many of the oldest messages a page may drop: `count` held, `cap` the fixed limit, and
+         *  `protectedAt` the positions that must stay (the last line, the last assistant line, anything
+         *  business logic still holds). Only a prefix goes, so the first protected position is where
+         *  dropping stops. */
+        trimPrefix({ count, cap, protectedAt = [] }) {
+          const held = Number.isInteger(count) ? count : 0;
+          const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : 0;
+          const over = held - limit;
+          if (over <= 0) return 0;
+          let stop = held;
+          for (const at of protectedAt) {
+            if (Number.isInteger(at) && at >= 0 && at < stop) stop = at;
+          }
+          return Math.max(0, Math.min(over, stop));
+        },
+
+        /** Whether an idle page is due to be let go: nobody is looking at it, no turn is writing in
+         *  it, and the reader has not looked at it for longer than the TTL. */
+        releaseDue({ active, streaming, busy, now, lastSeen, ttl }) {
+          if (active || streaming || busy) return false;
+          if (!Number.isFinite(now) || !Number.isFinite(lastSeen)) return false;
+          return now - lastSeen >= Math.max(0, Number(ttl) || 0);
+        },
+
+        /** What one page's numbers call for: how many of its oldest messages to drop, and whether the
+         *  page itself is due to be let go. `atEnd` is the reader being at the tail: the lines above
+         *  are then off screen, and the ones in the viewport are never taken out from under them. */
+        plan({ count, cap, protectedAt = [], active, streaming, busy, now, lastSeen, ttl, atEnd }) {
+          return {
+            trim: atEnd ? this.trimPrefix({ count, cap, protectedAt }) : 0,
+            release: this.releaseDue({ active, streaming, busy, now, lastSeen, ttl }),
+          };
+        },
+      };
+      globalThis.agentRetention = agentRetention;
+      })();
+    </script>
     <script>
       // This node's name — whoever started this node chose it (`--name`, NODE_AGENT_*), so nothing
       // here may assume it is called "agent". The node fills its own name in where it hands the page
@@ -1578,6 +1729,22 @@
         messages: () => [],
         historyFrom: () => null,
         streamingMessage: () => null,
+        // Where the answer being written has got to: `{id, messageId, seq}` of the stream this page
+        // is assembling, or null between rounds. The seq is what tells a lost delta from the next one.
+        stream: () => null,
+        // The stream id this page has already asked the node to catch up on, so a status that keeps
+        // naming a stream it could not join does not become one `stream` call per status read.
+        joined: () => null,
+        // A `stream` read of this page is in flight: a second gap while it is out waits for it, and the
+        // deltas keep coming, so the next one retries rather than the answers piling up.
+        resyncing: () => false,
+        // When the reader last had this page on screen, for the TTL a page nobody is looking at gets.
+        lastSeen: () => Date.now(),
+        // This page let its window go, and has to read it again the moment it is looked at.
+        released: () => false,
+        // Transcript indexes (absolute, like `historyFrom`) that business logic still holds: a page
+        // never drops a line something else is still pointing at.
+        pins: () => new Set(),
         modelActive: () => false,
         sending: () => false,
         loadingOlder: () => false,
@@ -1694,9 +1861,13 @@
           return known;
         }
         const page = buildPage(name, typeof topic === 'string' && topic !== '' ? topic : MAIN);
+        page.lastSeen = Date.now();
         pages.set(name, page);
         page.box.hidden = name !== currentAgent;
         openFeed();
+        // A page nobody looks at is a page that keeps nothing after a while: the sweep is what lets it
+        // go, and a page is the first reason to have one.
+        armSweep();
         void loadProviders(page);
         void load(page);
         return page;
@@ -1713,12 +1884,138 @@
         for (const timer of page.askCountdowns.values()) clearTimeout(timer);
         page.box.remove();
       }
+
+      // ---- what one page keeps ----
+      //
+      // A transcript is unbounded and a browser is not. Two things bound what one page holds, and both
+      // decisions are taken by the pure `agentRetention` above - what is here is only the reading of a
+      // page's numbers and the writing of the result:
+      //
+      // - the fixed cap: past `RETENTION.maxMessages` the oldest lines are let go of, and only when the
+      // reader is at the tail (the lines above are then off screen, so nothing in the viewport is taken
+      // out from under them). What goes is a prefix, so `historyFrom` moves with it and the lines are
+      // still one `history` call away - which is what the reader at the top reads anyway.
+      // - the TTL: a page nobody has looked at for `RETENTION.idleTtlMs`, with no turn writing in it,
+      // lets go of its messages, its draft and the boxes it drew. The page itself stays (its tab, its
+      // topic, its place in the shared stream), and `switchTo` reads it again the moment it is looked at.
+
+      /** The positions in this page's window that may not be dropped: the last line, the last
+       *  assistant line, and anything `page.pins` still points at (an absolute index). */
+      function protectedOf(page) {
+        const at = [];
+        const last = page.messages.length - 1;
+        if (last >= 0) at.push(last);
+        for (let index = last; index >= 0; index -= 1) {
+          if (page.messages[index]?.role === 'assistant') {
+            at.push(index);
+            break;
+          }
+        }
+        const from = page.historyFrom ?? 0;
+        for (const pin of page.pins) {
+          const offset = Number(pin) - from;
+          if (offset >= 0 && offset < page.messages.length) at.push(offset);
+        }
+        return at;
+      }
+
+      /** Let the oldest lines of one page go, keeping it inside its fixed limit. Answers how many. */
+      function trimOldest(page, now = Date.now()) {
+        const drop = agentRetention.plan({
+          count: page.messages.length,
+          cap: RETENTION.maxMessages,
+          protectedAt: protectedOf(page),
+          active: page === pages.get(currentAgent),
+          streaming: page.stream !== null || page.streamingMessage !== null,
+          busy: page.sending || page.modelActive,
+          now,
+          lastSeen: page.lastSeen,
+          ttl: RETENTION.idleTtlMs,
+          // A page whose reader is at its tail drops from above them; one the reader is scrolled up
+          // into keeps what is around the line they are reading, cap or no cap.
+          atEnd: atEnd(page),
+        }).trim;
+        if (drop <= 0) return 0;
+        page.messages = page.messages.slice(drop);
+        page.historyFrom = (page.historyFrom ?? 0) + drop;
+        return drop;
+      }
+
+      /** Whether one page is due to be let go: not on screen, no turn writing in it, and unseen for
+       *  longer than the TTL. */
+      function releaseDue(page, now = Date.now()) {
+        return agentRetention.releaseDue({
+          active: page === pages.get(currentAgent),
+          streaming: page.stream !== null || page.streamingMessage !== null,
+          // A turn this agent is still running is a reason to keep what the page has, even between
+          // rounds (a tool call: no draft is being written while the tool runs).
+          busy: page.sending || page.modelActive || (page.agentStatus?.state ?? 'idle') !== 'idle',
+          now,
+          lastSeen: page.lastSeen,
+          ttl: RETENTION.idleTtlMs,
+        });
+      }
+
+      /** Free what a page holds for a reader who is not looking at it: the window, the draft, the
+       *  boxes and the folds they were drawn with. Answers whether anything was let go. */
+      function releasePage(page, now = Date.now()) {
+        if (!releaseDue(page, now)) return false;
+        page.messages = [];
+        page.historyFrom = null;
+        page.streamingMessage = null;
+        page.stream = null;
+        page.released = true;
+        // Nothing is left to keep a place in: the next visit lands at the newest line, exactly as a
+        // page opened for the first time does.
+        page.seen = false;
+        page.landAtBottom = true;
+        page.joined = null;
+        page.resyncing = false;
+        page.drawn = [];
+        page.drawnStatus = null;
+        page.drawnAsks = '';
+        page.foldChoices = new Map();
+        page.openedThinking = new Map();
+        page.thinkingScroll = new Map();
+        page.mathRedraw = false;
+        page.olderNote = '';
+        page.older.textContent = '';
+        page.older.hidden = true;
+        page.log.replaceChildren();
+        page.lastSeen = now;
+        return true;
+      }
+
+      // One timer for the whole page: every hidden agent is asked the same question, and a family of
+      // ten would otherwise be ten timers. Re-armed after every sweep, so a page that ran no sweep
+      // (a tab that was never idle long enough) still gets one later.
+      let sweepTimer = null;
+      function sweepIdle(now = Date.now()) {
+        // Nothing left to ask: the sweep must not keep a timer alive for pages that are gone.
+        if (pages.size === 0) return;
+        for (const page of pages.values()) {
+          if (page === pages.get(currentAgent)) {
+            page.lastSeen = now;
+            continue;
+          }
+          releasePage(page, now);
+        }
+        armSweep();
+      }
+      function armSweep() {
+        if (sweepTimer !== null) return;
+        sweepTimer = setTimeout(() => {
+          sweepTimer = null;
+          sweepIdle();
+        }, RETENTION.sweepMs);
+        sweepTimer?.unref?.();
+      }
       // One row per agent the node runs: `{name, topic, parent, state, children, icon?}`.
       let agentRows = [];
       let agentFetch = null;
 
       // The topic one agent publishes on: the node's own name for the main agent, `<node>.<name>`
-      // for a sub-agent. Its transcripts, its stream snapshots and its questions all go there.
+      // for a sub-agent. Its transcripts, its stream deltas and its questions all go there.
       function currentRow() {
         return agentRows.find((each) => each.name === currentAgent);
       }
@@ -1900,7 +2197,10 @@
         if (page === undefined) return;
         const firstLook = !page.seen;
         page.seen = true;
+        const now = Date.now();
+        page.lastSeen = now;
         const before = pages.get(currentAgent);
+        if (before !== undefined) before.lastSeen = now;
         currentAgent = name;
         if (before !== undefined && before !== page) before.box.hidden = true;
         page.box.hidden = false;
@@ -1916,6 +2216,12 @@
           landAtBottom = firstLook || atEnd(page);
           renderTranscript();
         });
+        // A page that let its window go while nobody was looking at it has nothing to draw: it is read
+        // again, at its newest line, exactly as a page opened for the first time is.
+        if (page.released) {
+          page.released = false;
+          void load(page);
+        }
       }
 
       /** Whether the reader of this page is at its end. A page with no height at all (built but never
@@ -2145,11 +2451,26 @@
       const HISTORY_PAGE = 30;
       // How near the top (in px) counts as wanting the page before this one.
       const OLDER_AT = 120;
+
+      // What one page is allowed to keep. Both halves of this were missing: the window a page held grew
+      // with the conversation (every reload appended, and nothing was ever let go), and a page nobody
+      // was looking at held its messages, its draft and its boxes for as long as the tab was open. The
+      // numbers are constants of the page — `AGENT_RETENTION` is how a test says "a cap of three, a
+      // TTL of a few milliseconds" without waiting five minutes.
+      const RETENTION = {
+        maxMessages: agentRetention.DEFAULT_MAX_MESSAGES,
+        idleTtlMs: agentRetention.DEFAULT_IDLE_TTL_MS,
+        // How often a page with a reader somewhere else is looked at. Not a per-page timer: a family
+        // of ten agents would be ten timers, and the question is the same one for all of them.
+        sweepMs: 30 * 1000,
+        ...(globalThis.AGENT_RETENTION ?? {}),
+      };
+      const agentStream = globalThis.agentStream;
       const busy = () => sending || modelActive || streamingMessage !== null;
       // What the page knows on its own about a turn: `sending` is a `chat_no_wait` POST of this page
       // still in flight (the line being queued, not the turn), `modelActive` is what the node's events
-      // said (a snapshot, a question, an announced line), and a streaming message is a turn by itself
-      // — python streams one snapshot per token. None of the three decides what Send and Stop do any
+      // said (a delta, a question, an announced line), and a streaming message is a turn by itself.
+      // None of the three decides what Send and Stop do any
       // more: the node's own `agent.status.state` does (see `controlState`), because a turn another tab
       // or the debug console started is a turn this page has to offer Stop for, and a turn the node is
       // already unwinding is one it must not offer Stop for again. These are only what the page has to
@@ -3431,7 +3752,16 @@
         // so a paint that has nothing to redraw still has to put them right. They are the chrome of
         // the page on screen, so a paint of a hidden page leaves them alone.
         if (current === pages.get(currentAgent)) renderControls();
-        const shown = streamingMessage === null ? messages : [...messages, streamingMessage];
+        // A draft that has said nothing yet (the first frame of a stream, before its first delta) draws
+        // no box: the empty line would appear and be replaced a moment later.
+        const draft =
+          streamingMessage !== null &&
+          ((streamingMessage.content ?? '') !== '' ||
+            (streamingMessage.reasoning_content ?? '') !== '' ||
+            (streamingMessage.tool_calls?.length ?? 0) > 0)
+            ? streamingMessage
+            : null;
+        const shown = draft === null ? messages : [...messages, draft];
         const status = agentLine();
         const asks = `${[...askSent].join(',')}|${[...askError.keys()].join(',')}|${[...liveAsks].join(',')}|${[...askTimedOut].join(',')}`;
         // A question's badge and countdown are not in the transcript, so a reload that brings back the
@@ -3439,7 +3769,7 @@
         // state changes, the boxes are all drawn again: a question worth counting down is worth a paint.
         const askNews = asks !== drawnAsks;
 
-        const groups = transcriptGroups(shown, streamingMessage !== null);
+        const groups = transcriptGroups(shown, draft !== null);
         if (groups.length === 0) groups.push(emptyGroup());
         const before = new Map(
           (askNews || mathRedraw ? [] : drawn).map((entry) => [entry.key, entry]),
@@ -3507,7 +3837,7 @@
         // needs.
         const land = landAtBottom && messages.length > 0;
         if (land) landAtBottom = false;
-        log.classList.toggle('following', land || (streamingMessage !== null && atBottom));
+        log.classList.toggle('following', land || (draft !== null && atBottom));
         // A question that just arrived wins over the usual "follow the tail".
         if (!scrollToAsk() && (land || atBottom)) log.scrollTop = log.scrollHeight;
         // A window shorter than the log has nothing to scroll, and a reader cannot scroll up to what
@@ -3722,7 +4052,22 @@
           call(`${NODE}.status`, agentArgs(page, {})),
         ]);
         if (version !== page.loadVersion) return;
-        if (statusReply.ok) renderStatus(page, statusReply.value);
+        if (statusReply.ok) {
+          renderStatus(page, statusReply.value);
+          // The page came back (a reconnected stream, a tab that was in the background, a page opened
+          // while a turn was already writing) and an answer is being streamed that it never saw start.
+          // It joins at the node's seq instead of pretending it saw the beginning - once per stream.
+          const live = statusReply.value?.stream ?? null;
+          if (
+            live !== null &&
+            page.stream === null &&
+            page.streamingMessage === null &&
+            page.joined !== live.id
+          ) {
+            page.joined = live.id;
+            void resyncStream(page, { id: live.id });
+          }
+        }
         let answer = windowOf(reply);
         if (answer === null) return;
 
@@ -3739,6 +4084,9 @@
           // `from` is the index `messages[0]` holds, so it only becomes the page's own start when the
           // window *replaced* what the page had.
           if (!continues) historyFrom = answer.from;
+          // The window is bounded: a page that has read more than it keeps lets the oldest go now, and
+          // `historyFrom` moves with them, so they are still one `history` call away.
+          trimOldest(page);
           // A reload can land while snapshots are still coming in, so it queues up with them.
           scheduleRender(page);
         });
@@ -3842,9 +4190,11 @@
         })();
         return page.statusInFlight;
       }
-      // The Python agent sends transient stream snapshots; the TypeScript agent continues sending
-      // its existing change notifications. Either way this node is the source of truth, and a reload
-      // fetches only the lines the page is missing.
+      // The node publishes three kinds of news on one topic: the deltas of an answer being written
+      // (`stream_start` / `stream_delta` / `stream_end`, each delta carrying only what just arrived and
+      // the seq that orders it), the lines it committed (an array), and the question it is waiting on.
+      // Either way this node is the source of truth, and a reload fetches only the lines the page is
+      // missing.
       //
       // HTTP/1.1 browsers only allow a few connections per origin. All agent topics share one SSE
       // so hidden pages stay live without starving /call. Batch list changes into one reconnect.
@@ -3886,20 +4236,63 @@
                 // end keeps following; unseen pages land at their end when first opened.
                 page.landAtBottom = page === pages.get(currentAgent) && atEnd(page);
                 page.streamingMessage = null;
+                // Whatever was being assembled was assembled out of a feed that went away: the stream
+                // is joined again at the node's seq (`load` reads the status and asks for it), not at
+                // the seq this page happened to reach.
+                page.stream = null;
+                page.joined = null;
               });
               void load(page);
             }
           };
         }, 0);
       }
-      // A posted line ends whatever snapshot was on screen: the transcript below is the truth, so the
+      // A posted line ends whatever draft was on screen: the transcript below is the truth, so the
       // tail is dropped and the window is read again.
       const reload = (page) => {
         withPage(page, () => {
           streamingMessage = null;
+          stream = null;
         });
         void load(page);
       };
+
+      // A page that lost a delta asks the node where the stream stands: one call, the line as it is, and
+      // the seq to carry on from. Two halves of an answer are never glued together - if the node has
+      // nothing to give (the round ended while this page was away), the transcript is read instead.
+      async function resyncStream(page, seen) {
+        if (page.resyncing) return;
+        page.resyncing = true;
+        try {
+          const reply = await call(`${NODE}.stream`, agentArgs(page, {}));
+          const state = reply.ok ? (reply.value?.stream ?? null) : null;
+          if (state !== null && typeof state.id === 'string') {
+            withPage(page, () => {
+              // A newer stream arrived while this call was out: the page has already moved on, and this
+              // answer describes a draft nobody is writing any more.
+              if (page.stream !== null && page.stream.id !== seen.id) return;
+              page.stream = {
+                id: state.id,
+                messageId: state.messageId ?? null,
+                seq: Number.isInteger(state.seq) ? state.seq : 0,
+              };
+              page.joined = state.id;
+              modelActive = true;
+              streamingMessage = agentStream.adopt(state);
+              scheduleRender(page);
+            });
+            return;
+          }
+          // Nothing is being written any more: whatever this page missed is already committed.
+          withPage(page, () => {
+            page.stream = null;
+            streamingMessage = null;
+          });
+          await load(page);
+        } finally {
+          page.resyncing = false;
+        }
+      }
       function onFeedEvent(page, event) {
         // Everything the event says about a turn is the page's own: `withPage` is what makes a
         // snapshot from a hidden agent land in that agent's transcript and nowhere else. The branches
@@ -3914,16 +4307,48 @@
           // read cancelled the one before it - which is why a refreshed page drew no message at all
           // until the turn ended).
           again = withPage(page, () => {
-            if (value?.type === 'stream') {
-              // A snapshot is a turn in progress, and the tail it draws is what the reader watches.
+            if (value?.type === 'stream_start') {
+              // A new round is being written: this page starts assembling it from the first delta.
+              stream = agentStream.start(value);
+              streamingMessage = agentStream.draft(value.role);
+              joined = stream.id;
               modelActive = true;
-              streamingMessage = value.message;
-              // The snapshot says a turn is running, and the node says which turn: a state of its own
-              // is what the controls follow, so it is read again here (coalesced, so a snapshot per
-              // token is still one read in flight).
               void refreshStatus(page);
               scheduleRender(page);
-              return false; // a snapshot draws itself: the window is not read again
+              return false; // the draft draws itself: the window is not read again
+            }
+            if (value?.type === 'stream_delta') {
+              const accepted = agentStream.accept(stream, value);
+              if (accepted.apply) {
+                // Only what just arrived is added: the node never sends the line so far, and this page
+                // never had to hold one back to keep in step.
+                stream = accepted.state;
+                modelActive = true;
+                streamingMessage = agentStream.apply(
+                  streamingMessage ?? agentStream.draft('assistant'),
+                  value,
+                );
+                void refreshStatus(page);
+                scheduleRender(page);
+                return false;
+              }
+              // A delta that is not the one that follows: a lost frame, a stream this page never saw
+              // start, a reconnected feed. What is on screen is not the answer any more, so it is not
+              // appended to - the node is asked where the stream stands (`resyncStream`).
+              void resyncStream(page, stream ?? { id: value?.id ?? null });
+              return false;
+            }
+            if (value?.type === 'stream_end') {
+              // The round is over: its line is committed (a stop commits the partial one), and the
+              // transcript below is what the reader reads from here.
+              if (stream === null || value.id === stream.id) {
+                stream = null;
+                streamingMessage = null;
+                joined = null;
+              }
+              modelActive = false;
+              void refreshStatus(page);
+              return true;
             }
             if (value?.type === 'ask') {
               // The node is waiting on a question: bring its card up and pull the reader to it.
