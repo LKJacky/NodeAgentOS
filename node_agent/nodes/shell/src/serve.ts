@@ -43,7 +43,7 @@ async function main(): Promise<void> {
   let host;
   try {
     const id = namedId();
-    host = await servePackage(ROOT, id === undefined ? {} : { id });
+    host = await servePackage(ROOT, id === undefined ? {} : { id, label: { 'zh-CN': id, en: id } });
   } catch (error: unknown) {
     console.error(
       `shell failed to join ${BUS_URL}: ${error instanceof Error ? error.message : String(error)}`,

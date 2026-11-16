@@ -17,15 +17,16 @@ const mode = providerMode(process.argv.slice(2));
 // The host renames the manifest; the node reads that name from its context (`ctx.nodeId`) for the page
 // it draws, so the chosen id is passed here and nowhere else.
 const busUrl = process.env.NODE_AGENT_BUS_URL ?? 'ws://127.0.0.1:8788';
-const host = await servePackage(directory, mode.local ? { id: mode.id } : {}).catch((error: unknown) => {
+const host = await servePackage(
+  directory,
+  mode.local ? { id: mode.id, label: mode.label } : {},
+).catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
   console.error(`provider: cannot join ${busUrl}: ${message}`);
   process.exit(1);
 });
 
-console.log(
-  `${host.manifest.name}: joined ${busUrl}`,
-);
+console.log(`${host.manifest.name}: joined ${busUrl}`);
 
 function untilStopped(): Promise<void> {
   return new Promise((resolve) => {

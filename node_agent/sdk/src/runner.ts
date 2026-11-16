@@ -5,6 +5,7 @@ import { LegacyBusSession } from './legacy_session.js';
 import { WebSocketBusSession } from './bus_session.js';
 import { isNodeId, loadNodePackage } from './package.js';
 import type { NodeManifest } from './envelope.js';
+import type { LocalizedText } from './i18n-resource.js';
 
 export type BusTransport = 'legacy' | 'websocket';
 
@@ -19,14 +20,25 @@ export interface ServeOptions {
    *  without a second copy of its package.json. The rest of the manifest (capabilities, entry,
    *  icon) is still the package's own; only the address it answers to changes. */
   readonly id?: string;
+  /** A display name for this process, per language. The canonical `id` stays the bus address;
+   *  this only changes what the directory writes under the node. */
+  readonly label?: LocalizedText;
 }
 
 /** The manifest this host registers under: the package's own, renamed when `options.id` says so. */
-function manifestOf(manifest: NodeManifest, id: string | undefined): NodeManifest {
-  if (id === undefined) return manifest;
-  if (!isNodeId(id)) throw new Error(`serve id is not a bus name: ${id}`);
-  // The package id is the node id (see package.ts), so a rename renames both halves of it.
-  return { ...manifest, name: id, packageId: id };
+function manifestOf(
+  manifest: NodeManifest,
+  id: string | undefined,
+  label?: LocalizedText,
+): NodeManifest {
+  let next = manifest;
+  if (id !== undefined) {
+    if (!isNodeId(id)) throw new Error(`serve id is not a bus name: ${id}`);
+    // The package id is the node id (see package.ts), so a rename renames both halves of it.
+    next = { ...next, name: id, packageId: id };
+  }
+  if (label === undefined) return next;
+  return { ...next, labels: { ...next.labels, node: label } };
 }
 
 function environment(options: ServeOptions) {
@@ -49,7 +61,7 @@ export async function servePackage(
   const { manifest, Node } = await loadNodePackage(directory);
   const { url, token, tenantId, transport } = environment(options);
   const host = new NodeHost({
-    definition: { manifest: manifestOf(manifest, options.id), Node },
+    definition: { manifest: manifestOf(manifest, options.id, options.label), Node },
     bus: transport === 'legacy' ? new LegacyBusSession({ tenantId }) : new WebSocketBusSession(),
   });
   await host.start(url, token);

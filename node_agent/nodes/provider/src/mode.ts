@@ -6,6 +6,7 @@
 // choice is made here, from the command line, and told to the package by name.
 import { join } from 'node:path';
 import { nodeAgentDir } from '@node-agent/sdk';
+import type { LocalizedText } from '@node-agent/sdk';
 
 export const PROVIDER_ID = 'provider';
 export const LOCAL_PROVIDER_ID = 'local-provider';
@@ -17,6 +18,8 @@ export type ProviderMode = {
   readonly local: boolean;
   /** The id to register under: `local-provider` in local mode, `provider` otherwise. */
   readonly id: string;
+  /** The name the directory shows; local mode says so in both languages. */
+  readonly label?: LocalizedText;
 };
 
 /** Read `--local` (or NODE_AGENT_LOCAL=1) off the command line this process was started with. */
@@ -26,7 +29,9 @@ export function providerMode(
 ): ProviderMode {
   const named = env[LOCAL_ENV]?.trim().toLowerCase();
   const local = argv.includes('--local') || named === '1' || named === 'true';
-  return { local, id: local ? LOCAL_PROVIDER_ID : PROVIDER_ID };
+  return local
+    ? { local, id: LOCAL_PROVIDER_ID, label: { 'zh-CN': '本地模型服务', en: 'Local provider' } }
+    : { local, id: PROVIDER_ID };
 }
 
 /** The variable that names the file local mode keeps its rows in, instead of the bus's history. */
