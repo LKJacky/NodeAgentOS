@@ -1,6 +1,6 @@
 {
   "name": "@node-agent/sdk",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "module",
   "description": "Node, NodeHost and envelope contracts for node-agent",
   "exports": {
