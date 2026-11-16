@@ -1,6 +1,6 @@
 {
   "name": "@node-agent/shell",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "type": "module",
   "description": "The shell node: reads and writes files, searches, and runs commands across paths accessible to the local process",
   "publisher": "node-agent",
@@ -39,7 +39,7 @@
     "id": "shell",
     "i18n": "dist/i18n",
     "desc": "Read and write local files at absolute or relative paths, and run commands",
-    "entry": "dist/index.js",
+    "entry": "dist/serve.js",
     "icon": "src/icon.svg",
     "caps": {
       "read": {
@@ -570,7 +570,7 @@
     "url": "https://github.com/LKJacky/NodeAgentOS/issues"
   },
   "bin": {
-    "node-agent-shell": "./dist/index.js"
+    "node-agent-shell": "./dist/serve.js"
   },
   "publishConfig": {
     "access": "public"

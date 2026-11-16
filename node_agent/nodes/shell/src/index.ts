@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // shell: the node that actually touches the machine. It reads and writes files and runs commands
 // — including long ones, which become sessions that keep running while the model does something
 // else. Like every node here it also brings its own page for the browser front end (`ui.html`,
@@ -29,7 +28,6 @@ import {
   globSync,
   mkdtempSync,
   readFileSync,
-  realpathSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -46,13 +44,10 @@ import {
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 import {
   Node,
-  NodeHost,
-  WebSocketBusSession,
   loadResource,
-  nodeManifestOfPackage,
   paintPage,
   type NodeContext,
   type NodeHandlers,
@@ -842,14 +837,19 @@ function sdkRuntime(): { runner: string; api: string } {
 
 /** The runner CLI serves a package under its own `node.id`. For any other name this writes the
  *  one-line launcher that calls the same `servePackage` with the id override, because the CLI has
- *  no flag for it. */
+ *  no flag for it. The override carries the label too: `servePackage` renames the address and the
+ *  package id, and a node answering as `computer` has to be listed as `computer`, not as whatever
+ *  the package called itself. */
 function serveWrapper(api: string, dir: string, id: string): string {
   const file = join(mkdtempSync(join(tmpdir(), 'shell-run-node-')), 'serve.web.mjs');
   writeFileSync(
     file,
     [
       `import { servePackage } from ${JSON.stringify(pathToFileURL(api).href)};`,
-      `const host = await servePackage(${JSON.stringify(dir)}, { id: ${JSON.stringify(id)} });`,
+      `const host = await servePackage(${JSON.stringify(dir)}, ${JSON.stringify({
+        id,
+        label: { 'zh-CN': id, en: id },
+      })});`,
       'console.log(host.manifest.name + ": joined " + (process.env.NODE_AGENT_BUS_URL ?? ""));',
       'await new Promise((resolve) => {',
       '  process.once("SIGINT", resolve);',
@@ -1698,45 +1698,3 @@ export class ShellNode extends Node {
 }
 
 export default ShellNode;
-
-// This file is both the Node class the SDK loads and the package's `npx` bin. Importing it must
-// only export ShellNode; running it starts one host against the bus named by the environment.
-function invokedAsProgram(): boolean {
-  if (process.argv[1] === undefined) return false;
-  return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
-}
-
-async function runProgram(): Promise<void> {
-  const root = fileURLToPath(new URL('..', import.meta.url));
-  const manifest = nodeManifestOfPackage(root);
-  const at = process.argv.indexOf('--name');
-  const named =
-    (at === -1 ? '' : (process.argv[at + 1] ?? '')).trim() ||
-    (process.env.NODE_AGENT_NODE_ID ?? '').trim();
-  const definition = named === '' ? manifest : { ...manifest, name: named, packageId: named };
-  const host = new NodeHost({
-    definition: { manifest: definition, Node: ShellNode },
-    bus: new WebSocketBusSession(),
-  });
-  const url = process.env.NODE_AGENT_BUS_URL?.trim() || 'ws://127.0.0.1:8788';
-  const token = process.env.NODE_AGENT_TOKEN?.trim() || 'demo-token';
-  try {
-    await host.start(url, token);
-  } catch (error: unknown) {
-    console.error(
-      `shell failed to join ${url}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-    process.exit(1);
-  }
-  console.log(`shell: joined ${url}`);
-  await new Promise<void>((resolve) => {
-    process.once('SIGINT', () => resolve());
-    process.once('SIGTERM', () => resolve());
-  });
-  await host.stop();
-}
-
-if (invokedAsProgram()) {
-  await runProgram();
-  process.exit(0);
-}

@@ -1,13 +1,23 @@
 #!/usr/bin/env node
 // @node-agent/shell: the shell node as its own process, against a bus that already exists.
 //
-// The package is a node, not a process: the SDK runner reads package.json's `node` block, builds the
-// host and keeps the capabilities registered until a signal arrives. This entry only says where the
-// bus is and waits, so `node dist/serve.js` (or `node src/serve.ts` on Node with type stripping) is
-// enough to run the shell from a machine that has this checkout.
+//     node dist/serve.js                   registers as `shell`
+//     node dist/serve.js --name computer    registers as `computer`
+//     npx @node-agent/shell --name computer  (the bin is this file)
+//
+// This is the package's only process entry. `index.ts` beside it is the Node class and nothing else,
+// which is why the start-up code lives here: the package used to carry two copies of it - one in
+// `index.ts` for the `npx` bin, one here for `node dist/serve.js` - and the copy the bin ran was the
+// one that renamed the address without renaming the label.
+//
+// A rename is three values, not one: the address the bus answers on (`name`), the package id that
+// moves with it (`packageId`), and the words the directory writes under the node (`labels.node`).
+// `namedServeOptions` decides all three for `servePackage`, and `test/naming.test.ts` reads it
+// without a bus; `test/named-entry.test.ts` reads what the bus actually accepted.
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { servePackage } from '@node-agent/sdk';
+import type { LocalizedText, ServeOptions } from '@node-agent/sdk';
 import ShellNode from './index.js';
 
 export default ShellNode;
@@ -18,17 +28,32 @@ const ROOT = fileURLToPath(new URL('..', import.meta.url));
 /** Where the bus is, as the runner resolves it. */
 const BUS_URL = process.env.NODE_AGENT_BUS_URL?.trim() || 'ws://127.0.0.1:8788';
 
-/** Where to register, when not the package's own `node.id`: `--name computer`, or NODE_AGENT_NODE_ID.
+/** The name this process was asked to answer as: `--name <id>`, else NODE_AGENT_NODE_ID, else ''. */
+export function namedId(
+  argv: readonly string[] = process.argv,
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const at = argv.indexOf('--name');
+  const flag = at === -1 ? '' : (argv[at + 1] ?? '').trim();
+  return flag || (env.NODE_AGENT_NODE_ID ?? '').trim();
+}
+
+/** What the directory writes under a node renamed to `named`: the name itself, in every language.
  *
- * The runner takes the id as an option, so a stack that has always called this node `computer` keeps
- * that name - and the capabilities that come with it (`computer.read`, ...) - instead of being renamed
- * by whichever package it happens to run from. A name the bus would refuse is refused by the runner.
- */
-function namedId(): string | undefined {
-  const at = process.argv.indexOf('--name');
-  const flag = at === -1 ? '' : (process.argv[at + 1] ?? '').trim();
-  const named = flag || (process.env.NODE_AGENT_NODE_ID ?? '').trim();
-  return named || undefined;
+ *  There is nothing to translate in a name the user chose, and the package's own words (`Shell /`
+ *  终端`) belong to an address this process is no longer on. */
+export function namedLabel(named: string): LocalizedText {
+  return { 'zh-CN': named, en: named };
+}
+
+/** The options `servePackage` takes for this process.
+ *
+ *  The label travels with the id: the runner renames `name` and `packageId`, writes the label into
+ *  `labels.node`, and a rename without it left the node answering as `computer` while the directory
+ *  still showed `Shell / 终端`. An empty name is `{}` - no id, no label - so a start without
+ *  `--name` registers exactly the package. A name the bus would refuse is refused by the runner. */
+export function namedServeOptions(named: string): ServeOptions {
+  return named === '' ? {} : { id: named, label: namedLabel(named) };
 }
 
 /** Resolve when this process should stop -- on a signal, and on nothing else. */
@@ -42,8 +67,7 @@ function untilStopped(): Promise<void> {
 async function main(): Promise<void> {
   let host;
   try {
-    const id = namedId();
-    host = await servePackage(ROOT, id === undefined ? {} : { id, label: { 'zh-CN': id, en: id } });
+    host = await servePackage(ROOT, namedServeOptions(namedId()));
   } catch (error: unknown) {
     console.error(
       `shell failed to join ${BUS_URL}: ${error instanceof Error ? error.message : String(error)}`,
@@ -55,6 +79,10 @@ async function main(): Promise<void> {
 
   await untilStopped();
   await host.stop();
+
+  // A client socket still open would keep the event loop alive; this process exists to be started
+  // and stopped by a supervisor, so once its job is done it leaves.
+  process.exit(0);
 }
 
 // The same file is both the package's Node class entry and its executable. Importing it must not
@@ -62,9 +90,9 @@ async function main(): Promise<void> {
 const invoked = process.argv[1] === undefined ? '' : realpathSync(process.argv[1]);
 const self = realpathSync(fileURLToPath(import.meta.url));
 if (invoked === self) {
-  await main();
-
-  // A client socket still open would keep the event loop alive; this process exists to be started
-  // and stopped by a supervisor, so once its job is done it leaves.
-  process.exit(0);
+  // Started, not awaited: `servePackage` loads this package, and the loader imports `node.entry` -
+  // which is this same file. Waiting here would wait for our own module evaluation to finish, which
+  // is waiting for us: the process printed `unsettled top-level await` and joined nothing. Not
+  // awaiting lets the module finish first, and the runner's import then finds the finished module.
+  void main();
 }
