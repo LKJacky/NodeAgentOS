@@ -1,6 +1,6 @@
 {
   "name": "@node-agent/provider",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "type": "module",
   "description": "Independent named LLM provider node (TypeScript)",
   "publisher": "node-agent",
@@ -36,7 +36,7 @@
     "id": "provider",
     "i18n": "dist/i18n",
     "desc": "Named LLM serving: OpenAI, Anthropic and Responses behind one row",
-    "entry": "dist/index.js",
+    "entry": "dist/serve.js",
     "icon": "src/icon.svg",
     "caps": {
       "providers": {
@@ -190,7 +190,6 @@
     "access": "public"
   },
   "bin": {
-    "provider": "dist/serve.js",
-    "provider-entry": "dist/index.js"
+    "provider": "dist/serve.js"
   }
 }

@@ -20,8 +20,7 @@
 // whole address - never the caller's name, which would mix two agents' deltas and outlive the
 // request - and it is forgotten as soon as the stream ends, fails or is cancelled.
 import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync, realpathSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 import {
   Node,
   loadResource,
@@ -429,10 +428,3 @@ export class ProviderNode extends Node {
 }
 
 export default ProviderNode;
-
-// `npx @node-agent/provider` runs this file. Keep the library import side-effect free: only a direct
-// invocation hands over to the process entry, and `--local` is read there from the same argv.
-const invoked = process.argv[1];
-if (invoked && existsSync(invoked) && realpathSync(invoked) === fileURLToPath(import.meta.url)) {
-  await import('./serve.js');
-}
