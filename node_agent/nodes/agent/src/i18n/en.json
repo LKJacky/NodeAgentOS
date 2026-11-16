@@ -115,6 +115,7 @@
       "chat_no_wait": "Chat without waiting",
       "history": "Conversation history",
       "status": "Status",
+      "stream": "Answer in progress",
       "stop": "Stop the agent",
       "provider": "Model provider",
       "agents": "Agents",
@@ -139,6 +140,9 @@
         "agent": "Agent"
       },
       "status": {
+        "agent": "Agent"
+      },
+      "stream": {
         "agent": "Agent"
       },
       "stop": {

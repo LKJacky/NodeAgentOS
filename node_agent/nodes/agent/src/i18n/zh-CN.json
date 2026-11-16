@@ -115,6 +115,7 @@
       "chat_no_wait": "不等待结果地对话",
       "history": "对话历史",
       "status": "状态",
+      "stream": "正在生成的回答",
       "stop": "停止智能体",
       "provider": "模型服务",
       "agents": "智能体列表",
@@ -139,6 +140,9 @@
         "agent": "智能体"
       },
       "status": {
+        "agent": "智能体"
+      },
+      "stream": {
         "agent": "智能体"
       },
       "stop": {
