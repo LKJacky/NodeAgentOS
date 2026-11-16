@@ -762,7 +762,7 @@ export class NodeProvider implements Provider {
   }
 
   #missing(): string {
-    return "no provider node is on the bus — connect node-agent-provider, then select its provider in this agent's page";
+    return "no provider node is on the bus — connect @node-agent/provider, then select its provider in this agent's page";
   }
 
   /** Where one provider capability is dialled, and the bare name the node knows the row by. */

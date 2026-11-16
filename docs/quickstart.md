@@ -56,7 +56,7 @@ is empty it answers with a deterministic stand-in, which is enough to check the 
 The `shell` node is not in the default node list — add it and the agent can use it:
 
 ```bash
-NODE_AGENT_NODES=node-agent-provider,@node-agent/shell,node-agent-webui \
+NODE_AGENT_NODES=@node-agent/provider,@node-agent/shell,node-agent-webui \
   node --env-file=deploy/node-agent/.env node_agent/node-agent/dist/serve.js
 ```
 

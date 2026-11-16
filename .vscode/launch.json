@@ -23,7 +23,7 @@
         "NODE_AGENT_WEBUI_PORT": "8790",
         "NODE_AGENT_WEBUI_SECRET": "",
         "SERVE_PLATFORM_SECRET": "",
-        "NODE_AGENT_NODES": "node-agent-provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
+        "NODE_AGENT_NODES": "@node-agent/provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
       },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]
@@ -45,7 +45,7 @@
         "NODE_AGENT_WEBUI_PORT": "8790",
         "NODE_AGENT_WEBUI_SECRET": "",
         "SERVE_PLATFORM_SECRET": "",
-        "NODE_AGENT_NODES": "node-agent-provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
+        "NODE_AGENT_NODES": "@node-agent/provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
       },
       "console": "integratedTerminal",
       "skipFiles": ["<node_internals>/**"]

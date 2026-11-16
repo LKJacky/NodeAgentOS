@@ -101,7 +101,7 @@ try {
 const INTRODUCE = 'node-agent-introduce';
 
 const DEFAULT_NODES =
-  'node-agent-provider,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce';
+  '@node-agent/provider,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce';
 
 interface NodeSpec {
   module: string;

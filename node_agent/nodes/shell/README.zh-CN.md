@@ -118,7 +118,7 @@ node node_agent/nodes/shell/dist/serve.js
 shell 不在运行时的默认节点列表里。把它的包名写进 `NODE_AGENT_NODES`——一个逗号分隔的包根列表，运行时会把它像其他节点一样作为 worker 启动：
 
 ```bash
-NODE_AGENT_NODES=node-agent-provider,@node-agent/shell,node-agent-webui \
+NODE_AGENT_NODES=@node-agent/provider,@node-agent/shell,node-agent-webui \
   node --env-file=deploy/node-agent/.env node_agent/node-agent/dist/serve.js
 ```
 

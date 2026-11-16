@@ -1,6 +1,6 @@
 {
-  "name": "node-agent-provider",
-  "version": "0.1.4",
+  "name": "@node-agent/provider",
+  "version": "0.1.5",
   "type": "module",
   "description": "Independent named LLM provider node (TypeScript)",
   "publisher": "node-agent",
@@ -177,5 +177,16 @@
   "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
   "bugs": {
     "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  },
+  "keywords": [
+    "node-agent",
+    "llm",
+    "provider",
+    "openai",
+    "anthropic",
+    "responses"
+  ],
+  "publishConfig": {
+    "access": "public"
   }
 }

@@ -167,7 +167,7 @@ The shell is not in the runtime's default node list. Name its package in `NODE_A
 comma-separated list of package roots the runtime starts as workers beside the rest:
 
 ```bash
-NODE_AGENT_NODES=node-agent-provider,@node-agent/shell,node-agent-webui \
+NODE_AGENT_NODES=@node-agent/provider,@node-agent/shell,node-agent-webui \
   node --env-file=deploy/node-agent/.env node_agent/node-agent/dist/serve.js
 ```
 

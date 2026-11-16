@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// node-agent-provider: the provider node as its own process, against a bus that already exists.
+// @node-agent/provider: the provider node as its own process, against a bus that already exists.
 //
 //     node dist/serve.js          registers as `provider`
 //     node dist/serve.js --local  registers as `local-provider`

@@ -1,4 +1,4 @@
-# node-agent-provider
+# @node-agent/provider
 
 A node that owns the stack's LLM credentials and serves chat to whoever asks. It keeps no
 conversation: a caller sends the whole transcript, gets an answer, and the provider remembers nothing

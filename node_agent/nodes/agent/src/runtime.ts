@@ -1256,7 +1256,7 @@ export class AgentRuntime {
     }
     if (action !== 'select') throw new Error(`unknown provider action "${action}"`);
     if (rows.length === 0)
-      throw new Error('no provider node is on the bus — connect node-agent-provider first');
+      throw new Error('no provider node is on the bus — connect @node-agent/provider first');
     if (this.phase() !== 'idle')
       throw new Error('cannot switch providers while the agent is running');
     const wanted = String(args.name ?? '');

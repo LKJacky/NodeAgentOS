@@ -15,7 +15,7 @@ node-agent-agent     111/111
 node-agent-history   19/19
 node-agent-introduce 23/23
 node-agent-notes     40/40
-node-agent-provider  41/41
+@node-agent/provider  41/41
 node-agent-search    19/19
 @node-agent/shell    89/89
 node-agent-system    40/40
