@@ -374,7 +374,7 @@
         <p class="warn" data-text-key="{{loopbackKey}}">This bus is listening on loopback.</p>
 
         <p class="label" data-text-key="connect.step1">1. 设置连接并启动 shell</p>
-        <div class="os-tabs" role="tablist" aria-label="Platform" data-text-label-key="connect.platform">
+        <div class="os-tabs" data-os-group="connect" role="tablist" aria-label="Platform" data-text-label-key="connect.platform">
           <button class="os-tab" type="button" role="tab" data-os-target="posix" aria-selected="true" data-text-key="connect.osMac">macOS</button>
           <button class="os-tab" type="button" role="tab" data-os-target="posix" aria-selected="false" data-text-key="connect.osLinux">Linux</button>
           <button class="os-tab" type="button" role="tab" data-os-target="windows" aria-selected="false" data-text-key="connect.osWindows">Windows</button>
@@ -389,6 +389,26 @@
         </div>
         <p class="note"><code>--name computer</code><span data-text-key="connect.name">是它在总线上的名字；接入多台电脑时给每台一个不同的名字。启动后 agent 会看到这些能力：</span><code>computer.read</code> <code>computer.exec</code></p>
         <p class="note"><span data-text-key="connect.verify1">验证：回到 Web UI，节点列表里应出现</span><code>computer</code><span data-text-key="connect.verify2">；再让 agent 调用</span><code>list_nodes</code> <code>computer.exec</code> <code>computer.read</code><span data-text-key="connect.verify3">，能拿到结果就说明接好了。</span></p>
+      </section>
+
+      <section class="card" aria-labelledby="local-provider">
+        <h2 id="local-provider" data-text-key="connect.local.title">使用本地模型服务（local provider）</h2>
+        <p data-text-key="connect.local.intro">如果模型服务运行在这台电脑上（Ollama、vLLM、LM Studio 等 OpenAI-compatible endpoint），再启动一个 local provider。它会以 local-provider 的名字加入总线，agent 可以直接选择它。</p>
+        <p class="label" data-text-key="connect.local.step">1. 设置连接并启动 local provider</p>
+        <div class="os-tabs" data-os-group="local-provider" role="tablist" aria-label="Platform" data-text-label-key="connect.platform">
+          <button class="os-tab" type="button" role="tab" data-os-target="posix" aria-selected="true" data-text-key="connect.osMac">macOS</button>
+          <button class="os-tab" type="button" role="tab" data-os-target="posix" aria-selected="false" data-text-key="connect.osLinux">Linux</button>
+          <button class="os-tab" type="button" role="tab" data-os-target="windows" aria-selected="false" data-text-key="connect.osWindows">Windows</button>
+        </div>
+        <p class="note" data-text-key="connect.local.command">在运行模型服务的电脑上运行：</p>
+        <div class="command-box">
+          <pre id="local-provider-script">env \
+  NODE_AGENT_BUS_URL="{{busUrl}}" \
+  NODE_AGENT_TOKEN="{{token}}" \
+  npx @node-agent/provider --local</pre>
+          <button class="copy" data-copy="local-provider-script" type="button" data-text-key="copy.local">复制本地模型命令</button>
+        </div>
+        <p class="note" data-text-key="connect.local.note">配置保存在本机的 local-provider.json，不写入云端历史。Base URL 填本机模型服务地址，例如 http://127.0.0.1:11434/v1。</p>
       </section>
 
       <footer data-text-key="footer">这一页只介绍怎么用和怎么接入节点：页面里的复制按钮只写剪贴板，不执行命令。</footer>
@@ -413,29 +433,40 @@
         document.execCommand('copy');
         area.remove();
       }
-      const osTabs = [...document.querySelectorAll('.os-tab')];
       const connectScript = document.getElementById('connect-script');
-      function selectOs(target) {
-        for (const tab of osTabs) {
+      const localProviderScript = document.getElementById('local-provider-script');
+      function selectOsFor(group, target) {
+        const tabs = [...document.querySelectorAll(`.os-tabs[data-os-group="${group}"] .os-tab`)];
+        for (const tab of tabs) {
           const on = tab.dataset.osTarget === target;
           tab.setAttribute('aria-selected', String(on));
           tab.tabIndex = on ? 0 : -1;
         }
-        if (!connectScript) return;
+        const script = group === 'connect' ? connectScript : localProviderScript;
+        if (!script) return;
         const busUrl = document.getElementById('busUrl')?.textContent ?? '';
         const token = document.getElementById('token')?.textContent ?? '';
-        connectScript.textContent =
+        const tail = group === 'connect' ? 'npx @node-agent/shell --name computer' : 'npx @node-agent/provider --local';
+        script.textContent =
           target === 'windows'
-            ? `$env:NODE_AGENT_BUS_URL="${busUrl}"
-$env:NODE_AGENT_TOKEN="${token}"
-npx @node-agent/shell --name computer`
-            : `env \\
-  NODE_AGENT_BUS_URL="${busUrl}" \\
-  NODE_AGENT_TOKEN="${token}" \\
-  npx @node-agent/shell --name computer`;
+            ? [
+                `$env:NODE_AGENT_BUS_URL="${busUrl}"`,
+                `$env:NODE_AGENT_TOKEN="${token}"`,
+                tail,
+              ].join('\n')
+            : [
+                'env \\',
+                `  NODE_AGENT_BUS_URL="${busUrl}" \\`,
+                `  NODE_AGENT_TOKEN="${token}" \\`,
+                `  ${tail}`,
+              ].join('\n');
       }
-      for (const tab of osTabs) {
-        tab.addEventListener('click', () => selectOs(tab.dataset.osTarget));
+      function selectOs(target) {
+        selectOsFor('connect', target);
+        selectOsFor('local-provider', target);
+      }
+      for (const tab of document.querySelectorAll('.os-tab')) {
+        tab.addEventListener('click', () => selectOsFor(tab.closest('.os-tabs').dataset.osGroup, tab.dataset.osTarget));
       }
       selectOs('posix');
 
