@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 
 ### Added
 
+- `files`, a node for shared file management: `list` / `read` / `write` / `delete` / `rename` over
+  any bytes (`base64` or `utf8`, with `expectedRevision`, `createdBy` and `updatedBy`), stored in
+  the history node as one index unit plus one unit per file, callers `["*"]`, and a page that
+  browses, previews, uploads and downloads them. It is part of the default stack and of
+  `@node-agent/local`'s tarball.
 - `NodeContext.nodeAgentHome` and `NodeContext.home`: the SDK now hands every node its home from
   `$NODE_AGENT_HOME` (default `~/.node_agent`), with the node's own directory at
   `<node-agent-home>/<node-name>/`.

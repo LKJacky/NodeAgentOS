@@ -40,8 +40,8 @@ bus: ws://127.0.0.1:8788
 node history: worker
 ...
 bus: 127.0.0.1:8788
-nodes: history, agent, system, provider, webui, notes, todo, timer, search, init
-user: default -> history, agent, system, provider, webui, notes, todo, timer, search, init
+nodes: history, agent, system, provider, webui, notes, files, todo, timer, search, init
+user: default -> history, agent, system, provider, webui, notes, files, todo, timer, search, init
 webui: http://127.0.0.1:8790/
 ```
 

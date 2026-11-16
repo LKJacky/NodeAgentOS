@@ -64,6 +64,7 @@ copyFlat(join(projectRoot, 'bus'), join(targetRoot, 'bus'));
 
 for (const name of [
   'agent',
+  'files',
   'history',
   'introduce',
   'notes',

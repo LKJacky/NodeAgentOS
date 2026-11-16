@@ -112,7 +112,7 @@ The bus is the only shared surface. Every process is a client of it.
 | **bus** (`node_agent/bus`) | one WebSocket endpoint; envelopes carry calls, events and streams |
 | **runtime** (`node_agent/runtime`) | starts the bus and Nodes, and tracks which user may use which Node |
 | **agent** (`node_agent/nodes/agent`) | the single persistent agent: context, memory, tools and the model loop |
-| **nodes** (`node_agent/nodes/*`) | small capability packages: history, shell, search, notes, todo, timer, system, webui |
+| **nodes** (`node_agent/nodes/*`) | small capability packages: history, shell, search, notes, files, todo, timer, system, webui |
 | **sdk** (`node_agent/sdk`) | manifest schema, wire types and the Node runner |
 
 ## 4. The Node contract

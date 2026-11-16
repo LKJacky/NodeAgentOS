@@ -66,6 +66,7 @@ Default nodes — `history`, `agent` and `system` are core, the rest are the def
 | `provider` | model endpoints: OpenAI, Anthropic and Responses behind one row |
 | `webui` | the page and its WebSocket to the bus |
 | `notes` | persistent memos: read, add, update, delete, search |
+| `files` | shared files: list, read, write, delete, rename (any bytes, stored in history) |
 | `todo` | today's card with free text and model-written buttons, plus a tickable list |
 | `timer` | pending timers, how long is left, repeats |
 | `search` | web search and page retrieval |
@@ -84,7 +85,7 @@ third-party node depends on.
 
 `node_agent/node-agent` is the one-command entry. It creates a `LocalRuntime`, launches the bus, starts the
 core nodes (`history`, `agent`, `system`) plus whatever `NODE_AGENT_NODES` names — by default
-`provider`, `webui`, `notes`, `todo`, `timer`, `search` and `init` — creates one user and connects it.
+`provider`, `webui`, `notes`, `files`, `todo`, `timer`, `search` and `init` — creates one user and connects it.
 That is the whole of "starting node-agent": one process, one bus, the default nodes as worker threads.
 
 ## What is deliberately absent

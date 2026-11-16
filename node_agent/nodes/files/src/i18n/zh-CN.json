@@ -1,0 +1,81 @@
+{
+  "label": {
+    "node": "文件",
+    "desc": "总线上所有节点共享的文件：列出、读取、写入、删除、重命名，数据存放在 history 节点",
+    "caps": {
+      "list": "列出文件",
+      "read": "读取文件",
+      "write": "写入文件",
+      "delete": "删除文件",
+      "rename": "重命名文件",
+      "ui": "文件页面"
+    },
+    "args": {
+      "list": {
+        "path": "路径前缀",
+        "limit": "条数上限"
+      },
+      "read": {
+        "path": "路径",
+        "encoding": "编码"
+      },
+      "write": {
+        "path": "路径",
+        "content": "内容",
+        "encoding": "编码",
+        "expectedRevision": "期望版本"
+      },
+      "delete": {
+        "path": "路径"
+      },
+      "rename": {
+        "from": "原路径",
+        "to": "新路径"
+      }
+    }
+  },
+  "title": "文件 · node_agent",
+  "subtitle": "node-agent 保存的所有文件，总线上所有节点共用。",
+  "search": {
+    "label": "按路径前缀筛选",
+    "placeholder": "按路径前缀筛选，例如 notes/"
+  },
+  "button": {
+    "refresh": "刷新",
+    "download": "下载",
+    "base64": "查看 base64",
+    "text": "查看文本",
+    "upload": "上传"
+  },
+  "list": {
+    "title": "文件",
+    "empty": "没有匹配这个前缀的文件。",
+    "revision": "版本 {revision}",
+    "by": "由 {node} 修改",
+    "more": "显示 {shown} / {total}",
+    "count": "{count} 个文件"
+  },
+  "viewer": {
+    "empty": "选择一个文件查看内容。",
+    "createdBy": "创建者 {node}",
+    "binary": "这个文件不是文本，以下是它的字节（base64）：",
+    "tooLarge": "文件大小 {size}，请下载后查看。"
+  },
+  "state": {
+    "loading": "加载中…"
+  },
+  "error": {
+    "refused": "请求被拒绝",
+    "read": "无法读取 {path}：{error}",
+    "list": "无法列出文件：{error}"
+  },
+  "upload": {
+    "pick": "选择要上传的文件",
+    "dest": "上传到 {folder}",
+    "overwrite": "覆盖 {path}？",
+    "reading": "正在读取 {name}…",
+    "done": "已上传 {path}",
+    "failed": "上传 {name} 失败：{error}",
+    "tooLarge": "{name} 有 {size}，单次上传最大 5 MB"
+  }
+}

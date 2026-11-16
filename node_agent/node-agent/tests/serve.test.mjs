@@ -21,7 +21,7 @@ import { TOKEN, connectProbe } from './probe.mjs';
 // home set: the reader's connect page is inside introduce, so there is no standalone userpage module
 // for this entry to know.
 const DEFAULT_NODES =
-  'history, agent, system, webui, provider, notes, todo, timer, search, introduce';
+  'history, agent, system, webui, provider, notes, files, todo, timer, search, introduce';
 
 test('the default is the whole set, and it survives /dev/null on stdin', async (t) => {
   const entry = tenant(t);

@@ -1,0 +1,81 @@
+{
+  "label": {
+    "node": "Files",
+    "desc": "Shared files for every node on the bus: list / read / write / delete / rename, stored in history",
+    "caps": {
+      "list": "List files",
+      "read": "Read a file",
+      "write": "Write a file",
+      "delete": "Delete a file",
+      "rename": "Rename a file",
+      "ui": "Files page"
+    },
+    "args": {
+      "list": {
+        "path": "Path prefix",
+        "limit": "Limit"
+      },
+      "read": {
+        "path": "Path",
+        "encoding": "Encoding"
+      },
+      "write": {
+        "path": "Path",
+        "content": "Content",
+        "encoding": "Encoding",
+        "expectedRevision": "Expected revision"
+      },
+      "delete": {
+        "path": "Path"
+      },
+      "rename": {
+        "from": "From",
+        "to": "To"
+      }
+    }
+  },
+  "title": "Files · node_agent",
+  "subtitle": "Every file node-agent keeps, shared by all the nodes on this bus.",
+  "search": {
+    "label": "Filter by path prefix",
+    "placeholder": "Filter by path prefix, e.g. notes/"
+  },
+  "button": {
+    "refresh": "Refresh",
+    "download": "Download",
+    "base64": "Show base64",
+    "text": "Show text",
+    "upload": "Upload"
+  },
+  "list": {
+    "title": "Files",
+    "empty": "No file matches this prefix.",
+    "revision": "revision {revision}",
+    "by": "by {node}",
+    "more": "showing {shown} of {total}",
+    "count": "{count} file(s)"
+  },
+  "viewer": {
+    "empty": "Pick a file to look inside it.",
+    "createdBy": "created by {node}",
+    "binary": "This file is not text. Its bytes, base64:",
+    "tooLarge": "This file is {size}; download it to look inside."
+  },
+  "state": {
+    "loading": "Loading…"
+  },
+  "error": {
+    "refused": "the request was refused",
+    "read": "Could not read {path}: {error}",
+    "list": "Could not list the files: {error}"
+  },
+  "upload": {
+    "pick": "Choose files to upload",
+    "dest": "Uploads go to {folder}",
+    "overwrite": "Replace {path}?",
+    "reading": "Reading {name}…",
+    "done": "Uploaded {path}",
+    "failed": "Could not upload {name}: {error}",
+    "tooLarge": "{name} is {size}; the largest upload is 5 MB"
+  }
+}

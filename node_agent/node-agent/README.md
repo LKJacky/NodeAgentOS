@@ -37,7 +37,7 @@ separate from the bus token on purpose: the runtime API can start and stop nodes
 
 - the runtime and shared WebSocket bus
 - the persistent agent and history
-- the optional core nodes: provider, webui, notes, todo, timer, search, introduce
+- the optional core nodes: provider, webui, notes, files, todo, timer, search, introduce
 - an HTTP runtime API, used by the entry through `RuntimeClient`; `--runtime-port` only exposes it externally
 
 The runtime, the bus and the core nodes are bundled into the launcher, so none of them needs a

@@ -1,0 +1,696 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- node-agent:i18n-resource -->
+    <script type="module" src="/sdk/i18n-client.js"></script>
+    <title data-text-key="title">Files · node_agent</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --page: #f5f7fb;
+        --surface: #fff;
+        --text: #171a23;
+        --muted: #667085;
+        --line: #e4e8f0;
+        --brand: #2563eb;
+        --soft: #eef2ff;
+        --danger: #b42318;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --page: #0d0f15;
+          --surface: #151820;
+          --text: #f1f3f8;
+          --muted: #9ca5b7;
+          --line: #292e3a;
+          --brand: #8b83ff;
+          --soft: #1d2233;
+          --danger: #ff6b85;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        background: var(--page);
+        color: var(--text);
+        font:
+          14px/1.45 ui-sans-serif,
+          system-ui,
+          -apple-system,
+          'Segoe UI',
+          sans-serif;
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+      }
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 16px;
+      }
+      h1 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: -0.02em;
+      }
+      h2 {
+        margin: 0;
+        font-size: 15px;
+        letter-spacing: -0.01em;
+        word-break: break-all;
+      }
+      p {
+        margin: 4px 0 0;
+        color: var(--muted);
+      }
+      button {
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 7px 12px;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover:not(:disabled) {
+        border-color: var(--brand);
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      input {
+        width: 100%;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        color: var(--text);
+        border-radius: 8px;
+        padding: 8px 11px;
+        font: inherit;
+      }
+      input:focus-visible,
+      button:focus-visible {
+        outline: 2px solid var(--brand);
+        outline-offset: 1px;
+      }
+      .bar {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 14px;
+      }
+      .bar .count {
+        color: var(--muted);
+        font-size: 12px;
+        white-space: nowrap;
+      }
+      .dest {
+        margin: -6px 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .dest code {
+        color: var(--text);
+      }
+      .uploads {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+      }
+      .uploads li {
+        padding: 7px 14px;
+        font-size: 12px;
+        border-bottom: 1px solid var(--line);
+        word-break: break-all;
+      }
+      .uploads li.ok {
+        color: #15803d;
+      }
+      .uploads li.error {
+        color: var(--danger);
+      }
+      body.dropping {
+        outline: 3px dashed var(--brand);
+        outline-offset: -10px;
+      }
+      .columns {
+        display: grid;
+        grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+        gap: 16px;
+        align-items: start;
+      }
+      .panel {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        overflow: hidden;
+      }
+      .panel-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 10px;
+        padding: 12px 14px;
+        border-bottom: 1px solid var(--line);
+        background: var(--soft);
+      }
+      .panel-head .meta {
+        color: var(--muted);
+        font-size: 12px;
+        text-align: right;
+      }
+      ul {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        max-height: 62vh;
+        overflow-y: auto;
+      }
+      li {
+        border-bottom: 1px solid var(--line);
+      }
+      li:last-child {
+        border-bottom: 0;
+      }
+      li > button {
+        display: block;
+        width: 100%;
+        text-align: left;
+        border: 0;
+        border-radius: 0;
+        padding: 10px 14px;
+        background: transparent;
+      }
+      li > button[aria-current='true'] {
+        background: var(--soft);
+        box-shadow: inset 3px 0 0 var(--brand);
+      }
+      .name {
+        font:
+          12px ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        word-break: break-all;
+      }
+      .under {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 10px;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+      pre {
+        margin: 0;
+        padding: 14px;
+        overflow: auto;
+        max-height: 58vh;
+        tab-size: 2;
+        font:
+          12px/1.5 ui-monospace,
+          SFMono-Regular,
+          Menlo,
+          monospace;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .empty,
+      .error {
+        padding: 22px 14px;
+        color: var(--muted);
+      }
+      .error {
+        color: var(--danger);
+      }
+      @media (max-width: 860px) {
+        .columns {
+          grid-template-columns: minmax(0, 1fr);
+        }
+        ul,
+        pre {
+          max-height: 46vh;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1 data-text-key="title">Files</h1>
+          <p data-text-key="subtitle">
+            Every file node-agent keeps, shared by all the nodes on this bus.
+          </p>
+        </div>
+        <button id="refresh" type="button" data-text-key="button.refresh">Refresh</button>
+      </header>
+
+      <div class="bar">
+        <input
+          id="prefix"
+          type="search"
+          autocomplete="off"
+          spellcheck="false"
+          data-text-placeholder-key="search.placeholder"
+          data-text-label-key="search.label"
+          placeholder="Filter by path prefix, e.g. notes/"
+          aria-label="Filter by path prefix"
+        />
+        <span class="count" id="count"></span>
+        <button id="upload" type="button" data-text-key="button.upload">Upload</button>
+        <input
+          id="pick"
+          type="file"
+          multiple
+          hidden
+          data-text-label-key="upload.pick"
+          aria-label="Choose files to upload"
+        />
+      </div>
+      <p class="dest" id="dest"></p>
+
+      <div class="columns">
+        <section class="panel">
+          <div class="panel-head"><strong data-text-key="list.title">Files</strong></div>
+          <ul class="uploads" id="uploads"></ul>
+          <ul id="files">
+            <li class="empty" data-text-key="state.loading">Loading…</li>
+          </ul>
+        </section>
+
+        <section class="panel" id="viewer" hidden>
+          <div class="panel-head">
+            <h2 id="path">—</h2>
+            <div class="meta" id="meta"></div>
+          </div>
+          <div class="actions">
+            <button id="download" type="button" data-text-key="button.download">Download</button>
+            <button id="swap" type="button" hidden data-text-key="button.base64">
+              Show base64
+            </button>
+          </div>
+          <pre id="body"></pre>
+        </section>
+        <section class="panel" id="placeholder">
+          <p class="empty" data-text-key="viewer.empty">Pick a file to look inside it.</p>
+        </section>
+      </div>
+    </main>
+    <script>
+      // The node's own name, filled in when the page is handed out. In a plain static copy (a test, a
+      // screenshot) the placeholder is still there, and the path says what the page is, so it still calls
+      // something sensible.
+      const INJECTED = '__NODE__';
+      const NODE = INJECTED.startsWith('__')
+        ? location.pathname.split('/')[2] || 'files'
+        : INJECTED;
+      /** How many entries one look at the store asks for; the count line says when there are more. */
+      const PAGE_SIZE = 200;
+      /** The most a browser is asked to draw: a 40 MB log is a download, not a preview. */
+      const PREVIEW_LIMIT = 512 * 1024;
+      /** The largest upload this page sends in one call: 5 MB of bytes is 6.7 MB of base64, and the
+       *  webui refuses a /call body over 8 MiB - 6 MB of bytes would sit exactly on that line with
+       *  the JSON around it. Larger files belong in the store by another route. */
+      const MAX_UPLOAD = 5 * 1024 * 1024;
+
+      let entries = [];
+      let open = '';
+      let raw = [];
+      let showing = 'text';
+
+      function t(key, params, english) {
+        const said = globalThis.nodeAgentI18n?.t?.(key, params);
+        return typeof said === 'string' ? said : (english ?? key);
+      }
+
+      async function call(tool, args) {
+        const response = await fetch('/call', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ tool, args }),
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return await response.json();
+      }
+
+      function size(bytes) {
+        const value = Number(bytes);
+        if (!Number.isFinite(value) || value <= 0) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let left = value,
+          at = 0;
+        while (left >= 1024 && at < units.length - 1) {
+          left /= 1024;
+          at += 1;
+        }
+        return `${left.toFixed(at === 0 ? 0 : 1)} ${units[at]}`;
+      }
+
+      function when(value) {
+        const at = new Date(String(value));
+        return Number.isNaN(at.getTime()) ? '' : at.toLocaleString();
+      }
+
+      function bytesOf(base64) {
+        const binary = atob(String(base64 ?? ''));
+        const bytes = new Uint8Array(binary.length);
+        for (let at = 0; at < binary.length; at += 1) bytes[at] = binary.charCodeAt(at);
+        return bytes;
+      }
+
+      function base64Of(bytes) {
+        let text = '';
+        const step = 0x8000;
+        for (let at = 0; at < bytes.length; at += step)
+          text += String.fromCharCode(...bytes.subarray(at, at + step));
+        return btoa(text);
+      }
+
+      /** Where an upload lands: the folder in the filter box when it names one, otherwise the folder
+       *  of the file being looked at, otherwise the root. The page says which, above the list. */
+      function folder() {
+        const prefix = document.getElementById('prefix').value;
+        if (prefix.endsWith('/')) return prefix;
+        if (open !== '') {
+          const at = open.lastIndexOf('/');
+          if (at >= 0) return open.slice(0, at + 1);
+        }
+        return '';
+      }
+
+      function drawDest() {
+        document.getElementById('dest').textContent = t(
+          'upload.dest',
+          { folder: folder() || '/' },
+          `Uploads go to ${folder() || '/'}`,
+        );
+      }
+
+      function fileName() {
+        const parts = open.split('/');
+        return parts[parts.length - 1] || 'file';
+      }
+
+      function drawFiles() {
+        const list = document.getElementById('files');
+        list.replaceChildren();
+        if (entries.length === 0) {
+          const empty = document.createElement('li');
+          empty.className = 'empty';
+          empty.textContent = t('list.empty', {}, 'No file matches this prefix.');
+          list.append(empty);
+          return;
+        }
+        for (const entry of entries) {
+          const item = document.createElement('li');
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.dataset.path = String(entry.path ?? '');
+          button.setAttribute('aria-current', String(entry.path === open));
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = String(entry.path ?? '');
+          const under = document.createElement('div');
+          under.className = 'under';
+          for (const said of [
+            size(entry.bytes),
+            t(
+              'list.revision',
+              { revision: Number(entry.revision) || 0 },
+              `revision ${Number(entry.revision) || 0}`,
+            ),
+            entry.updatedBy ? t('list.by', { node: entry.updatedBy }, `by ${entry.updatedBy}`) : '',
+            when(entry.updatedAt),
+          ]) {
+            if (said === '') continue;
+            const part = document.createElement('span');
+            part.textContent = said;
+            under.append(part);
+          }
+          button.append(name, under);
+          item.append(button);
+          list.append(item);
+        }
+      }
+
+      function drawMore(total) {
+        const count = document.getElementById('count');
+        count.textContent =
+          total > entries.length
+            ? t(
+                'list.more',
+                { shown: entries.length, total },
+                `showing ${entries.length} of ${total}`,
+              )
+            : t(
+                'list.count',
+                { count: entries.length },
+                `${entries.length} file${entries.length === 1 ? '' : 's'}`,
+              );
+      }
+
+      function showBody() {
+        const body = document.getElementById('body');
+        const swap = document.getElementById('swap');
+        swap.hidden = raw.length === 0;
+        if (raw.length > PREVIEW_LIMIT) {
+          body.textContent = t(
+            'viewer.tooLarge',
+            { size: size(raw.length) },
+            `This file is ${size(raw.length)}; download it to look inside.`,
+          );
+          return;
+        }
+        if (showing === 'base64') {
+          swap.textContent = t('button.text', {}, 'Show text');
+          body.textContent = base64Of(raw);
+          return;
+        }
+        swap.textContent = t('button.base64', {}, 'Show base64');
+        try {
+          body.textContent = new TextDecoder('utf-8', { fatal: true }).decode(raw);
+        } catch {
+          // Not text: no guessing, no replacement characters - the bytes, and a download.
+          showing = 'base64';
+          swap.textContent = t('button.text', {}, 'Show text');
+          body.textContent =
+            t('viewer.binary', {}, 'This file is not text. Its bytes, base64:') +
+            '\n\n' +
+            base64Of(raw);
+        }
+      }
+
+      function drawViewer() {
+        const viewer = document.getElementById('viewer');
+        const placeholder = document.getElementById('placeholder');
+        if (open === '') {
+          viewer.hidden = true;
+          placeholder.hidden = false;
+          return;
+        }
+        viewer.hidden = false;
+        placeholder.hidden = true;
+        const entry = entries.find((one) => one.path === open) ?? { path: open };
+        document.getElementById('path').textContent = open;
+        document.getElementById('meta').textContent = [
+          size(entry.bytes),
+          t(
+            'list.revision',
+            { revision: Number(entry.revision) || 0 },
+            `revision ${Number(entry.revision) || 0}`,
+          ),
+          entry.createdBy
+            ? t('viewer.createdBy', { node: entry.createdBy }, `created by ${entry.createdBy}`)
+            : '',
+          entry.updatedBy ? t('list.by', { node: entry.updatedBy }, `by ${entry.updatedBy}`) : '',
+          when(entry.updatedAt),
+        ]
+          .filter((said) => said !== '')
+          .join(' · ');
+        showBody();
+      }
+
+      async function openFile(path) {
+        open = path;
+        raw = [];
+        showing = 'text';
+        drawFiles();
+        drawDest();
+        drawViewer();
+        if (path === '') return;
+        const body = document.getElementById('body');
+        body.textContent = t('state.loading', {}, 'Loading…');
+        try {
+          const reply = await call(`${NODE}.read`, { path });
+          if (reply?.ok !== true)
+            throw new Error(reply?.error || t('error.refused', {}, 'the read was refused'));
+          raw = bytesOf(reply.value?.content);
+          showBody();
+        } catch (error) {
+          body.textContent = t(
+            'error.read',
+            { path, error: String(error.message || error) },
+            `Could not read ${path}: ${String(error.message || error)}`,
+          );
+        }
+      }
+
+      function download() {
+        if (open === '' || raw.length === 0) return;
+        const url = URL.createObjectURL(new Blob([raw], { type: 'application/octet-stream' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName();
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+      }
+
+      /** One line of progress, added before the work so a big file says something at once. */
+      function uploadLine(text, kind) {
+        const line = document.createElement('li');
+        if (kind) line.className = kind;
+        line.textContent = text;
+        document.getElementById('uploads').prepend(line);
+        return line;
+      }
+
+      /** Send the bytes of some picked or dropped files to the folder the page is looking at. A new
+       *  path is written create-only (revision 0), so an upload never replaces a file nobody saw; an
+       *  existing one is written against the revision on screen, so a file that moved is a conflict
+       *  rather than a silent loss. */
+      async function upload(files) {
+        const target = folder();
+        for (const file of files) {
+          const path = target + file.name;
+          if (file.size > MAX_UPLOAD) {
+            uploadLine(
+              t(
+                'upload.tooLarge',
+                { name: file.name, size: size(file.size) },
+                `${file.name} is ${size(file.size)}; the largest upload is 5 MB`,
+              ),
+              'error',
+            );
+            continue;
+          }
+          const known = entries.find((one) => one.path === path);
+          if (known && !confirm(t('upload.overwrite', { path }, `Replace ${path}?`))) continue;
+          const line = uploadLine(
+            t('upload.reading', { name: file.name }, `Reading ${file.name}…`),
+          );
+          try {
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            const reply = await call(`${NODE}.write`, {
+              path,
+              content: base64Of(bytes),
+              encoding: 'base64',
+              expectedRevision: known ? known.revision : 0,
+            });
+            if (reply?.ok !== true)
+              throw new Error(reply?.error || t('error.refused', {}, 'the write was refused'));
+            line.className = 'ok';
+            line.textContent = t('upload.done', { path }, `Uploaded ${path}`);
+            await load();
+            await openFile(path);
+          } catch (error) {
+            line.className = 'error';
+            line.textContent = t(
+              'upload.failed',
+              { name: file.name, error: String(error.message || error) },
+              `Could not upload ${file.name}: ${String(error.message || error)}`,
+            );
+          }
+        }
+      }
+
+      async function load() {
+        const button = document.getElementById('refresh');
+        const prefix = document.getElementById('prefix').value;
+        button.disabled = true;
+        try {
+          const reply = await call(`${NODE}.list`, { path: prefix, limit: PAGE_SIZE });
+          if (reply?.ok !== true)
+            throw new Error(reply?.error || t('error.refused', {}, 'the listing was refused'));
+          const value = reply.value ?? {};
+          entries = Array.isArray(value.files) ? value.files : [];
+          if (open !== '' && !entries.some((one) => one.path === open)) {
+            open = '';
+            raw = [];
+          }
+          drawFiles();
+          drawMore(Number(value.total) || entries.length);
+          drawDest();
+          drawViewer();
+          if (open !== '') await openFile(open);
+        } catch (error) {
+          const list = document.getElementById('files');
+          list.replaceChildren();
+          const failed = document.createElement('li');
+          failed.className = 'error';
+          failed.textContent = t(
+            'error.list',
+            { error: String(error.message || error) },
+            `Could not list the files: ${String(error.message || error)}`,
+          );
+          list.append(failed);
+          document.getElementById('count').textContent = '';
+        } finally {
+          button.disabled = false;
+        }
+      }
+
+      let waiting = null;
+      document.getElementById('prefix').addEventListener('input', () => {
+        clearTimeout(waiting);
+        waiting = setTimeout(load, 200);
+      });
+      document.getElementById('refresh').addEventListener('click', load);
+      document.getElementById('files').addEventListener('click', (event) => {
+        const button = event.target.closest('button[data-path]');
+        if (button) openFile(button.dataset.path || '');
+      });
+      document.getElementById('swap').addEventListener('click', () => {
+        showing = showing === 'base64' ? 'text' : 'base64';
+        showBody();
+      });
+      document.getElementById('download').addEventListener('click', download);
+      document
+        .getElementById('upload')
+        .addEventListener('click', () => document.getElementById('pick').click());
+      document.getElementById('pick').addEventListener('change', (event) => {
+        const picked = [...(event.target.files ?? [])];
+        event.target.value = '';
+        if (picked.length > 0) upload(picked);
+      });
+      // Anywhere on the page is a drop zone: a file dragged in is an upload to the folder shown.
+      document.addEventListener('dragover', (event) => {
+        event.preventDefault();
+        document.body.classList.add('dropping');
+      });
+      document.addEventListener('dragleave', () => document.body.classList.remove('dropping'));
+      document.addEventListener('drop', (event) => {
+        event.preventDefault();
+        document.body.classList.remove('dropping');
+        const dropped = [...(event.dataTransfer?.files ?? [])];
+        if (dropped.length > 0) upload(dropped);
+      });
+      load();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,180 @@
+{
+  "name": "node-agent-files",
+  "version": "0.1.0",
+  "type": "module",
+  "publisher": "node-agent",
+  "description": "The files node: file management shared by every node on the bus (list / read / write / delete / rename), stored in history",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "src/icon.svg",
+    "src/ui.html",
+    "LICENSE"
+  ],
+  "scripts": {
+    "prepack": "node ../../../scripts/sync-licenses.mjs",
+    "build": "tsc -p tsconfig.json && node scripts/copy-assets.mjs",
+    "prestart": "npm run build",
+    "start": "node ../../sdk/dist/serve.js .",
+    "pretest": "npm run build",
+    "test": "node --import ./test/ts-resolve.mjs --test test/*.test.ts"
+  },
+  "engines": {
+    "node": ">=23.6"
+  },
+  "dependencies": {
+    "@node-agent/sdk": "^0.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.2",
+    "typescript": "^7.0.2"
+  },
+  "node": {
+    "id": "files",
+    "desc": "Shared files for every node on the bus: list / read / write / delete / rename, stored in history",
+    "entry": "dist/index.js",
+    "icon": "src/icon.svg",
+    "i18n": "dist/i18n",
+    "caps": {
+      "list": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "only files whose path starts with this prefix, e.g. \"notes/\" for one folder; omit (or send \"\") for every file"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "how many entries to answer with at most (default 200)"
+          }
+        },
+        "required": [],
+        "description": "One entry per file (path, bytes, revision, encoding, createdAt, updatedAt, createdBy, updatedBy), sorted by path, with no contents. `path` selects a prefix and `limit` caps the answer: total/count/more say when more matched than were returned",
+        "callers": [
+          "*"
+        ]
+      },
+      "read": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the file's logical path"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": [
+              "utf8",
+              "base64"
+            ],
+            "description": "how to spell the contents back: base64 (default, exact for any byte) or utf8 (text)"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "description": "Read one file; answers { path, content, encoding, bytes, revision, createdAt, updatedAt, createdBy, updatedBy } and always says which encoding the content is in",
+        "callers": [
+          "*"
+        ]
+      },
+      "write": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the file's logical path; created when it does not exist"
+          },
+          "content": {
+            "type": "string",
+            "description": "the whole file: base64 of its bytes, or text when encoding is utf8"
+          },
+          "encoding": {
+            "type": "string",
+            "enum": [
+              "utf8",
+              "base64"
+            ],
+            "description": "how content is spelled: base64 (default, safe for any byte) or utf8 (text)"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "write only if the file is still at this revision; 0 means it must not exist yet (omit for an unconditional overwrite)"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "description": "Write or overwrite one file; answers the entry plus created and the new revision. The caller's node name is recorded as updatedBy (createdBy is kept from the first write)",
+        "callers": [
+          "*"
+        ]
+      },
+      "delete": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "the file to delete"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "description": "Delete one file; answers { path, deleted }, where deleted is false when there was nothing there",
+        "callers": [
+          "*"
+        ]
+      },
+      "rename": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "the path the file has now"
+          },
+          "to": {
+            "type": "string",
+            "description": "the path it should have; it must be free"
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ],
+        "description": "Rename one file; answers the new entry plus from. Contents are kept, createdBy travels with them, updatedBy becomes the caller, the new path starts at revision 1, and an existing path is refused rather than overwritten",
+        "callers": [
+          "*"
+        ]
+      },
+      "ui": {
+        "type": "object",
+        "properties": {},
+        "description": "Files page: browse the shared files, filter by path prefix, look inside one (text as text, bytes as base64), upload files from the browser into the folder shown, and download any file",
+        "icon": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 24 24\" fill=\"none\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\">\n  <!-- A folder in blue with two written lines in amber: the files every node on the bus shares. -->\n  <path stroke=\"#2563eb\" d=\"M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z\" />\n  <path stroke=\"#f59e0b\" d=\"M9 12.5h6M9 15.5h4\" />\n</svg>",
+        "callers": [
+          "*"
+        ]
+      }
+    }
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/LKJacky/NodeAgentOS.git",
+    "directory": "node_agent/nodes/files"
+  },
+  "homepage": "https://github.com/LKJacky/NodeAgentOS#readme",
+  "bugs": {
+    "url": "https://github.com/LKJacky/NodeAgentOS/issues"
+  }
+}
