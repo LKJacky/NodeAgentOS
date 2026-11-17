@@ -192,17 +192,23 @@ async def launch_node_agent(
         stderr=asyncio.subprocess.STDOUT,
     )
     lines: list[str] = []
+    # What the runtime says -- the bus's own log, every node's stdout and stderr, the reason
+    # a node left -- used to live only in the terminal that started it. It goes next to the
+    # nodes' own logs as well, so a finished run can still be asked why something left.
+    log_path = home_path / "runtime.log"
 
     async def read() -> None:
         assert process.stdout is not None
-        while True:
-            raw = await process.stdout.readline()
-            if raw == b"":
-                return
-            line = raw.decode("utf-8", "replace").rstrip("\n")
-            lines.append(line)
-            if echo:
-                print(f"[node-agent] {line}", flush=True)
+        with open(log_path, "a", encoding="utf-8", buffering=1) as log:
+            while True:
+                raw = await process.stdout.readline()
+                if raw == b"":
+                    return
+                line = raw.decode("utf-8", "replace").rstrip("\n")
+                lines.append(line)
+                log.write(f"{line}\n")
+                if echo:
+                    print(f"[node-agent] {line}", flush=True)
 
     reader = asyncio.create_task(read())
     try:

@@ -663,7 +663,11 @@ export class LocalRuntime implements Runtime {
   async destroyUser(user: string): Promise<void> {
     userName(user);
     const dir = this.home(user);
-    if (this.busRecord !== undefined) this.busRecord.bus.users.delete(this.busId(user));
+    // The bus owns this teardown: `Bus.destroyUser` settles what the space was still waiting for
+    // with "the user was destroyed" and closes its nodes' links in order. Dropping only the table
+    // entry here left that to the sockets, whose close path reports every pending call as a node
+    // that "left before answering" -- which reads like a crash and is not one.
+    if (this.busRecord !== undefined) this.busRecord.bus.destroyUser(this.busId(user));
     await rm(dir, { recursive: true, force: true });
   }
 
