@@ -79,15 +79,43 @@ export interface EnvHost {
 
 export class AgentBusEnv {
   readonly host: EnvHost;
-  readonly tools: ToolSpec[];
+  /** Whether the model is offered `ask_user`, and whether it is offered the spawn tools. Not
+   *  readonly: an agent's settings may be saved while it runs, and a switch that is in force from the
+   *  next turn is this pair (`gate`). */
+  #allowAskUser: boolean;
+  #allowSpawn: boolean;
 
   constructor(host: EnvHost, options: { allowAskUser?: boolean; allowSpawn?: boolean } = {}) {
     this.host = host;
-    this.tools = [...TOOLS];
-    if (options.allowAskUser ?? true) this.tools.push(ASK_USER_TOOL);
-    if ((options.allowSpawn ?? false) && this.host.spawnAgent !== undefined) {
-      this.tools.push(...SPAWN_TOOLS);
-    }
+    this.#allowAskUser = options.allowAskUser ?? true;
+    this.#allowSpawn = options.allowSpawn ?? false;
+  }
+
+  /** The tools the model is offered right now: the bus and cache tools, the question (unless an
+   *  agent's settings switched it off) and the spawn pair (unless it may not, or has no host that
+   *  could start one). Read per round, so a switch takes effect on the next one. */
+  get tools(): ToolSpec[] {
+    const tools = [...TOOLS];
+    if (this.#allowAskUser) tools.push(ASK_USER_TOOL);
+    if (this.#allowSpawn && this.host.spawnAgent !== undefined) tools.push(...SPAWN_TOOLS);
+    return tools;
+  }
+
+  /** Put the two switches in force. The runtime calls this when it starts and after every save, so a
+   *  switch a page turned off is the one the next round sees. */
+  gate(options: { allowAskUser?: boolean; allowSpawn?: boolean } = {}): void {
+    if (options.allowAskUser !== undefined) this.#allowAskUser = options.allowAskUser;
+    if (options.allowSpawn !== undefined) this.#allowSpawn = options.allowSpawn;
+  }
+
+  /** Whether `ask_user` is offered at all. */
+  get allowAskUser(): boolean {
+    return this.#allowAskUser;
+  }
+
+  /** Whether the spawn tools are offered at all. */
+  get allowSpawn(): boolean {
+    return this.#allowSpawn && this.host.spawnAgent !== undefined;
   }
 
   /** Whether a bus node is this agent itself: one tenant registers one identity, so the node under
@@ -170,7 +198,12 @@ export class AgentBusEnv {
     if (name === 'run_on_node') return await this.runOnNode(toolArgs, signal);
     if (name === 'read_cache') return await this.readCache(toolArgs);
     if (name === 'search_cache') return await this.searchCache(toolArgs);
-    if (name === 'ask_user') return await untilAborted(this.host.ask(call.id, toolArgs), signal);
+    if (name === 'ask_user') {
+      // Switched off in the agent's settings: a tool that is not offered must not be callable either,
+      // and the model is told why rather than being left with a tool that hangs.
+      if (!this.#allowAskUser) return 'ask_user is switched off for this agent';
+      return await untilAborted(this.host.ask(call.id, toolArgs), signal);
+    }
     if (name === 'create_agent') return await this.createAgent(toolArgs);
     if (name === 'destroy_agent') return await this.destroyAgent(toolArgs);
     return `no such tool: ${name}`;
@@ -187,6 +220,11 @@ export class AgentBusEnv {
     }
     const spawn = this.host.spawnAgent;
     if (spawn === undefined) return 'this agent cannot create sub-agents';
+    // Switched off in the agent's settings: the refusal is the tool's answer, in the same shape a
+    // runtime that may not spawn gives it, so a call that arrives anyway reads like any other no.
+    if (!this.#allowSpawn) {
+      return `cannot create "${name}": this agent may not create sub-agents`;
+    }
     try {
       const provider = typeof args.provider === 'string' ? args.provider : undefined;
       return await spawn.call(this.host, name, icon, provider);

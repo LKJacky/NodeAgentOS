@@ -36,6 +36,7 @@ import {
   STREAM_TOPIC_PREFIX,
   StatedModel,
   StreamHub,
+  streamIdleMs,
   type ModelOptions,
 } from './model.js';
 import {
@@ -47,13 +48,34 @@ import {
   type StreamStart,
   type StreamState,
 } from './stream.js';
+import {
+  DEFAULT_SETTINGS,
+  SETTINGS_UNIT,
+  effectiveSettings,
+  envNumber,
+  isSettingsConflict,
+  mergePatches,
+  parseSettingsPatch,
+  readStoredSettings,
+  settingsUnit,
+  SETTINGS_NAMES,
+  RESTART_REQUIRED_SETTINGS,
+  LIVE_SETTINGS,
+  type AgentSettings,
+  type SettingsPatch,
+} from './settings.js';
 import type { Message, Provider, ToolCall, ToolSpec, UsageSummary } from './types.js';
 
 /** How many messages one `history` answer may carry. */
 export const HISTORY_MAX = 200;
 
-/** The default question timeout, in seconds. */
+/** The default question timeout, in seconds: what `ask_user` waits when the asker names no deadline.
+ *  The deployment's number, not a setting: an agent that needs another one passes `timeout_seconds`
+ *  on the call itself. */
 export const ASK_TIMEOUT_SECONDS = 300;
+
+/** How many times one save is tried when the history node says someone else wrote first. */
+const SETTINGS_SAVE_ATTEMPTS = 3;
 
 /** One line handed to the agent, with the promise its caller is waiting on. */
 type Round = {
@@ -77,8 +99,11 @@ type PendingAsk = {
 
 export type RuntimeOptions = {
   readonly historyRequired?: boolean;
+  /** Whether this runtime may ask the reader at all: what an embedder passes is the floor, and the
+   *  agent's own `allowAskUser` setting is laid over it. */
   readonly allowAskUser?: boolean;
-  /** Whether this runtime may start sub-agents; a sub-agent itself never may. */
+  /** Whether this runtime may start sub-agents; a sub-agent itself never may, and the agent's
+   *  `allowSpawn` setting can only make it narrower. */
   readonly allowSpawn?: boolean;
   readonly maxAgents?: number;
   readonly cacheSize?: number;
@@ -285,6 +310,11 @@ export class AgentRuntime {
   #restored = false;
   #providerName: string | null = null;
   #providerRevision: number | null = null;
+  /** This agent's own settings, as its page last saved them: only the fields somebody chose, so a
+   *  field nobody touched keeps following the deployment's default. */
+  #stored: SettingsPatch = {};
+  /** The revision of the settings unit this process last saw, so a save names what it replaces. */
+  #settingsRevision: number | undefined;
 
   readonly #asks = new Map<string, PendingAsk>();
   readonly #timedOut = new Map<string, string | null>();
@@ -302,7 +332,8 @@ export class AgentRuntime {
     this.options = init.options ?? {};
     const fromEnv = Number(process.env.NODE_AGENT_CACHE_SIZE ?? '');
     this.cache = new Cache(
-      this.options.cacheSize ?? (Number.isSafeInteger(fromEnv) && fromEnv > 0 ? fromEnv : 500),
+      this.options.cacheSize ??
+        (Number.isSafeInteger(fromEnv) && fromEnv > 0 ? fromEnv : DEFAULT_SETTINGS.cacheSize),
       null,
     );
     this.providerNodes = new ProviderNodes(() => this.bus());
@@ -339,13 +370,21 @@ export class AgentRuntime {
         destroyAgent: (name) => this.destroyAgent(name),
       },
       {
-        allowAskUser: this.options.allowAskUser ?? true,
+        // What the settings allow is applied again by `#applyRuntimeSettings` once they are read: a
+        // stored switch is in force on the first turn and not only on the turn after a restart.
+        allowAskUser: this.allowAskUser,
         allowSpawn: this.allowSpawn(),
       },
     );
     const history = await this.#historyIfPresent();
     this.cache.useHistory(history);
     await this.cache.restore();
+    await this.#loadSettings();
+    // The numbers a component reads once are handed to it here, so a stored value is in force on the
+    // first turn this process runs and not only on the one after a restart.
+    await this.#applyRuntimeSettings();
+    // The children a previous run saved are always started again: `restoreAgents` was removed, so the
+    // behaviour that used to be the setting's default is the only one left.
     await this.#restoreAgents();
     agentLog('info', 'agent.ready', {
       agent: this.name,
@@ -383,8 +422,11 @@ export class AgentRuntime {
     const history = this.cache.enabled ? await this.#historyIfPresent() : null;
     const provider = await this.#resolveProvider();
     const options: ModelOptions = {
-      compressionThreshold: this.options.compressionThreshold,
-      compressionTokens: this.options.compressionTokens,
+      // The compression pair the agent runs on: read from its settings when the model is built, and
+      // handed to it again after every save, so a model that already exists compresses at the new
+      // number from the next round on.
+      compressionThreshold: this.settings.compressionThreshold,
+      compressionTokens: this.settings.compressionTokens,
       onCommit: this.options.onCommit ?? ((messages) => this.#announce(messages)),
       onDelta: (delta) => this.#announceDelta(delta),
     };
@@ -585,9 +627,7 @@ export class AgentRuntime {
       );
     }
     if (this.#children.has(wanted)) return `an agent named "${wanted}" already runs here`;
-    const fromEnv = Number(process.env.NODE_AGENT_MAX_AGENTS ?? '');
-    const max =
-      this.options.maxAgents ?? (Number.isSafeInteger(fromEnv) && fromEnv > 0 ? fromEnv : 32);
+    const max = this.settings.maxAgents;
     if (this.#children.size >= max) {
       return `cannot create "${wanted}": too many agents are running`;
     }
@@ -634,8 +674,17 @@ export class AgentRuntime {
     );
   }
 
+  /** Whether this agent may start a sub-agent at all. Two things decide it: what it was started
+   *  with (a sub-agent itself never may), and its own `allowSpawn` setting - which `settings` has
+   *  already kept inside that floor. */
   allowSpawn(): boolean {
-    return this.options.allowSpawn ?? true;
+    return this.settings.allowSpawn;
+  }
+
+  /** Whether this agent may ask the reader anything: its `allowAskUser` setting over what it was
+   *  started with (a sub-agent may not, and its page has nobody to ask). */
+  get allowAskUser(): boolean {
+    return this.settings.allowAskUser;
   }
 
   /** The agents this agent runs: itself first, then the sub-agents it started. A sub-agent never
@@ -778,7 +827,9 @@ export class AgentRuntime {
   }
 
   #makeNodeProvider(name: string | null): NodeProvider {
-    return new NodeProvider(() => this.bus(), this.providerNodes, this.hub, name);
+    // The idle timeout is the deployment's, read every time a stream starts: `streamIdleMs()` is
+    // NODE_AGENT_STREAM_IDLE_MS with this package's default under it, and is no longer a setting.
+    return new NodeProvider(() => this.bus(), this.providerNodes, this.hub, name, streamIdleMs);
   }
 
   /** The provider this agent has chosen for itself: the row it settled on, the one it stored, or the
@@ -815,6 +866,204 @@ export class AgentRuntime {
     } catch (error) {
       console.warn(`agent: could not store the active provider: ${String(error)}`);
     }
+  }
+
+  // settings
+
+  /** What this agent falls back to: its parent's settings (a sub-agent is one of the family), or the
+   *  deployment's own defaults - the package's, with the environment's numbers over them when it
+   *  names any. */
+  get defaults(): AgentSettings {
+    if (this.parent !== null) {
+      // A sub-agent inherits the family's numbers, but not the two switches: it was started unable to
+      // spawn one of its own and with nobody to ask, so that is what its settings say - otherwise its
+      // page would offer a switch that is on and does nothing.
+      return this.#withinFloor(this.parent.settings);
+    }
+    return {
+      ...DEFAULT_SETTINGS,
+      maxAgents:
+        this.options.maxAgents ?? envNumber('NODE_AGENT_MAX_AGENTS') ?? DEFAULT_SETTINGS.maxAgents,
+      maxInputLengthPerTurn:
+        this.options.maxInputPerTurn ??
+        envNumber('NODE_AGENT_MAX_INPUT_LENGTH_PER_TURN') ??
+        DEFAULT_SETTINGS.maxInputLengthPerTurn,
+      // An embedder that handed the runtime a pair starts from it, the way it may start from a cap;
+      // a saved value is laid over it like every other field's.
+      compressionThreshold:
+        this.options.compressionThreshold ?? DEFAULT_SETTINGS.compressionThreshold,
+      compressionTokens: this.options.compressionTokens ?? DEFAULT_SETTINGS.compressionTokens,
+      // `NODE_AGENT_CACHE_SIZE` was the way a deployment sized the cache before there was a setting:
+      // it is still the fallback, and a saved value is laid over it.
+      cacheSize:
+        this.options.cacheSize ?? envNumber('NODE_AGENT_CACHE_SIZE') ?? DEFAULT_SETTINGS.cacheSize,
+      // Both switches default to what an agent could do before they existed. What an embedder passed
+      // is the floor: a runtime told it may not spawn cannot turn that back on from its page.
+      allowSpawn: this.options.allowSpawn ?? DEFAULT_SETTINGS.allowSpawn,
+      allowAskUser: this.options.allowAskUser ?? DEFAULT_SETTINGS.allowAskUser,
+    };
+  }
+
+  /** The same settings with the two switches kept inside what this runtime was started with: a
+   *  sub-agent (or an embedder's runtime) may be told it cannot spawn or ask, and neither a stored
+   *  unit nor an inherited setting may turn that back on. */
+  #withinFloor(settings: AgentSettings): AgentSettings {
+    const allowSpawn = this.#startedWith('allowSpawn') && settings.allowSpawn;
+    const allowAskUser = this.#startedWith('allowAskUser') && settings.allowAskUser;
+    if (allowSpawn === settings.allowSpawn && allowAskUser === settings.allowAskUser)
+      return settings;
+    return { ...settings, allowSpawn, allowAskUser };
+  }
+
+  /** Whether this runtime was started allowed to do one of the two switched things. A sub-agent is
+   *  started without both, which is why its own setting can never say otherwise. */
+  #startedWith(name: 'allowSpawn' | 'allowAskUser'): boolean {
+    return name === 'allowSpawn'
+      ? (this.options.allowSpawn ?? true)
+      : (this.options.allowAskUser ?? true);
+  }
+
+  /** The settings in force here: what this agent falls back to, with its own saved choices over it,
+   *  kept inside what it was started with (the two switches have a floor no save can lift).
+   *  Synchronous on purpose - the input limit is read per tool answer, the sub-agent cap per spawn - and
+   *  cheap: it is a handful of fields laid over another handful. */
+  get settings(): AgentSettings {
+    return this.#withinFloor(effectiveSettings(this.defaults, this.#stored));
+  }
+
+  /** Put the numbers a component reads for itself in force: the cache's cap and a model's compression
+   *  pair. Both are built once, so a save would otherwise sit in storage with nothing reading it;
+   *  this is what makes "a saved setting is in force from the next turn on" true for them too. */
+  async #applyRuntimeSettings(): Promise<void> {
+    const settings = this.settings;
+    if (this.cache.maxSize !== settings.cacheSize) await this.cache.setMaxSize(settings.cacheSize);
+    if (this.model !== null) {
+      this.model.setCompression(settings.compressionThreshold, settings.compressionTokens);
+    }
+    // The two switches are read per round (the tools the model is offered) and per call (the refusal
+    // a tool that is off answers), so handing them to the environment is all a save has to do.
+    this.env?.gate({ allowAskUser: this.allowAskUser, allowSpawn: this.allowSpawn() });
+    // A child inherits what it did not set, so a save made here reaches the children's own cache and
+    // model too: the numbers a sub-agent runs on are the parent's new ones from the next round on.
+    for (const child of this.#children.values()) await child.#applyRuntimeSettings();
+  }
+
+  /** Read this agent's own unit once, when the runtime starts. A unit that cannot be read is a unit
+   *  that was never written: the agent starts on its defaults rather than not starting at all. */
+  async #loadSettings(): Promise<void> {
+    if (!this.cache.enabled) return;
+    try {
+      const unit = await this.#history().load(SETTINGS_UNIT);
+      this.#stored = readStoredSettings(unit?.meta);
+      if (typeof unit?.revision === 'number') this.#settingsRevision = unit.revision;
+    } catch {
+      // A history node that cannot answer leaves the defaults in force.
+    }
+  }
+
+  /** Read or change this agent's settings: `get` answers what is in force, and `update` saves the
+   *  fields it was given (or, with `reset`, forgets every one of them). */
+  async handleSettings(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    await this.ready();
+    const action = String(args.action ?? 'get');
+    if (action === 'get') return await this.#settingsAnswer();
+    if (action !== 'update') {
+      throw new Error(`unknown settings action "${action}": use get or update`);
+    }
+    if (args.reset === true) {
+      await this.#resetSettings();
+      return await this.#settingsAnswer();
+    }
+    const given: Record<string, unknown> = { ...args };
+    delete given.action;
+    delete given.agent;
+    const { values, problems } = parseSettingsPatch(given, true);
+    if (problems.length > 0) throw new Error(`cannot save settings: ${problems.join('; ')}`);
+    // A switch this runtime was started without cannot be turned on from a page: a sub-agent never
+    // starts one of its own and has nobody to ask, so saving `true` would write a value nothing reads.
+    const floor: string[] = [];
+    if (values.allowSpawn === true && !this.#startedWith('allowSpawn')) {
+      floor.push(
+        'allowSpawn cannot be turned on: this agent was started unable to start sub-agents',
+      );
+    }
+    if (values.allowAskUser === true && !this.#startedWith('allowAskUser')) {
+      floor.push('allowAskUser cannot be turned on: this agent was started with nobody to ask');
+    }
+    if (floor.length > 0) throw new Error(`cannot save settings: ${floor.join('; ')}`);
+    if (Object.keys(values).length === 0) {
+      throw new Error(
+        'cannot save settings: no setting was given (send one of ' +
+          `${SETTINGS_NAMES.join(', ')}, or reset: true)`,
+      );
+    }
+    await this.#saveSettings(values);
+    return await this.#settingsAnswer();
+  }
+
+  /** What the page and any other caller is told: the settings in force, what they fall back to, what
+   *  a save of each one costs, and the provider row that is in force (read, never chosen here - the
+   *  `provider` capability is the one place a provider is switched). */
+  async #settingsAnswer(): Promise<Record<string, unknown>> {
+    let active = '';
+    try {
+      const listed = await this.handleProvider({ action: 'list' });
+      active = typeof listed.active === 'string' ? listed.active : '';
+    } catch {
+      // A bus without a provider node still has settings.
+    }
+    return {
+      // Which agent these are: a sub-agent's page hides the three fields that only mean something
+      // for an agent that may start one of its own (the cap and the two switches), because for it
+      // they are not knobs at all.
+      agent: { name: this.name, parent: this.parent?.name ?? null },
+      settings: this.settings,
+      defaults: this.defaults,
+      provider: { active },
+      live: [...LIVE_SETTINGS],
+      restartRequired: [...RESTART_REQUIRED_SETTINGS],
+      persistent: this.cache.enabled,
+    };
+  }
+
+  /** Save a patch. The unit is written with the revision this process last saw, so a save that lost a
+   *  race is refused instead of overwriting what the other writer said; the retry then reads their
+   *  unit again and lays this patch over it, which keeps both writers' fields. `replace` is what a
+   *  reset is: the patch becomes the whole unit rather than a layer over what was there. */
+  async #saveSettings(values: SettingsPatch, replace = false): Promise<void> {
+    if (!this.cache.enabled) {
+      this.#stored = replace ? values : mergePatches(this.#stored, values);
+      await this.#applyRuntimeSettings();
+      return;
+    }
+    const history = this.#history();
+    for (let attempt = 1; attempt <= SETTINGS_SAVE_ATTEMPTS; attempt += 1) {
+      const merged = replace ? values : mergePatches(this.#stored, values);
+      try {
+        const revision = await history.save(
+          SETTINGS_UNIT,
+          settingsUnit(merged),
+          this.#settingsRevision,
+        );
+        this.#stored = merged;
+        if (revision !== null) this.#settingsRevision = revision;
+        // The cache and the model are already built: hand them the numbers this save put in force.
+        await this.#applyRuntimeSettings();
+        return;
+      } catch (error) {
+        if (!isSettingsConflict(error) || attempt === SETTINGS_SAVE_ATTEMPTS) throw error;
+        // Someone else wrote first: their unit is the new base, and this patch goes over it.
+        const unit = await history.load(SETTINGS_UNIT);
+        this.#stored = readStoredSettings(unit?.meta);
+        this.#settingsRevision = typeof unit?.revision === 'number' ? unit.revision : undefined;
+      }
+    }
+  }
+
+  /** Forget every stored value: the unit is written empty rather than deleted, so the same revision
+   *  rule covers a reset, and the agent falls back to its parent's settings or its deployment's. */
+  async #resetSettings(): Promise<void> {
+    await this.#saveSettings({}, true);
   }
 
   // chat
@@ -1140,14 +1389,10 @@ export class AgentRuntime {
     return [text.slice(0, keep), '', warning, '', text.slice(-keep)].join('\n');
   }
 
-  /** One line longer than this does not go to the model whole; the Python twin reads the same
-   *  variable. */
+  /** One line longer than this does not go to the model whole: this agent's own setting, the one the
+   *  embedder handed it, NODE_AGENT_MAX_INPUT_LENGTH_PER_TURN, or 8192 characters. */
   #maxInput(): number {
-    const fromEnv = Number(process.env.NODE_AGENT_MAX_INPUT_LENGTH_PER_TURN ?? '');
-    return (
-      this.options.maxInputPerTurn ??
-      (Number.isSafeInteger(fromEnv) && fromEnv > 0 ? fromEnv : 8192)
-    );
+    return this.settings.maxInputLengthPerTurn;
   }
 
   // reads
@@ -1159,10 +1404,7 @@ export class AgentRuntime {
       state: this.phase(),
       queued: this.queuedMessages(),
       usage: { ...(model?.usage ?? emptyUsage()) },
-      stream:
-        live === null
-          ? null
-          : { id: live.id, messageId: live.messageId, seq: live.seq },
+      stream: live === null ? null : { id: live.id, messageId: live.messageId, seq: live.seq },
     };
   }
 
@@ -1233,6 +1475,7 @@ export class AgentRuntime {
 
   /** Put one question in front of the reader and wait; answers the tool's text. */
   async ask(callId: string | undefined, args: Record<string, unknown>): Promise<string> {
+    if (!this.allowAskUser) return 'ask_user is switched off for this agent';
     const title = String(args.title ?? '').trim();
     if (title === '') return 'ask_user needs a "title": the one-line heading of the question';
 
@@ -1248,6 +1491,8 @@ export class AgentRuntime {
 
     const timeout = args.timeout_seconds;
     let seconds: number | null;
+    // No setting behind this any more: an ask waits ASK_TIMEOUT_SECONDS (five minutes) unless the
+    // model gave the question a deadline of its own.
     if (timeout === undefined || timeout === null) seconds = ASK_TIMEOUT_SECONDS;
     else if (typeof timeout !== 'number' || Number.isNaN(timeout)) {
       return `ask_user needs "timeout_seconds" to be a number of seconds, got ${String(timeout)}`;

@@ -389,6 +389,156 @@
         color: #fff;
         font-weight: 600;
       }
+      /* The settings button at the usage row's right end, and the panel it opens: a card over the page,
+         drawn the way a delete's second question is. The rows are a label, the field and the range the
+         node accepts under them, so a reader knows what a refusal is about before pressing Save. */
+      .usage-settings {
+        display: flex;
+        flex: 0 0 auto;
+        align-items: center;
+      }
+      #settings-open {
+        width: 26px;
+        height: 26px;
+        padding: 0;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: var(--surface-2);
+        color: var(--muted);
+        font: inherit;
+        font-size: 13px;
+        line-height: 1;
+        cursor: pointer;
+      }
+      #settings-open:hover,
+      #settings-open:focus-visible {
+        color: var(--text);
+      }
+      .settings {
+        position: fixed;
+        inset: 0;
+        z-index: 60;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 18px;
+        background: rgb(15 23 42 / 28%);
+      }
+      .settings[hidden] {
+        display: none;
+      }
+      .settings-card {
+        width: min(460px, 100%);
+        max-height: 100%;
+        overflow: auto;
+        padding: 16px 18px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+      .settings-card h2 {
+        margin: 0 0 4px;
+        font-size: 14px;
+      }
+      .settings-hint {
+        display: block;
+        margin: 0 0 12px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .settings-row {
+        display: grid;
+        grid-template-columns: 1fr 108px;
+        align-items: center;
+        gap: 2px 10px;
+        margin-bottom: 10px;
+      }
+      /* A field a sub-agent has no use for is hidden with the `hidden` attribute, which the browser
+         only honours while no rule of ours gives the element a `display` of its own: a row is a grid,
+         so the row says so here. (The stub page a test runs on has no stylesheet, so a test cannot
+         catch this by looking at `element.hidden` alone: `tests/ui.test.mjs` checks this rule.) */
+      .settings-field[hidden],
+      .settings-row[hidden] {
+        display: none;
+      }
+      .settings-row label {
+        font-size: 12px;
+      }
+      .settings-row small {
+        grid-column: 1 / -1;
+        color: var(--muted);
+        font-size: 10px;
+      }
+      .settings-row input[type='number'] {
+        width: 100%;
+        padding: 5px 8px;
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        outline: 0;
+        background: var(--surface-2);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+      }
+      .settings-check {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+      .settings-readonly {
+        margin: 0 0 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .settings-readonly strong {
+        color: var(--text);
+        font-size: 11px;
+      }
+      .settings-note {
+        margin: 0 0 10px;
+        min-height: 16px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+      .settings-note[data-kind='ok'] {
+        color: var(--accent-dark);
+      }
+      .settings-note[data-kind='error'] {
+        color: var(--danger);
+      }
+      .settings-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+      .settings-actions button {
+        width: auto;
+        height: 28px;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface-2);
+        color: var(--text);
+        font: inherit;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .settings-actions button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .settings-actions .primary {
+        border-color: transparent;
+        background: var(--accent-fill);
+        color: #fff;
+        font-weight: 600;
+      }
+      .settings-actions #settings-reset {
+        margin-right: auto;
+      }
       .empty {
         margin: auto;
         color: var(--muted);
@@ -1228,6 +1378,120 @@
         </div>
       </div>
     </div>
+    <!-- What this agent runs on: its five numbers and the two switches. The fields are the node's
+         `settings` capability: it answers what is in force, what the deployment falls back to, which
+         agent it is answering for and which fields need a restart, and a save names only the fields
+         the reader changed. Every field is in force from the next turn on - a saved value is handed
+         to the cache and to a model that was already built, so nothing here needs a restart.
+
+         A sub-agent has no use for three of them: it may not start one of its own, and it has nobody
+         to ask, so its cap and its two switches are not knobs. The panel hides them when the answer
+         says the agent has a parent (`agent.parent`), rather than showing a value that nothing reads.
+         (What one page keeps is the page's own business and is not a setting: see `RETENTION`.) -->
+    <div class="settings" id="settings" role="dialog" aria-modal="true" hidden>
+      <form class="settings-card" id="settings-form">
+        <h2 data-text-key="settings.title">Settings</h2>
+        <p class="settings-hint" data-text-key="settings.hint">
+          Saved for this agent in its history.
+        </p>
+        <div class="settings-row" id="settings-field-max-agents">
+          <label for="settings-max-agents" data-text-key="settings.maxAgents">Sub-agents</label>
+          <input id="settings-max-agents" name="maxAgents" type="number" min="1" max="64" step="1" />
+          <small data-text-key="settings.maxAgentsHint">1–64</small>
+        </div>
+        <div class="settings-row">
+          <label for="settings-max-input" data-text-key="settings.maxInputLengthPerTurn">
+            Longest line
+          </label>
+          <input
+            id="settings-max-input"
+            name="maxInputLengthPerTurn"
+            type="number"
+            min="256"
+            max="1000000"
+            step="1"
+          />
+          <small data-text-key="settings.maxInputLengthPerTurnHint">256–1,000,000</small>
+        </div>
+        <div class="settings-row">
+          <label for="settings-compression-threshold" data-text-key="settings.compressionThreshold">
+            Compression threshold
+          </label>
+          <input
+            id="settings-compression-threshold"
+            name="compressionThreshold"
+            type="number"
+            min="1024"
+            max="1000000"
+            step="1"
+          />
+          <small data-text-key="settings.compressionThresholdHint">1,024–1,000,000</small>
+        </div>
+        <div class="settings-row">
+          <label for="settings-compression-tokens" data-text-key="settings.compressionTokens">
+            Tokens let go at once
+          </label>
+          <input
+            id="settings-compression-tokens"
+            name="compressionTokens"
+            type="number"
+            min="256"
+            max="262144"
+            step="1"
+          />
+          <small data-text-key="settings.compressionTokensHint">256–262,144</small>
+        </div>
+        <div class="settings-row">
+          <label for="settings-cache-size" data-text-key="settings.cacheSize">Cached texts kept</label>
+          <input
+            id="settings-cache-size"
+            name="cacheSize"
+            type="number"
+            min="1"
+            max="10000"
+            step="1"
+          />
+          <small data-text-key="settings.cacheSizeHint">1–10,000</small>
+        </div>
+        <div class="settings-field" id="settings-field-allow-spawn">
+          <div class="settings-check">
+            <input id="settings-allow-spawn" name="allowSpawn" type="checkbox" />
+            <label for="settings-allow-spawn" data-text-key="settings.allowSpawn">
+              Let the model start sub-agents
+            </label>
+          </div>
+          <small class="settings-hint" data-text-key="settings.allowSpawnHint">
+            Off, create_agent is not offered.
+          </small>
+        </div>
+        <div class="settings-field" id="settings-field-allow-ask-user">
+          <div class="settings-check">
+            <input id="settings-ask-user" name="allowAskUser" type="checkbox" />
+            <label for="settings-ask-user" data-text-key="settings.allowAskUser">
+              Let the model ask the reader
+            </label>
+          </div>
+          <small class="settings-hint" data-text-key="settings.allowAskUserHint">
+            Off, ask_user is not offered.
+          </small>
+        </div>
+        <p class="settings-readonly">
+          <span data-text-key="settings.provider">Active provider</span>
+          <strong id="settings-provider">—</strong>
+          <small data-text-key="settings.providerHint">Switched with the select above.</small>
+        </p>
+        <p class="settings-note" id="settings-note" role="status" aria-live="polite"></p>
+        <div class="settings-actions">
+          <button type="button" id="settings-reset" data-text-key="settings.reset">
+            Reset to defaults
+          </button>
+          <button type="button" id="settings-cancel" data-text-key="settings.close">Close</button>
+          <button type="submit" id="settings-save" class="primary" data-text-key="settings.save">
+            Save
+          </button>
+        </div>
+      </form>
+    </div>
     <!-- One page per agent, all of them built and kept: each holds its own transcript, snapshot and
          queue, with updates delivered by one shared event stream. The agent on screen is the one page
          not `hidden`; switching is that attribute and nothing else. A page's own boxes - the line
@@ -1297,6 +1561,20 @@
         >
           <option data-text-key="usage.loading">Loading providers…</option>
         </select>
+      </span>
+      <!-- The one control of the settings panel: the row it sits in carries the counts and the
+           provider, so the cog belongs beside them rather than in the composer. -->
+      <span class="usage-settings">
+        <button
+          id="settings-open"
+          type="button"
+          aria-label="Agent settings"
+          title="Agent settings"
+          data-text-label-key="settings.open"
+          data-text-title-key="settings.open"
+        >
+          ⚙
+        </button>
       </span>
     </section>
     <script>
@@ -2257,6 +2535,9 @@
         if (name === currentAgent) return;
         if (!pages.has(name)) return;
         switchTo(name);
+        // The settings panel is about one agent: it is closed rather than left open over another
+        // agent's page, so the fields on screen always belong to the agent on screen.
+        closeSettings();
       }
 
       // What a right click on a sub-agent's tab opens: the things this page can do to that agent.
@@ -2378,6 +2659,221 @@
         }
       }
 
+      // ---- settings ----
+      //
+      // The one editor for what this agent runs on: the sub-agent cap, the per-turn input limit, the
+      // compression pair and the size of the cache. It reads the node's own `settings` capability -
+      // which answers what is in force, what the deployment falls back to and which fields need a
+      // restart - and a save names only the fields the reader changed, so a field nobody touched keeps
+      // following the deployment's default.
+      //
+      // Every one of them is read by the node on the next turn: a saved value is handed to the cache
+      // and to a model that was already built, so saving it is enough and nothing here waits for a
+      // restart. What one page keeps is not a setting at all - it is `RETENTION`, below.
+      const settingsPanel = document.getElementById('settings');
+      const settingsForm = document.getElementById('settings-form');
+      const settingsNoteBox = document.getElementById('settings-note');
+      const settingsProviderText = document.getElementById('settings-provider');
+      const settingsOpenButton = document.getElementById('settings-open');
+      const settingsSaveButton = document.getElementById('settings-save');
+      const settingsResetButton = document.getElementById('settings-reset');
+      const settingsCancelButton = document.getElementById('settings-cancel');
+      // The whole-number fields, by the name the node knows them by: one map, so filling the form and
+      // reading it back are one loop each rather than a dozen lines of the same thing.
+      const settingsNumbers = {
+        maxAgents: document.getElementById('settings-max-agents'),
+        maxInputLengthPerTurn: document.getElementById('settings-max-input'),
+        compressionThreshold: document.getElementById('settings-compression-threshold'),
+        compressionTokens: document.getElementById('settings-compression-tokens'),
+        cacheSize: document.getElementById('settings-cache-size'),
+      };
+      // The two switches, by the name the node knows them by: a checkbox reads as `true` when it is
+      // ticked and `false` when it is not, which is what a save of one of these sends.
+      const settingsChecks = {
+        allowSpawn: document.getElementById('settings-allow-spawn'),
+        allowAskUser: document.getElementById('settings-ask-user'),
+      };
+      // The fields a sub-agent has no use for: it may not start one of its own and it has nobody to
+      // ask, so its cap and its two switches are hidden rather than shown as values nothing reads.
+      const settingsSubFields = {
+        maxAgents: document.getElementById('settings-field-max-agents'),
+        allowSpawn: document.getElementById('settings-field-allow-spawn'),
+        allowAskUser: document.getElementById('settings-field-allow-ask-user'),
+      };
+      // The agent the open panel is about, and the node's last answer: a save compares the form with
+      // it, so "nothing changed" is read from the answer rather than guessed here.
+      let settingsAgent = null;
+      let settingsAnswer = null;
+      let settingsSaving = false;
+
+      function noteSettings(text, kind = '') {
+        if (settingsNoteBox === null) return;
+        settingsNoteBox.textContent = text;
+        settingsNoteBox.dataset.kind = kind;
+      }
+
+      /** One number field as the patch wants it: a number when it reads as one, and the text the
+       *  reader typed when it does not - the node's own refusal names the range it wanted, and it is
+       *  the node, not this page, that decides what a value may be. */
+      function numberOrText(box) {
+        const raw = box === null ? '' : String(box.value ?? '').trim();
+        const value = Number(raw);
+        return raw === '' || !Number.isFinite(value) ? raw : value;
+      }
+
+      function fillSettings(value) {
+        settingsAnswer = value ?? null;
+        const settings = (value && value.settings) || {};
+        for (const [name, box] of Object.entries(settingsNumbers)) {
+          if (box !== null) box.value = settings[name] === undefined ? '' : String(settings[name]);
+        }
+        // A switch the node did not name is on: that is what an agent could do before the switch
+        // existed, and a field nobody saved shows the deployment's default that way.
+        for (const [name, box] of Object.entries(settingsChecks)) {
+          if (box !== null) box.checked = settings[name] !== false;
+        }
+        // A sub-agent has no use for its cap or its two switches: the answer says whether it has a
+        // parent, and that is what hides them (and keeps a save from naming them).
+        const subAgent = Boolean(value && value.agent && value.agent.parent);
+        for (const box of Object.values(settingsSubFields)) {
+          if (box !== null) box.hidden = subAgent;
+        }
+        if (settingsProviderText !== null) {
+          settingsProviderText.textContent =
+            (value && value.provider && value.provider.active) || t('usage.noProviders');
+        }
+      }
+
+      /** Whether one field is on screen: a field a sub-agent has no use for is hidden, and a hidden
+       *  field is not something the reader can have changed. */
+      function settingsFieldShown(name) {
+        return settingsSubFields[name]?.hidden !== true;
+      }
+
+      /** What the reader changed, as the arguments of an update. */
+      function settingsPatch() {
+        const patch = {};
+        const current = (settingsAnswer && settingsAnswer.settings) || {};
+        for (const [name, box] of Object.entries(settingsNumbers)) {
+          if (box === null || !settingsFieldShown(name)) continue;
+          const next = numberOrText(box);
+          if (next !== current[name]) patch[name] = next;
+        }
+        for (const [name, box] of Object.entries(settingsChecks)) {
+          if (box === null || !settingsFieldShown(name)) continue;
+          const next = box.checked === true;
+          if (next !== (current[name] !== false)) patch[name] = next;
+        }
+        return patch;
+      }
+
+      async function openSettings() {
+        if (settingsPanel === null) return;
+        const page = pages.get(currentAgent);
+        if (page === undefined) return;
+        settingsAgent = page;
+        settingsAnswer = null;
+        settingsPanel.hidden = false;
+        noteSettings('');
+        if (settingsSaveButton !== null) settingsSaveButton.disabled = true;
+        const reply = await call(`${NODE}.settings`, agentArgs(page, { action: 'get' }));
+        if (settingsSaveButton !== null) settingsSaveButton.disabled = false;
+        if (reply === undefined || reply === null || reply.ok !== true) {
+          noteSettings(
+            t('settings.readFailed', { error: (reply && reply.error) || t('destroy.noAnswer') }),
+            'error',
+          );
+          return;
+        }
+        fillSettings(reply.value);
+      }
+
+      async function saveSettings(event) {
+        if (event !== undefined && event !== null) event.preventDefault();
+        if (settingsSaving || settingsAgent === null) return;
+        const patch = settingsPatch();
+        if (Object.keys(patch).length === 0) {
+          noteSettings(t('settings.unchanged'));
+          return;
+        }
+        settingsSaving = true;
+        if (settingsSaveButton !== null) settingsSaveButton.disabled = true;
+        noteSettings(t('settings.saving'));
+        try {
+          const reply = await call(
+            `${NODE}.settings`,
+            agentArgs(settingsAgent, { action: 'update', ...patch }),
+          );
+          if (reply === undefined || reply === null || reply.ok !== true) {
+            noteSettings(
+              t('settings.saveFailed', { error: (reply && reply.error) || t('destroy.noAnswer') }),
+              'error',
+            );
+            return;
+          }
+          fillSettings(reply.value);
+          const restart = Array.isArray(reply.value && reply.value.restartRequired)
+            ? reply.value.restartRequired.filter((name) => Object.hasOwn(patch, name))
+            : [];
+          const fields = restart.join(', ');
+          noteSettings(
+            restart.length === 0
+              ? t('settings.saved')
+              : t('settings.saved') + ' ' + t('settings.restartRequired', { fields }),
+            'ok',
+          );
+        } finally {
+          settingsSaving = false;
+          if (settingsSaveButton !== null) settingsSaveButton.disabled = false;
+        }
+      }
+
+      async function resetSettings() {
+        if (settingsSaving || settingsAgent === null) return;
+        settingsSaving = true;
+        if (settingsResetButton !== null) settingsResetButton.disabled = true;
+        noteSettings(t('settings.saving'));
+        try {
+          const reply = await call(
+            `${NODE}.settings`,
+            agentArgs(settingsAgent, { action: 'update', reset: true }),
+          );
+          if (reply === undefined || reply === null || reply.ok !== true) {
+            noteSettings(
+              t('settings.saveFailed', { error: (reply && reply.error) || t('destroy.noAnswer') }),
+              'error',
+            );
+            return;
+          }
+          fillSettings(reply.value);
+          noteSettings(t('settings.resetDone'), 'ok');
+        } finally {
+          settingsSaving = false;
+          if (settingsResetButton !== null) settingsResetButton.disabled = false;
+        }
+      }
+
+      /** Close the panel. Switching agents closes it too: the form is about one agent, and a save
+       *  lands in the agent whose page it was opened from (`settingsAgent`). */
+      function closeSettings() {
+        settingsAgent = null;
+        settingsAnswer = null;
+        if (settingsPanel !== null) settingsPanel.hidden = true;
+      }
+
+      if (settingsOpenButton !== null) {
+        settingsOpenButton.addEventListener('click', () => void openSettings());
+      }
+      if (settingsCancelButton !== null) {
+        settingsCancelButton.addEventListener('click', () => closeSettings());
+      }
+      if (settingsResetButton !== null) {
+        settingsResetButton.addEventListener('click', () => void resetSettings());
+      }
+      if (settingsForm !== null) {
+        settingsForm.addEventListener('submit', (event) => void saveSettings(event));
+      }
+
       // A press anywhere else and Escape both close the menu: it is drawn over the page, and the
       // reader who has moved on should not be able to press a row they can no longer see.
       if (typeof document.addEventListener === 'function') {
@@ -2396,6 +2892,7 @@
           if (event === undefined || event === null || event.key !== 'Escape') return;
           closeAgentMenu();
           closeConfirm();
+          closeSettings();
         });
       }
 

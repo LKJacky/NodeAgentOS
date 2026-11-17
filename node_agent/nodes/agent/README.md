@@ -15,6 +15,7 @@ there is no bus here, no host here, and no socket here.
 | `stream`       | the answer being written right now, in full and once (`{stream: {id, messageId, seq, content, reasoning_content, tool_calls}}`, or `{stream: null}`): what a page asks for to fill a gap in the deltas. Hidden from other nodes (`expose: false`, like `ui`): it is the page's own read, not a tool |
 | `stop`         | cut that agent's turn short — and nothing else: the sub-agents, the queue behind it and the runtime itself are left alone |
 | `provider`     | list the provider rows this agent can use, or select one                                   |
+| `settings`     | read what this agent runs on, or save some of it (`action: get` / `update`, or `reset: true`) |
 | `answer`       | the page's way back in: the answer to a question the model asked                           |
 | `agents`       | the agents this node runs — the main one and its sub-agents, each with its topic and state |
 | `ui`           | the page (`slot: 'left'`)                                                                  |
@@ -63,9 +64,10 @@ runtime) may pass `provider` in `RuntimeOptions` to hand the runtime one directl
 
 `list_nodes`, `list_node_tools`, `run_on_node` (about the bus), `read_cache`, `search_cache` (about
 the lines kept instead of sent), and `ask_user` (about the reader). The page is never offered — an
-agent cannot call another agent's UI, and it cannot call its own.
+agent cannot call another agent's UI, and it cannot call its own. `ask_user` is left out when the
+agent's `allowAskUser` setting is off.
 
-A root agent also gets `create_agent` / `destroy_agent`. A sub-agent is a runtime of the same
+A root agent also gets `create_agent` / `destroy_agent`, unless its `allowSpawn` setting is off. A sub-agent is a runtime of the same
 class held by its parent — **not** a node: the bus registers one identity per tenant, and a node
 it does not know has no permissions on it, so a sub-agent node used to be refused capabilities
 its parent could call. A sub-agent therefore shares the parent's identity (same tenant, same bus
@@ -82,8 +84,70 @@ each child's name, icon and provider, so a parent restart restores them.
 
 A tool answer longer than `NODE_AGENT_MAX_INPUT_LENGTH_PER_TURN` (default 8192 characters) is kept
 whole in the **cache** and the model is handed its head, a warning naming the cache entry, and its
-tail. The cache is history-backed: one unit per entry (`cache.<n>`), one counter unit (`cache`),
-`NODE_AGENT_CACHE_SIZE` entries kept (default 500).
+tail. The cache is history-backed: one unit per entry (`cache.<n>`), one counter unit (`cache`), and
+`cacheSize` entries kept (default 500, `NODE_AGENT_CACHE_SIZE` when it names another number).
+
+## The settings
+
+`settings` is what an operator may change without a restart of the process, `get` by default:
+
+```json
+{ "action": "get" }
+{ "action": "update", "maxAgents": 8, "cacheSize": 200 }
+{ "action": "update", "reset": true }
+```
+
+Seven fields, each read by code that was already here — no setting is a knob with nothing behind it:
+
+| setting                 | what it changes                                                                     | in force   |
+| ----------------------- | ----------------------------------------------------------------------------------- | ---------- |
+| `maxAgents`             | how many sub-agents may run at once (1–64)                                          | next call  |
+| `maxInputLengthPerTurn` | the line length past which an answer is cached and trimmed (256–1,000,000)           | next turn  |
+| `compressionThreshold`  | the prompt tokens above which the oldest lines are summed up and forgotten (1,024–1,000,000) | next round |
+| `compressionTokens`     | how many tokens one compression lets go of at once (256–262,144)                    | next round |
+| `cacheSize`             | how many long texts the cache keeps; one more deletes the oldest (1–10,000)         | next turn  |
+| `allowSpawn`            | whether the model is offered `create_agent` / `destroy_agent` at all (true/false)    | next round |
+| `allowAskUser`          | whether the model is offered `ask_user` (true/false)                                 | next round |
+
+The defaults are what this package already did: 32 sub-agents, 8192 characters, a 128K-token
+compression threshold with a 32K-token step (`COMPRESSION_THRESHOLD` / `COMPRESSION_TOKENS` in
+`src/model.ts`), a cache of 500 (`DEFAULT_CACHE_SIZE` in `src/cache.ts`), and both switches on.
+
+The answer carries the full settings in force, the `defaults` they fall back to (a sub-agent's
+parent, or the package default with `NODE_AGENT_MAX_AGENTS` / `NODE_AGENT_MAX_INPUT_LENGTH_PER_TURN` /
+`NODE_AGENT_CACHE_SIZE` over it), the `provider` row in force (read from `provider`, never chosen
+here), `live` and `restartRequired`. Every field is live: `restartRequired` is empty because a saved
+value is handed to the components that read it — the cache takes a new `cacheSize` and lets go of
+what is past it, a model that was already built takes a new compression pair (`setCompression`) — so
+nothing here waits for a restart.
+
+What is stored is only what somebody chose: a save writes the fields it was given into history unit
+`agent.settings` (`sub.<name>.agent.settings` for a sub-agent), so a field nobody touched keeps
+following the deployment's default. A save names the revision this process last saw; when the history
+node refuses it because someone else wrote first, the agent reads their unit again and lays its patch
+over it, so both writers' fields survive (three attempts, then the refusal is the caller's).
+`reset: true` writes the unit empty rather than deleting it, so the same revision rule covers it.
+A value out of range is refused with the range in the sentence (`maxAgents must be between 1 and 64
+(got 0)`), and so is a name this agent does not have.
+
+A sub-agent starts on its parent's settings and then keeps its own copy: a field it does not set
+follows the parent, a field it sets is its own — and its cache and compression pair follow a save,
+not only a start.
+
+The two switches are what the model is *offered*, checked per round and again per call: with
+`allowSpawn` off the spawn tools stay out of the tool list, a `create_agent` call that arrives anyway
+is answered with the refusal, and the children a previous run saved are no longer restored on start
+(starting one is starting one). With `allowAskUser` off the same holds for `ask_user`. Neither switch
+can turn something on that the runtime was started without: a sub-agent is started with both off, so
+its own page shows both off (they are not inherited as on, or the page would offer a switch that does
+nothing) and a save that tries to turn one on is refused — as is a runtime an embedder started with
+`allowSpawn`/`allowAskUser` false. What a switch can do is narrower than what it was started with,
+never wider.
+
+The settings panel hides what a sub-agent has no use for rather than showing it greyed out: the
+answer names the agent it is about (`agent: { name, parent }`), and when `parent` is not null the
+panel drops `maxAgents`, `allowSpawn` and `allowAskUser` — a cap it cannot reach and two switches it
+can neither hold nor use. A hidden field is never named by a save.
 
 ## The transcript
 
@@ -135,8 +199,15 @@ deltas so the two cannot drift.
 A page also keeps a bounded amount of it: at most 200 messages per agent (`RETENTION.maxMessages`), oldest
 first and only when the reader is at the tail, and a page nobody has looked at for five minutes lets go of
 its messages, draft and boxes entirely (`RETENTION.idleTtlMs`) and reads its window again when the reader
-comes back. Both numbers can be overridden with `globalThis.AGENT_RETENTION` (that is how the tests run a
-cap of three and a TTL of milliseconds).
+comes back. Both numbers are the page's own: they are overridden with `globalThis.AGENT_RETENTION` (that
+is how the tests run a cap of three and a TTL of milliseconds), and they are **not** settings any more —
+the node no longer stores a `retention` pair, so a deployment that needs another policy sets it here.
+
+The settings panel is the cog at the right end of the usage row. It asks `settings` for what is in force,
+shows each field with the range it accepts, saves the fields the reader changed (and nothing else), says
+what came back — the node's refusal verbatim when one comes back — and resets to the deployment's
+defaults. The active provider is shown there but changed with the select beside it: `provider` is the one
+place a provider is chosen.
 
 **Compatibility.** The protocol is additive for the node's own page and a break for anything else that
 read `{type: 'stream', message}`: an old page draws nothing from the new events (it treats each as
@@ -188,6 +259,17 @@ node whose units are a map, an injectable provider and a log of what the agent p
   transcript, an unanswered tool call repaired on the next start;
 - `cache.test.ts` — numbering across restarts, the oldest entry leaving, search, the trimming
   warning and the two cache tools;
+- `settings.test.ts` — the `settings` capability: what an agent starts on, a save that names only the
+  fields it was given, the deployment's defaults underneath, a value out of range refused with the
+  range in the sentence, a save that lost a race retried on top of the other writer's, a sub-agent's
+  copy of its own, the numbers reaching the code behind them (a saved `cacheSize` is the cache's cap,
+  a saved compression pair is what a model that was already built compresses with), and the two
+  switches deciding what the model is offered from the next round on;
+- `wiring.test.ts` — the two numbers a setting is handed to, on their own: a model's compression
+  pair (`setCompression`, and the notice a cut writes once the transcript is past it) and the cache's
+  cap (`setMaxSize`, and the entries a shrunken cap lets go of);
+- `i18n.test.ts` — the page's words and the manifest's: every sentence in both languages, the same
+  keys in each, the settings panel naming every field of its capability;
 - `provider.test.ts` — row names and selection (stored in history), a streamed provider node,
   `ask_user` answered and timed out;
 - `tenants.test.ts` — `ctx.bind` hands one runtime per tenant and `unbind` makes the next call build

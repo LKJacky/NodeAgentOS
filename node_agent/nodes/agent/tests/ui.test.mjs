@@ -66,6 +66,27 @@ const IDS = [
   'agent-confirm-text',
   'agent-confirm-cancel',
   'agent-confirm-ok',
+  // The settings panel: one button on the usage row, the card it opens, and the five number fields the
+  // card is made of. The instruction line, the two timeouts, the restore switch and the page's retention
+  // pair are gone: none of them is a setting any more.
+  'settings',
+  'settings-form',
+  'settings-note',
+  'settings-provider',
+  'settings-open',
+  'settings-save',
+  'settings-reset',
+  'settings-cancel',
+  'settings-max-agents',
+  'settings-max-input',
+  'settings-compression-threshold',
+  'settings-compression-tokens',
+  'settings-cache-size',
+  'settings-allow-spawn',
+  'settings-ask-user',
+  'settings-field-max-agents',
+  'settings-field-allow-spawn',
+  'settings-field-allow-ask-user',
 ];
 
 //: The one agent a node with no sub-agents runs: the page draws no switch row for it.
@@ -194,6 +215,8 @@ async function openPage({
   //: fixed cap and `idleTtlMs` the TTL of a page nobody is looking at. `sweepMs` is how often the page
   //: asks itself whether anything is due.
   retention = {},
+  //: What `agent.settings` starts from, for a test that opens the panel onto a stored setting.
+  settings = {},
 } = {}) {
   const status = { state };
   const dom = {
@@ -263,6 +286,9 @@ async function openPage({
   dom.ids.get('agent-menu-delete').textContent = t('menu.delete');
   dom.ids.get('agent-menu').hidden = true;
   dom.ids.get('agent-confirm').hidden = true;
+  // The settings panel is opened by a button and closed the same way, so it starts as the markup puts
+  // it: hidden.
+  dom.ids.get('settings').hidden = true;
   // The log says how tall it is from what it holds: the stand-in has no layout, and "the reader is at
   // the bottom" is the question this page asks before it scrolls.
   const logBox = dom.ids.get('log');
@@ -271,6 +297,33 @@ async function openPage({
 
   const calls = [];
   const feeds = [];
+  // The settings a node would answer with: the defaults, whatever the test started them on, and the
+  // store a save writes into. The panel reads this and saves into it, so a test sees what the node
+  // and the page agreed on rather than what the page believes.
+  const settingsDefaults = {
+    maxAgents: 32,
+    maxInputLengthPerTurn: 8192,
+    compressionThreshold: 131072,
+    compressionTokens: 32768,
+    cacheSize: 500,
+    allowSpawn: true,
+    allowAskUser: true,
+  };
+  const settingsStored = {
+    values: { ...structuredClone(settingsDefaults), ...structuredClone(settings) },
+    defaults: settingsDefaults,
+    provider: { active: 'default' },
+    live: [
+      'maxAgents',
+      'maxInputLengthPerTurn',
+      'compressionThreshold',
+      'compressionTokens',
+      'cacheSize',
+      'allowSpawn',
+      'allowAskUser',
+    ],
+    restartRequired: [],
+  };
   // What `agent.stream` answers: a test sets `streamState.value` to put a draft in front of the page
   // (what a node answers when a page asks where the stream it is writing has got to).
   const streamState = { value: null };
@@ -306,6 +359,35 @@ async function openPage({
       providers: [{ name: 'default', active: true }],
       persistent: true,
     }),
+    // What this agent runs on. The page reads it when the settings panel opens and saves what the
+    // reader changed; `settingsStored` is the store behind it, so a save is answered the way a node
+    // answers one - with the whole settings object, the defaults under it and the restart list.
+    'agent.settings': (args) => {
+      const mode = args?.action ?? 'get';
+      if (mode === 'update') {
+        if (args.reset === true) {
+          settingsStored.values = structuredClone(settingsStored.defaults);
+        } else {
+          for (const [key, value] of Object.entries(args)) {
+            if (key === 'action' || key === 'agent' || key === 'reset') continue;
+            settingsStored.values[key] = value;
+          }
+        }
+      }
+      const wanted = typeof args?.agent === 'string' ? args.agent : 'agent';
+      const row = agents.find((each) => each.name === wanted);
+      return {
+        // Which agent this answers for: its parent is what a page reads to know whether a cap and
+        // two switches mean anything here.
+        agent: { name: wanted, parent: row === undefined ? null : (row.parent ?? null) },
+        settings: structuredClone(settingsStored.values),
+        defaults: structuredClone(settingsStored.defaults),
+        provider: settingsStored.provider,
+        live: settingsStored.live,
+        restartRequired: settingsStored.restartRequired,
+        persistent: true,
+      };
+    },
     // The agents this node runs: the main agent, and any sub-agent it started. A sub-agent is not a
     // node of its own, so this is how the page learns there is one to switch to.
     'agent.agents': () => ({ agents }),
@@ -453,6 +535,46 @@ async function openPage({
     text: dom.ids.get('text'),
     send: dom.ids.get('send'),
     stop: dom.ids.get('stop'),
+    /** What one capability answers, so a test can make a read or a save fail after the page is up. */
+    values,
+    /** The settings panel: the button that opens it, the card, its fields and what it says back. */
+    settings: {
+      open: dom.ids.get('settings-open'),
+      panel: dom.ids.get('settings'),
+      form: dom.ids.get('settings-form'),
+      note: dom.ids.get('settings-note'),
+      provider: dom.ids.get('settings-provider'),
+      maxAgents: dom.ids.get('settings-max-agents'),
+      maxInput: dom.ids.get('settings-max-input'),
+      compressionThreshold: dom.ids.get('settings-compression-threshold'),
+      compressionTokens: dom.ids.get('settings-compression-tokens'),
+      cacheSize: dom.ids.get('settings-cache-size'),
+      allowSpawn: dom.ids.get('settings-allow-spawn'),
+      allowAskUser: dom.ids.get('settings-ask-user'),
+      // The boxes a sub-agent's panel hides (the field, not the control inside it).
+      fieldMaxAgents: dom.ids.get('settings-field-max-agents'),
+      fieldAllowSpawn: dom.ids.get('settings-field-allow-spawn'),
+      fieldAllowAskUser: dom.ids.get('settings-field-allow-ask-user'),
+      save: dom.ids.get('settings-save'),
+      reset: dom.ids.get('settings-reset'),
+      cancel: dom.ids.get('settings-cancel'),
+      /** What the node holds now, as the node would answer a read. */
+      stored: () => settingsStored.values,
+      /** Open the panel the way a press does, and wait for its read to land. */
+      show: async () => {
+        dom.ids.get('settings-open').dispatchEvent({ type: 'click' });
+        await settle(20);
+      },
+      /** Press Save the way the form's own submit does. */
+      submit: async () => {
+        dom.ids.get('settings-form').dispatchEvent({ type: 'submit' });
+        await settle(20);
+      },
+      pressReset: async () => {
+        dom.ids.get('settings-reset').dispatchEvent({ type: 'click' });
+        await settle(20);
+      },
+    },
     /** How many times the page asked the node what it is doing. */
     reads: () => calls.filter(({ tool }) => tool === 'agent.status').length,
   };
@@ -1704,4 +1826,217 @@ test('a page that is streaming is never let go', async () => {
   page.feed.send([{ role: 'assistant', content: 'half an answer' }]);
   await settle(250);
   assert.equal(logOf(0).children.length, 0, 'a finished, unseen page holds nothing');
+});
+
+// ---- the settings panel ----
+//
+// The panel is the page's editor for what the agent runs on: it reads `agent.settings`, shows what is
+// in force with the range each field accepts, saves only what the reader changed, and resets back to
+// the deployment's defaults. The retention pair is the page's own policy rather than the node's, so
+// these tests also check that a saved cap is in force on the window the page holds.
+
+test('the cog opens a panel filled from the node', async () => {
+  const page = await openPage({ settings: { maxAgents: 6, cacheSize: 200 } });
+  assert.equal(page.settings.panel.hidden, true, 'the panel is closed until it is asked for');
+  await page.settings.show();
+
+  const read = page.calls.filter(({ tool }) => tool === 'agent.settings').at(-1);
+  assert.deepEqual(read.args, { action: 'get' }, 'the read names the action');
+  assert.equal(page.settings.panel.hidden, false, 'the panel is open');
+  assert.equal(page.settings.maxAgents.value, '6', 'a saved field shows what was saved');
+  assert.equal(page.settings.cacheSize.value, '200');
+  assert.equal(page.settings.maxInput.value, '8192', 'a field nobody saved shows the default');
+  assert.equal(page.settings.compressionThreshold.value, '131072');
+  assert.equal(page.settings.compressionTokens.value, '32768');
+  assert.equal(page.settings.allowSpawn.checked, true, 'a switch nobody saved shows its default');
+  assert.equal(page.settings.allowAskUser.checked, true);
+  assert.equal(page.settings.provider.textContent, 'default', 'the provider is shown, not edited');
+  assert.equal(page.settings.note.textContent, '', 'nothing to report yet');
+});
+
+test('the panel offers the five numbers and the two switches, and nothing this release removed', async () => {
+  const page = await openPage();
+  const html = HTML;
+  for (const gone of [
+    'settings-system-prompt',
+    'settings-stream-idle',
+    'settings-ask-timeout',
+    'settings-restore-agents',
+    'settings-retention-max',
+    'settings-retention-ttl',
+  ]) {
+    assert.equal(page.dom.ids.has(gone), false, `${gone} is not drawn any more`);
+    assert.equal(html.includes(gone), false, `${gone} is not in the markup any more`);
+  }
+  for (const field of [
+    'settings-max-agents',
+    'settings-max-input',
+    'settings-compression-threshold',
+    'settings-compression-tokens',
+    'settings-cache-size',
+    'settings-allow-spawn',
+    'settings-ask-user',
+  ]) {
+    assert.equal(page.dom.ids.has(field), true, `${field} is drawn`);
+    assert.equal(html.includes(field), true, `${field} is in the markup`);
+  }
+});
+
+test('a save sends the fields the reader changed, and says what happened', async () => {
+  const page = await openPage();
+  await page.settings.show();
+  page.settings.maxAgents.value = '4';
+  page.settings.compressionThreshold.value = '65536';
+  page.settings.cacheSize.value = '120';
+  page.settings.allowAskUser.checked = false;
+  await page.settings.submit();
+
+  const saved = page.calls.filter(({ tool }) => tool === 'agent.settings').at(-1);
+  assert.deepEqual(
+    saved.args,
+    {
+      action: 'update',
+      maxAgents: 4,
+      compressionThreshold: 65536,
+      cacheSize: 120,
+      allowAskUser: false,
+    },
+    'the patch holds what changed and nothing else',
+  );
+  assert.equal(page.settings.stored().allowAskUser, false, 'the switch was saved as false');
+  assert.equal(page.settings.stored().allowSpawn, true, 'the switch nobody touched is untouched');
+  assert.equal(page.settings.stored().maxAgents, 4);
+  assert.equal(page.settings.stored().compressionThreshold, 65536);
+  assert.equal(page.settings.stored().cacheSize, 120);
+  assert.equal(
+    page.settings.stored().compressionTokens,
+    32768,
+    'the fields nobody touched are untouched',
+  );
+  assert.equal(page.settings.note.dataset.kind, 'ok');
+  assert.match(page.settings.note.textContent, /saved/i);
+  assert.doesNotMatch(
+    page.settings.note.textContent,
+    /restart/i,
+    'nothing here needs a restart any more',
+  );
+});
+
+test('a sub-agent\u2019s panel hides the fields that mean nothing for it', async () => {
+  const page = await openPage({
+    agents: [
+      { name: 'agent', topic: 'agent', parent: null, state: 'idle', children: 1 },
+      { name: 'helper', topic: 'agent.helper', parent: 'agent', state: 'idle', children: 0 },
+    ],
+  });
+  await settle();
+
+  // The main agent has all seven: a cap and two switches are things it may change.
+  await page.settings.show();
+  assert.equal(page.settings.fieldMaxAgents.hidden, false, 'the main agent keeps its cap');
+  assert.equal(page.settings.fieldAllowSpawn.hidden, false);
+  assert.equal(page.settings.fieldAllowAskUser.hidden, false);
+
+  // The sub-agent gets the four that are its own: it cannot start one and has nobody to ask.
+  page.agents.children[1].dispatchEvent({ type: 'click' });
+  await settle();
+  await page.settings.show();
+  assert.equal(page.settings.fieldMaxAgents.hidden, true, 'a sub-agent has no cap to set');
+  assert.equal(page.settings.fieldAllowSpawn.hidden, true, 'nor may it start one of its own');
+  assert.equal(page.settings.fieldAllowAskUser.hidden, true, 'nor has it anybody to ask');
+  // A hidden element only disappears while no rule of ours gives it a `display`: the stub has no
+  // stylesheet, so this is what says the rule a real browser needs is there.
+  assert.match(
+    HTML,
+    /\.settings-field\[hidden\],[\s\S]{0,40}\.settings-row\[hidden\]\s*\{\s*display:\s*none;/,
+    'the stylesheet hides the fields a sub-agent has no use for',
+  );
+  assert.equal(page.settings.compressionThreshold.value, '131072', 'the fields it does have are there');
+  assert.equal(page.settings.cacheSize.value, '500');
+  const asked = page.calls.filter(({ tool }) => tool === 'agent.settings').at(-1);
+  assert.equal(asked.args.agent, 'helper', 'the panel asked about the agent on screen');
+
+  // A save names nothing it cannot see: with nothing touched, no update goes out at all.
+  const before = page.calls.filter(({ tool }) => tool === 'agent.settings').length;
+  await page.settings.submit();
+  assert.equal(page.calls.filter(({ tool }) => tool === 'agent.settings').length, before);
+  assert.match(page.settings.note.textContent, /nothing changed/i);
+});
+
+test('a save with nothing changed is a note, not a call', async () => {
+  const page = await openPage();
+  await page.settings.show();
+  const before = page.calls.filter(({ tool }) => tool === 'agent.settings').length;
+  await page.settings.submit();
+
+  const after = page.calls.filter(({ tool }) => tool === 'agent.settings').length;
+  assert.equal(after, before, 'no update went out');
+  assert.match(page.settings.note.textContent, /nothing changed/i);
+});
+
+test('a saved cache size is the node’s, and the page keeps its own cap', async () => {
+  const history = [...LINES];
+  const page = await openPage({ history });
+  await settle(150);
+  const logBox = page.dom.ids.get('log');
+  assert.equal(groupsOf(logBox).length, 8, 'eight lines to begin with');
+
+  // The page keeps its own cap (`RETENTION`), and the panel no longer has a field for it: a saved
+  // cache size is the node's business, and the lines already drawn stay where they are.
+  await page.settings.show();
+  page.settings.cacheSize.value = '2';
+  await page.settings.submit();
+  assert.equal(page.settings.stored().cacheSize, 2, 'the node holds the new cap');
+  assert.equal(groupsOf(logBox).length, 8, 'and the page still holds every line it had');
+});
+
+
+test('a refusal from the node is what the panel shows, and the reader keeps what they typed', async () => {
+  const page = await openPage();
+  await page.settings.show();
+  const original = page.values['agent.settings'];
+  page.values['agent.settings'] = (args) => {
+    if (args?.action === 'update') {
+      throw new Error('maxAgents must be between 1 and 64 (got 0)');
+    }
+    return original(args);
+  };
+  page.settings.maxAgents.value = '0';
+  await page.settings.submit();
+
+  assert.equal(page.settings.note.dataset.kind, 'error');
+  assert.match(page.settings.note.textContent, /maxAgents must be between 1 and 64/);
+  assert.equal(page.settings.maxAgents.value, '0', 'the number is still there to correct');
+});
+
+test('a failed read is said in the panel, and the button is not left dead', async () => {
+  const page = await openPage();
+  page.values['agent.settings'] = () => {
+    throw new Error('history is not answering');
+  };
+  await page.settings.show();
+
+  assert.equal(page.settings.note.dataset.kind, 'error');
+  assert.match(page.settings.note.textContent, /could not read the settings/i);
+  assert.match(page.settings.note.textContent, /history is not answering/);
+  assert.equal(page.settings.save.disabled, false, 'Save is offered again for the next read');
+});
+
+test('reset asks for the defaults and puts them back in the boxes', async () => {
+  const page = await openPage({ settings: { maxAgents: 6, cacheSize: 40, allowSpawn: false } });
+  await page.settings.show();
+  assert.equal(page.settings.maxAgents.value, '6');
+  assert.equal(page.settings.cacheSize.value, '40');
+  assert.equal(page.settings.allowSpawn.checked, false, 'a switch off shows as off');
+  await page.settings.pressReset();
+
+  const asked = page.calls.filter(({ tool }) => tool === 'agent.settings').at(-1);
+  assert.deepEqual(asked.args, { action: 'update', reset: true });
+  assert.equal(page.settings.maxAgents.value, '32', 'the field shows the default again');
+  assert.equal(page.settings.cacheSize.value, '500');
+  assert.equal(page.settings.compressionThreshold.value, '131072');
+  assert.equal(page.settings.allowSpawn.checked, true, 'a reset puts the switches back on');
+  assert.equal(page.settings.allowAskUser.checked, true);
+  assert.equal(page.settings.note.dataset.kind, 'ok');
+  assert.match(page.settings.note.textContent, /defaults/i);
 });

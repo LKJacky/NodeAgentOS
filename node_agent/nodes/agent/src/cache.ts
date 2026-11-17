@@ -12,6 +12,10 @@ import type { BindingScope } from '@node-agent/sdk';
 
 export const CACHE_UNIT = 'cache';
 
+/** How many entries a cache keeps when neither the environment (`NODE_AGENT_CACHE_SIZE`) nor the
+ *  agent's `cacheSize` setting names another number. */
+export const DEFAULT_CACHE_SIZE = 500;
+
 /** How long one regex search may run before it is stopped, in milliseconds. */
 export const SEARCH_TIMEOUT_MS = Number(process.env.NODE_AGENT_CACHE_SEARCH_TIMEOUT ?? '1') * 1000;
 
@@ -72,7 +76,9 @@ export function historyOverBus(bus: BindingScope, prefix = ''): CacheHistory {
 }
 
 export class Cache {
-  readonly maxSize: number;
+  /** How many entries are kept. Not readonly: a saved `cacheSize` is put in force on a cache that was
+   *  already built (`setMaxSize`). */
+  #maxSize: number;
   #history: CacheHistory | null;
   /** How many texts have ever been added: the number `add` returned for the last one. */
   #total = 0;
@@ -86,9 +92,27 @@ export class Cache {
     log: (line: string) => void = (line) => console.error(line),
   ) {
     if (maxSize < 1) throw new Error('cache size must be at least 1');
-    this.maxSize = maxSize;
+    this.#maxSize = maxSize;
     this.#history = history;
     this.#log = log;
+  }
+
+  /** How many entries this cache keeps now. */
+  get maxSize(): number {
+    return this.#maxSize;
+  }
+
+  /** Put a new cap in force, letting go of what is already past it. The runtime calls this when an
+   *  operator saves `cacheSize`, so a shrunken cap is the one the next turn runs on rather than one
+   *  the next `add` eventually catches up with. */
+  async setMaxSize(maxSize: number): Promise<void> {
+    if (!Number.isSafeInteger(maxSize) || maxSize < 1) {
+      throw new Error('cache size must be a whole number of at least 1');
+    }
+    this.#maxSize = maxSize;
+    const held = await this.ids();
+    const drop = held.length - maxSize;
+    for (const id of held.slice(0, Math.max(0, drop))) await this.delete(id);
   }
 
   /** Forget the history node (or attach one) without losing the counter. */

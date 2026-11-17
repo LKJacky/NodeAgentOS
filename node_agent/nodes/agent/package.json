@@ -149,6 +149,68 @@
         "callers": [],
         "expose": false
       },
+      "settings": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "get",
+              "update"
+            ],
+            "description": "get (default): read the settings in force, their defaults and which of them need a restart; update: save the fields given"
+          },
+          "maxAgents": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 64,
+            "description": "how many sub-agents this agent may have running at once"
+          },
+          "maxInputLengthPerTurn": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 1000000,
+            "description": "one line longer than this is kept in the cache and handed to the model trimmed"
+          },
+          "compressionThreshold": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 1000000,
+            "description": "above this many prompt tokens the transcript starts to be compressed away (the oldest lines are summed up and forgotten)"
+          },
+          "compressionTokens": {
+            "type": "integer",
+            "minimum": 256,
+            "maximum": 262144,
+            "description": "how many tokens one compression lets go of at once; keep it below the threshold"
+          },
+          "cacheSize": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "how many long texts the cache keeps; one more deletes the oldest entry (NODE_AGENT_CACHE_SIZE is the fallback)"
+          },
+          "allowSpawn": {
+            "type": "boolean",
+            "description": "whether the model is offered create_agent / destroy_agent: off, this agent cannot start a sub-agent (a sub-agent never can, whatever this says)"
+          },
+          "allowAskUser": {
+            "type": "boolean",
+            "description": "whether the model is offered ask_user: off, a turn that has to ask a person gets the tool’s refusal instead of a question"
+          },
+          "reset": {
+            "type": "boolean",
+            "description": "update: forget every stored value and fall back to the settings this deployment starts from"
+          },
+          "agent": {
+            "type": "string",
+            "description": "which agent answers: a sub-agent's name, or this node's own agent when left out"
+          }
+        },
+        "description": "read or change this agent's settings: the sub-agent cap, the per-turn input limit, the compression pair the transcript is compressed with, the size of the cache, and the two switches (whether it may start sub-agents at all, whether it may ask the reader)",
+        "callers": [],
+        "expose": false
+      },
       "provider": {
         "type": "object",
         "properties": {

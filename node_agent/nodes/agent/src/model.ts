@@ -36,6 +36,16 @@ now: after the cut it cannot be recovered.
 /** How much of a dropped line the compression notice quotes back, in characters. */
 export const SNIPPET_CHARS = 1024;
 
+/** How many prompt tokens the transcript may hold before `maybeCompress` starts letting the oldest
+ *  lines go. A model built without a number of its own uses this one; an agent's
+ *  `compressionThreshold` setting is what puts another in force. */
+export const COMPRESSION_THRESHOLD = 128 * 1024;
+
+/** How many tokens one compression lets go of at once: the notice quotes a stretch this long, and the
+ *  cut that follows takes the same stretch. The default of a model, and the agent's
+ *  `compressionTokens` setting otherwise. */
+export const COMPRESSION_TOKENS = 32 * 1024;
+
 /** The transcript as a window: the lines still held, and how many older ones were forgotten before
  *  them, so an absolute index survives a cut. */
 export class WindowMessages {
@@ -96,7 +106,10 @@ export class WindowMessages {
 }
 
 export type ModelOptions = {
+  /** Above this many prompt tokens the transcript starts to be compressed away. An agent's
+   *  `compressionThreshold` setting, read when the model is built and again whenever it is saved. */
   readonly compressionThreshold?: number;
+  /** How many tokens one compression lets go of at once: the agent's `compressionTokens` setting. */
   readonly compressionTokens?: number;
   /** Called with every line as it is committed: the page hears a turn happen without polling. */
   readonly onCommit?: (messages: readonly Message[]) => Promise<void> | void;
@@ -117,18 +130,29 @@ export class CachedModel {
   sentMessages = 0;
   readonly usage: UsageSummary = emptyUsage();
   cachedNumTokens = 0;
-  readonly compressionThreshold: number;
-  readonly compressionTokens: number;
+  /** Above this many prompt tokens `maybeCompress` starts letting the oldest lines go. Not readonly:
+   *  a saved setting is put in force on a model that was already built (`setCompression`). */
+  compressionThreshold: number;
+  /** How many tokens one compression lets go of at once. */
+  compressionTokens: number;
   nextForgetIndex = -1;
   readonly #onCommit: ModelOptions['onCommit'];
   readonly #onDelta: ModelOptions['onDelta'];
 
   constructor(provider: Provider, options: ModelOptions = {}) {
     this.provider = provider;
-    this.compressionThreshold = options.compressionThreshold ?? 128 * 1024;
-    this.compressionTokens = options.compressionTokens ?? 32 * 1024;
+    this.compressionThreshold = options.compressionThreshold ?? COMPRESSION_THRESHOLD;
+    this.compressionTokens = options.compressionTokens ?? COMPRESSION_TOKENS;
     this.#onCommit = options.onCommit;
     this.#onDelta = options.onDelta;
+  }
+
+  /** Put a new compression pair in force. The runtime calls this when a setting is saved, so a model
+   *  built before the save compresses at the number the agent was told to use, from the next round
+   *  on, rather than at the one it was born with. */
+  setCompression(threshold: number, tokens: number): void {
+    this.compressionThreshold = threshold;
+    this.compressionTokens = tokens;
   }
 
   /** Point the model at another provider. A size belongs to the provider that measured it, so the
@@ -140,7 +164,10 @@ export class CachedModel {
     this.cachedNumTokens = 0;
   }
 
-  /** The lines the provider should see for the next request. */
+  /** The lines the provider should see for the next request: the notice that stands in for what it
+   *  forgot, the transcript, and whatever this round adds. Nothing is put in front of the transcript:
+   *  the agent has no instruction line of its own (`systemPrompt` was removed), so what the model is
+   *  handed is what the conversation holds - one system line only when a compression wrote one. */
   activeMessages(extra: readonly Message[] = []): Message[] {
     const head = this.messages.forgotten > 0 ? [FORGET_MESSAGE] : [];
     return [
@@ -362,6 +389,10 @@ export class CachedModel {
       forgotten += this.messages.at(index)?.usage?.total_tokens ?? 0;
       if (forgotten > this.compressionTokens) break;
     }
+    // A transcript whose lines together cost fewer tokens than one compression is under budget: the
+    // whole of it is what the notice quotes, so the last line is the last one that exists. `index`
+    // runs past the end of the window otherwise, and there is no line there to quote.
+    if (index >= this.messages.length) index = this.messages.length - 1;
     while (index + 1 < this.messages.length && this.messages.at(index + 1)?.role === 'tool')
       index += 1;
 
@@ -776,12 +807,22 @@ export class NodeProvider implements Provider {
   readonly #nodes: ProviderNodes;
   readonly #hub: StreamHub;
   readonly name: string | null;
+  /** The idle timeout in force, read per stream when the agent hands one in: it is a setting, and a
+   *  setting changes without the provider object being rebuilt. */
+  readonly #idleMs: (() => number) | undefined;
 
-  constructor(bus: () => BindingScope, nodes: ProviderNodes, hub: StreamHub, name: string | null) {
+  constructor(
+    bus: () => BindingScope,
+    nodes: ProviderNodes,
+    hub: StreamHub,
+    name: string | null,
+    idleMs?: () => number,
+  ) {
     this.#bus = bus;
     this.#nodes = nodes;
     this.#hub = hub;
     this.name = name;
+    this.#idleMs = idleMs;
   }
 
   #missing(): string {
@@ -867,8 +908,9 @@ export class NodeProvider implements Provider {
     const callIndexes = new Map<number, string>();
     let previousResponseId: string | null | undefined;
     // One idle timeout for the whole stream: a provider that stalls between events fails the turn,
-    // while one that merely thinks for longer than a chunk usually takes is left alone.
-    const idleMs = streamIdleMs();
+    // while one that merely thinks for longer than a chunk usually takes is left alone. The
+    // deployment's number: NODE_AGENT_STREAM_IDLE_MS, or this package's default under it.
+    const idleMs = this.#idleMs?.() ?? streamIdleMs();
     try {
       await abortable(this.#bus().subscribe(topic, node), request.signal);
       listening = true;

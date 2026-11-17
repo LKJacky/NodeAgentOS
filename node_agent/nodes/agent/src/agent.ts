@@ -131,6 +131,10 @@ export class AgentNode extends Node {
       stream: async (args: ToolArgs) => ({ stream: (await this.#target(args)).streamState() }),
       stop: async (args: ToolArgs) => this.#stop(args),
       provider: async (args: ToolArgs) => (await this.#target(args)).handleProvider(args),
+      // What this agent runs on: the five numbers and the two switches its page may change. The settings of one agent
+      // are its own - a sub-agent starts on its parent's and then keeps its own copy - so this is
+      // answered by the agent the call names, like every other per-agent read.
+      settings: async (args: ToolArgs) => (await this.#target(args)).handleSettings(args),
       answer: async (args: ToolArgs) => (await this.#target(args)).answer(args),
       // The agents this node runs, as `{agents: [...]}`: the main agent first, then the sub-agents
       // it started, each with the topic and state a page follows it by.

@@ -16,10 +16,19 @@ export {
   type HistoryWindow,
   type RuntimeOptions,
 } from './runtime.js';
-export { Cache, CACHE_UNIT, historyOverBus, type CacheHistory, type CacheMatch } from './cache.js';
+export {
+  Cache,
+  CACHE_UNIT,
+  DEFAULT_CACHE_SIZE,
+  historyOverBus,
+  type CacheHistory,
+  type CacheMatch,
+} from './cache.js';
 export {
   CachedModel,
   COMPRESSION_NOTICE,
+  COMPRESSION_THRESHOLD,
+  COMPRESSION_TOKENS,
   CONVERSATION_KEY,
   EventQueue,
   FORGET_MESSAGE,
@@ -30,6 +39,15 @@ export {
   WindowMessages,
 } from './model.js';
 export { AgentBusEnv, type EnvHost, type UsableEntry } from './env.js';
+export {
+  DEFAULT_SETTINGS,
+  LIVE_SETTINGS,
+  RESTART_REQUIRED_SETTINGS,
+  SETTINGS_NAMES,
+  SETTINGS_UNIT,
+  type AgentSettings,
+  type SettingsPatch,
+} from './settings.js';
 export { ASK_USER_TOOL, SYSTEM, TOOLS } from './tools.js';
 export { requireBindings, type BindingScope, type NodeBindings } from '@node-agent/sdk';
 
