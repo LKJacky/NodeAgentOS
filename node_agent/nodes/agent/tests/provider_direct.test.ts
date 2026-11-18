@@ -493,8 +493,10 @@ test('a direct row is served by the provider core itself, over the wire it names
     });
     assert.deepEqual(
       events.map((event) => event.type),
-      ['content', 'content', 'usage', 'end'],
+      ['content', 'content', 'usage', 'finish', 'end'],
     );
+    // The wire's own reason for stopping is handed on, not dropped on the floor.
+    assert.equal((events[3] as { reason: string }).reason, 'stop');
     assert.equal((events[0] as { text: string }).text, 'from ');
     assert.equal((events[1] as { text: string }).text, 'the wire');
     assert.deepEqual((events[2] as { usage: unknown }).usage, {

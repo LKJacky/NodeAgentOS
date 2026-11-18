@@ -1097,7 +1097,13 @@ export class OpenAIProvider extends Provider {
             continue;
           }
           for (const choice of choices) {
-            yield { delta: messageOf(choice.delta), usage, previous_response_id: null };
+            const reason = choice.finish_reason;
+            yield {
+              delta: messageOf(choice.delta),
+              usage,
+              previous_response_id: null,
+              ...(typeof reason === 'string' && reason !== '' ? { finish_reason: reason } : {}),
+            };
           }
         }
       } finally {

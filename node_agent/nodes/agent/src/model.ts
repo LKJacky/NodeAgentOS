@@ -241,6 +241,7 @@ export class CachedModel {
     let rawUsage: TokenUsage | undefined;
     let providerState: unknown;
     let nextResponseId: string | null | undefined;
+    let finishReason: string | null = null;
     let canceled = false;
 
     const snapshot = (): Message => {
@@ -295,7 +296,8 @@ export class CachedModel {
               },
             ],
           });
-        } else if (event.type === 'usage') rawUsage = event.usage;
+        } else if (event.type === 'finish') finishReason = event.reason;
+        else if (event.type === 'usage') rawUsage = event.usage;
         else if (event.type === 'state') providerState = event.state;
         else if (event.type === 'end') nextResponseId = event.previous_response_id ?? null;
       }
@@ -312,6 +314,7 @@ export class CachedModel {
     const message = snapshot();
     if (rawUsage !== undefined) message.usage = { ...rawUsage };
     if (providerState !== undefined) message.provider_state = providerState;
+    if (finishReason !== null) message.finish_reason = finishReason;
     message.took_ms = Math.max(0, Date.now() - started);
     const usage = message.usage;
     if (usage !== undefined) {
@@ -815,6 +818,7 @@ export function chunkEvents(chunk: unknown, calls: Map<number, string>): StreamE
     usage?: unknown;
     previous_response_id?: unknown;
     provider_state?: unknown;
+    finish_reason?: unknown;
   };
   const events: StreamEvent[] = [];
   const delta = payload.delta ?? {};
@@ -851,6 +855,9 @@ export function chunkEvents(chunk: unknown, calls: Map<number, string>): StreamE
   if (usage !== undefined) events.push({ type: 'usage', usage });
   if (payload.provider_state !== undefined && payload.provider_state !== null) {
     events.push({ type: 'state', state: payload.provider_state });
+  }
+  if (typeof payload.finish_reason === 'string' && payload.finish_reason !== '') {
+    events.push({ type: 'finish', reason: payload.finish_reason });
   }
   return events;
 }

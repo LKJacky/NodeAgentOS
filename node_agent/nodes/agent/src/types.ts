@@ -50,6 +50,9 @@ export type Message = {
   took_ms?: number;
   /** An opaque handle a stateful provider returned with this answer (`provider_state`). */
   provider_state?: unknown;
+  /** Why the model stopped this line (`stop`, `length`, `tool_calls`, ...). `length` is the one
+   *  worth acting on: the answer was cut off at the output cap, not finished. */
+  finish_reason?: string | null;
 };
 
 /** One event of a streamed answer: the provider speaks in deltas, the transcript in lines. */
@@ -64,6 +67,9 @@ export type StreamEvent =
       readonly arguments?: string;
     }
   | { readonly type: 'usage'; readonly usage: TokenUsage }
+  /** Why the model stopped: `stop`, `length`, `tool_calls`, ... It arrives with the last chunk,
+   *  and the round writes it onto the line it commits. */
+  | { readonly type: 'finish'; readonly reason: string | null }
   | { readonly type: 'state'; readonly state: unknown }
   | { readonly type: 'end'; readonly previous_response_id?: string | null };
 

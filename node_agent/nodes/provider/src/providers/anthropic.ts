@@ -428,7 +428,13 @@ function streamChunks(payload: JsonObject): StreamOutput[] {
   if (kind === 'message_delta') {
     const stop = payload.stop_reason ?? (payload.delta as JsonObject | undefined)?.stop_reason;
     if (stop === 'refusal') throw new Error(refusalMessage(payload));
-    return [{ delta: {}, usage: usageOf(payload) }];
+    return [
+      {
+        delta: {},
+        usage: usageOf(payload),
+        ...(typeof stop === 'string' && stop !== '' ? { finish_reason: stop } : {}),
+      },
+    ];
   }
   if (kind === 'error') {
     const error = (payload.error as JsonObject | undefined) ?? {};
