@@ -27,11 +27,40 @@ under another name (see [Running it](#running-it)).
 | `edit` | replace one literal snippet; `old` must appear exactly once unless `replaceAll: true`; result capped at 1 MiB |
 | `list` | one directory, `d` / `f` plus size, 500 entries |
 | `glob` | names by pattern (`**/*.ts`), 200 matches |
-| `grep` | a regex over files under a directory, `path:line: the line`; 200 matching lines, files over 1 MiB skipped, symlinks not followed, at most 2000 files scanned |
+| `grep` | an RE2-syntax regex over files under a directory, `path:line: the line`; 200 matching lines, files over 1 MiB skipped, symlinks not followed, at most 2000 files scanned |
 
 A relative path starts at the node's root (see [`NODE_AGENT_SHELL_ROOT`](#environment)); an absolute
-path is taken as it is and may reach anywhere the Shell process can. `grep` refuses a pattern that is
-not a valid regular expression instead of quietly matching nothing.
+path is taken as it is and may reach anywhere the Shell process can. `grep` compiles its pattern with
+[`re2js`](https://www.npmjs.com/package/re2js) (RE2 syntax), so a match is linear in the line it
+reads and a pattern such as `(a+)+$` cannot pin the process the way a backtracking one would. What
+RE2 cannot run -- a backreference (`\1`), lookaround (`(?=`, `(?<=`) or an atomic group -- comes
+back as not a valid regular expression, instead of quietly matching nothing.
+
+#### The pattern engine
+
+`grep` is the one capability here that runs a pattern a user wrote, so it is the one that gets a
+linear-time engine: [`re2js`](https://www.npmjs.com/package/re2js), which implements
+[RE2](https://github.com/google/re2) semantics in JavaScript. A match costs O(text) rather than
+"whatever the pattern costs", so `(a+)+$` over a fifty-thousand-character line answers in
+milliseconds instead of never. `package.json` records the same fact in its `regexEngine` field.
+
+What linear time costs, in full:
+
+| construct | why it is gone |
+|---|---|
+| backreferences (`(a)\1`) | needs to re-read what a group captured, which a finite automaton cannot do |
+| lookahead / lookbehind (`(?=`, `(?!`, `(?<=`, `(?<!`) | same: they need the engine to run, stop and come back |
+| atomic groups (`(?>...`) | the construct exists to steer a backtracker; RE2 has nothing to steer |
+| `[]` and `[^]` | JavaScript shorthand for "nothing" / "anything"; RE2 wants a class that names something |
+
+Each of them comes back as `invalid regular expression: error parsing regexp: ...` with the
+offending piece quoted, and nothing is started: no match, no thread, no partial answer. Everything
+else a JavaScript pattern could do still works, and inline flags are a gain -- `(?i)`
+(case-insensitive), `(?m)` (multiline) and `(?s)` (dot matches newline) all work, where
+`new RegExp` refused them.
+
+`glob` is not a regex and was not one before: it is `fs.globSync`'s pattern (`**/*.ts`). The other
+file abilities (`read`, `list`, `edit`) take text or paths, not patterns.
 
 ### The page's file abilities
 

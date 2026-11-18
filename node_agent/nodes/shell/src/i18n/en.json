@@ -32,7 +32,7 @@
   "fields.edit.old": "old snippet (old)",
   "fields.edit.new": "new snippet (new)",
   "fields.glob.pattern": "a glob, e.g. **/*.ts",
-  "fields.grep.pattern": "a regular expression",
+  "fields.grep.pattern": "a regular expression (RE2 syntax: no backreferences or lookaround)",
   "fields.grep.glob": "only files matching this glob (optional)",
   "files.head": "files",
   "files.reload": "reload the tree",

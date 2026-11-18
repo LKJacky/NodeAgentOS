@@ -23,9 +23,15 @@ export type CacheMatch = { entry: number; position: number; text: string };
 
 /** The history node's surface, as this package uses it. A bus without history makes a cache that
  *  holds nothing but still answers, which is what a deployment with no history node gets. */
+import { createRequire } from 'node:module';
 import { Worker } from 'node:worker_threads';
 
+import { RE2JS } from 're2js';
+
 import { isHigh, isLow } from './helpers.js';
+
+/** Where this process' `re2js` is, so the worker -- source, not a file -- loads the same copy. */
+const RE2JS_PATH = createRequire(import.meta.url).resolve('re2js');
 
 export interface CacheHistory {
   load(unitId: string): Promise<{ meta?: unknown; revision?: number } | null>;
@@ -106,9 +112,15 @@ function windowOf(text: string, start: number, end: number): string {
  *
  *  The worker is source rather than a file so it loads the same way from `src` (tests run the TS
  *  through a loader) and from `dist`. It answers either the matches or the reason it could not
- *  compile the pattern; nothing else crosses back. */
+ *  compile the pattern; nothing else crosses back.
+ *
+ *  The pattern is compiled with `re2js` (RE2 syntax): a match over a hundred kilobytes of text a
+ *  user did not write is linear, which is what keeps `(a+)+$` from pinning a core. The thread is
+ *  still killed at the budget -- a second line of defence behind the engine, not a replacement for
+ *  it. */
 const SEARCH_WORKER = `
-const { parentPort } = require('node:worker_threads');
+const { parentPort, workerData } = require('node:worker_threads');
+const { RE2JS } = require(workerData.re2js);
 
 // A window that never leaves half a surrogate pair at an edge (the same rule as \`windowOf\`).
 const high = (u) => u >= 0xd800 && u <= 0xdbff;
@@ -123,11 +135,17 @@ const windowOf = (text, start, end) => {
 
 parentPort.on('message', ({ text, pattern, context }) => {
   try {
-    const compiled = new RegExp(pattern, 'g');
+    const matcher = RE2JS.compile(pattern).matcher(text);
     const matches = [];
-    for (const match of text.matchAll(compiled)) {
-      const at = match.index ?? 0;
-      matches.push({ position: at, text: windowOf(text, at - context, at + match[0].length + context) });
+    // Every match, in order, advanced the way String.prototype.matchAll advances: a match that
+    // consumed something continues after it, and an empty one moves on by a single UTF-16 unit --
+    // which is what keeps the empty match at the end of the text as one of the answers.
+    let from = 0;
+    while (from <= text.length && matcher.find(from)) {
+      const at = matcher.start();
+      const end = matcher.end();
+      matches.push({ position: at, text: windowOf(text, at - context, end + context) });
+      from = end > at ? end : at + 1;
     }
     parentPort.postMessage({ matches });
   } catch (error) {
@@ -144,7 +162,7 @@ async function searchInThread(
   timeoutMs: number,
   id: number,
 ): Promise<CacheMatch[]> {
-  const worker = new Worker(SEARCH_WORKER, { eval: true });
+  const worker = new Worker(SEARCH_WORKER, { eval: true, workerData: { re2js: RE2JS_PATH } });
   let timer: ReturnType<typeof setTimeout> | null = null;
   try {
     const answer = await Promise.race([
@@ -275,12 +293,14 @@ export class Cache {
     return { text: slice, total: text.length, start, length: slice.length };
   }
 
-  /** Find `pattern` (a regular expression) in entry `id`, with `context` characters on each side.
+  /** Find `pattern` (an RE2-syntax regular expression, via `re2js`) in entry `id`, with `context`
+   *  characters on each side.
    *
-   *  The match runs in a thread of its own and the budget is enforced by killing that thread. A
-   *  regex is not interruptible: `(a+)+b` over a megabyte never yields a first match, so a
-   *  between-match deadline never fires and the node spins at one core for as long as it lives. A
-   *  thread can be terminated, so that is where the search happens. */
+   *  The match runs in a thread of its own and the budget is enforced by killing that thread. The
+   *  engine is already linear (no backtracking, so `(a+)+b` over a megabyte is not a hang) and the
+   *  thread is the second line of defence behind it: a match is not interruptible from the outside,
+   *  so a search that somehow runs long is stopped by terminating the thread rather than by asking
+   *  it to stop. */
   async search(
     id: number,
     pattern: string,
@@ -290,7 +310,7 @@ export class Cache {
     if (context < 0) throw new Error('context must not be negative');
     if (timeoutMs <= 0) throw new Error('timeout must be positive');
     try {
-      new RegExp(pattern, 'g');
+      RE2JS.compile(pattern);
     } catch (error) {
       throw new Error(
         `pattern is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,

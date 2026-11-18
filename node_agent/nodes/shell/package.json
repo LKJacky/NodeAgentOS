@@ -3,6 +3,15 @@
   "version": "0.1.5",
   "type": "module",
   "description": "The shell node: reads and writes files, searches, and runs commands across paths accessible to the local process",
+  "regexEngine": {
+    "name": "re2js",
+    "syntax": "RE2",
+    "notes": "linear-time matching, no catastrophic backtracking; no backreferences, lookaround or atomic groups; inline flags (?i)(?m)(?s) are supported",
+    "usedBy": [
+      "grep"
+    ],
+    "limits": "a pattern RE2 cannot compile (backreference, lookaround, atomic group) is refused with \"invalid regular expression\"; glob is a glob, not a regex, and the rest of the package searches by substring or character walk"
+  },
   "publisher": "node-agent",
   "exports": {
     ".": {
@@ -29,7 +38,8 @@
     "node": ">=23.6"
   },
   "dependencies": {
-    "@node-agent/sdk": "^0.1.2"
+    "@node-agent/sdk": "^0.1.2",
+    "re2js": "^2.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",
@@ -155,7 +165,7 @@
         "properties": {
           "pattern": {
             "type": "string",
-            "description": "a regular expression"
+            "description": "a regular expression (RE2 syntax: no backreferences or lookaround)"
           },
           "path": {
             "type": "string",

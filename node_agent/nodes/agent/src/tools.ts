@@ -82,8 +82,9 @@ export const TOOLS: ToolSpec[] = [
     function: {
       name: 'search_cache',
       description:
-        "Search one cache entry for a regular expression. Returns each match's character position and " +
-        'the matching text with up to `context` characters on each side.',
+        'Search one cache entry for a regular expression (RE2 syntax: linear time, so no ' +
+        "backreferences or lookaround). Returns each match's character position and the matching " +
+        'text with up to `context` characters on each side.',
       parameters: {
         type: 'object',
         properties: {

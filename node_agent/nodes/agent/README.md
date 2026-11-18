@@ -87,6 +87,15 @@ whole in the **cache** and the model is handed its head, a warning naming the ca
 tail. The cache is history-backed: one unit per entry (`cache.<n>`), one counter unit (`cache`), and
 `cacheSize` entries kept (default 500, `NODE_AGENT_CACHE_SIZE` when it names another number).
 
+`search_cache` compiles its `pattern` with [`re2js`](https://www.npmjs.com/package/re2js), which
+implements [RE2](https://github.com/google/re2) semantics: a search over a hundred kilobytes of text
+is linear in the text, so a pattern such as `(a+)+$` cannot pin the processor. Linear time costs the
+constructs that need a backtracker -- backreferences (`\1`), lookaround (`(?=`, `(?<=`) and atomic
+groups -- which come back as `pattern is not a valid regular expression: ...` before any thread
+starts; `(?i)`, `(?m)` and `(?s)` do work. The worker the match runs in is still killed at its budget
+(`NODE_AGENT_CACHE_SEARCH_TIMEOUT`, one second by default) as the second line of defence, and
+`package.json`'s `regexEngine` field says all of this where a tool can read it.
+
 ## The settings
 
 `settings` is what an operator may change without a restart of the process, `get` by default:

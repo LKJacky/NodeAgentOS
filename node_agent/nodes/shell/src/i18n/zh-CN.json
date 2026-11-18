@@ -32,7 +32,7 @@
   "fields.edit.old": "原片段（old）",
   "fields.edit.new": "新片段（new）",
   "fields.glob.pattern": "通配模式，例如 **/*.ts",
-  "fields.grep.pattern": "正则表达式",
+  "fields.grep.pattern": "正则表达式（RE2 语法：不支持反向引用与环视）",
   "fields.grep.glob": "只搜匹配这个通配模式的文件（可选）",
   "files.head": "文件",
   "files.reload": "重新加载目录树",

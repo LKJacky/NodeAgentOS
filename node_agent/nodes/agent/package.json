@@ -4,6 +4,15 @@
   "type": "module",
   "publisher": "node-agent",
   "description": "The agent node: the only node that holds a model, plus its own page",
+  "regexEngine": {
+    "name": "re2js",
+    "syntax": "RE2",
+    "notes": "linear-time matching, no catastrophic backtracking; no backreferences, lookaround or atomic groups; inline flags (?i)(?m)(?s) are supported",
+    "usedBy": [
+      "search_cache"
+    ],
+    "limits": "a pattern RE2 cannot compile is refused with \"pattern is not a valid regular expression\"; the search still runs in a worker that is killed at its time budget"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -30,7 +39,8 @@
   },
   "dependencies": {
     "@node-agent/sdk": "^0.1.1",
-    "markdown-it": "^14.1.0"
+    "markdown-it": "^14.1.0",
+    "re2js": "^2.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.6.2",

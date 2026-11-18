@@ -637,3 +637,46 @@ test('the served copy is the page in src', (t) => {
     'run `npm run build`: the page in dist/ is copied from src/, not compiled',
   );
 });
+
+// The query a search takes is literal text, not a pattern: `hits` walks the case-folded text with
+// `indexOf`. That is not a gap in the RE2 work — it is the contract this capability has (a search
+// box sends text, and a note holding `(a+)+$` has to be findable by typing it).
+test('search matches its query as literal text, never as a regular expression', async () => {
+  await withCaller(async (caller) => {
+    await caller.call('notes.add', {
+      title: 'regexish',
+      text: 'literal (a+)+$ here\nand a.b there',
+    });
+
+    // Punctuation is the text it looks like: no compile step, so nothing to refuse.
+    const parens = (await caller.call('notes.search', { query: '(a+)+$' })).value as Result;
+    assert.equal(parens.totalDocs, 1);
+    assert.equal(parens.hits[0].matchCount, 1);
+    assert.equal(parens.hits[0].matches[0].match, '(a+)+$');
+    assert.equal(parens.hits[0].matches[0].line, 1);
+
+    // `.` is a full stop, not "any character": `a.b` finds the document that spells it out and not
+    // the one holding `axb`.
+    await caller.call('notes.add', { title: 'dots', text: 'axb' });
+    const dot = (await caller.call('notes.search', { query: 'a.b' })).value as Result;
+    assert.deepEqual(
+      dot.hits.map((hit) => hit.title),
+      ['regexish'],
+    );
+
+    // A query shaped like a catastrophic pattern is still a literal, and one linear pass answers it
+    // over 200 000 characters of a most-matching text.
+    await caller.call('notes.add', { title: 'long run', text: 'a'.repeat(200_000) });
+    const started = process.hrtime.bigint();
+    const none = (await caller.call('notes.search', { query: '((a+)+)+$' })).value as Result;
+    const ms = Number(process.hrtime.bigint() - started) / 1e6;
+    assert.equal(none.totalDocs, 0);
+    assert.ok(ms < 2000, `search took ${ms}ms over 200 000 characters`);
+
+    // Nothing is refused as "invalid": an unbalanced bracket is a string to look for, and the note
+    // that spells one out is the answer.
+    const unbalanced = (await caller.call('notes.search', { query: '(' })).value as Result;
+    assert.equal(unbalanced.totalDocs, 1);
+    assert.equal(unbalanced.hits[0].title, 'regexish');
+  });
+});

@@ -45,6 +45,9 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+// RE2 semantics in plain JavaScript: every compile and match below is linear in the input, so a
+// pattern a user pasted (`(a+)+$`) cannot spin the node on a long line the way `RegExp` would.
+import { RE2JS } from 're2js';
 import {
   Node,
   loadResource,
@@ -1197,16 +1200,23 @@ async function globOp(root: string, args: ToolArgs): Promise<string> {
 
 /** grep: a regex over a directory's files, `path:line: text` per hit. Symlinks are skipped
  *  (`lstat` says so) so a scan cannot wander off through a link; ask `read` for one directly if
- *  that is what you want. */
+ *  that is what you want.
+ *
+ *  The pattern is an [RE2](https://github.com/google/re2)-syntax one (`re2js`), not a JavaScript
+ *  `RegExp`: a search over files a user did not write must not be able to backtrack. Linear time
+ *  costs the constructs that need backtracking — backreferences (`\1`), lookaround (`(?=`, `(?!`,
+ *  `(?<=`, `(?<!`) and atomic groups (`(?>`) — which come back as `invalid regular expression`. */
 async function grepOp(root: string, args: ToolArgs): Promise<string> {
   const pattern = text(args.pattern);
   if (pattern === '') throw new Error('grep needs a pattern');
 
   const base = await resolveInsideRoot(root, text(args.path) || '.');
-  let test: RegExp;
+  let test: RE2JS;
   try {
-    test = new RegExp(pattern);
+    test = RE2JS.compile(pattern);
   } catch (e) {
+    // re2js names the piece it stopped on -- an unbalanced group, or a construct RE2 cannot run --
+    // and that name is what the model needs to fix the pattern.
     throw new Error(`invalid regular expression: ${e instanceof Error ? e.message : String(e)}`);
   }
 
