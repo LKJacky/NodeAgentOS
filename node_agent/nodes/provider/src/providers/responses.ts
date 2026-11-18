@@ -13,6 +13,7 @@ import {
   optionalString,
   type Provider,
   Provider as BaseProvider,
+  refuseExtraBody,
   type StreamOutput,
   thinkingEffort,
   timeoutOf,
@@ -222,6 +223,9 @@ export class ResponsesProvider extends BaseProvider implements Provider {
   readonly host: string;
 
   static build(data: JsonObject, fetcher: Fetcher): ResponsesProvider {
+    // `/responses` is not a chat-completions body either: a row that carries `extra_body` is refused
+    // here rather than dropped silently on every request.
+    refuseExtraBody(data, 'Responses');
     return new ResponsesProvider({
       apiKey: optionalString(data, 'api_key'),
       modelName: optionalString(data, 'model_name') ?? '',

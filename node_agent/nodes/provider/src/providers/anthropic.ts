@@ -14,6 +14,7 @@ import {
   optionalString,
   type Provider,
   Provider as BaseProvider,
+  refuseExtraBody,
   type StreamOutput,
   thinkingEffort,
   timeoutOf,
@@ -447,6 +448,9 @@ export class AnthropicProvider extends BaseProvider implements Provider {
   readonly host: string;
 
   static build(data: JsonObject, fetcher: Fetcher): AnthropicProvider {
+    // The Messages wire is not a chat-completions body: a row that carries `extra_body` is refused
+    // here rather than dropped silently on every request.
+    refuseExtraBody(data, 'Anthropic');
     return new AnthropicProvider({
       apiKey: optionalString(data, 'api_key'),
       modelName: optionalString(data, 'model_name') ?? '',

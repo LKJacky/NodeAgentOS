@@ -620,6 +620,71 @@ export function thinkingEffort(data: JsonObject): string | null {
   return value === null ? null : value.trim() || null;
 }
 
+/** The fields a row's `extra_body` may never set: the spine of the request, which the provider writes
+ *  itself. A merge that replaced `model` or `messages` would send a different conversation than the
+ *  caller's, and one that replaced `stream` would promise the SDK a stream that never comes. */
+export const EXTRA_BODY_RESERVED_KEYS: readonly string[] = [
+  'model',
+  'messages',
+  'stream',
+  'stream_options',
+];
+
+/** One row's optional `extra_body`: the private fields an upstream wants in a chat request.
+ *
+ *  It is a JSON object or nothing: `null`, an undefined field and `{}` all mean "send nothing extra",
+ *  so a row saved before this field existed behaves exactly as it did. Anything else — a string, an
+ *  array, a number, a value that is not plain JSON data — is refused here, where the row is built,
+ *  rather than posted to an endpoint that would answer with something that does not name the field.
+ *  The reserved keys are refused for the same reason: `extra_body` adds to the request, it does not
+ *  rewrite it. */
+export function extraBodyOf(data: JsonObject, label = 'provider'): JsonObject | null {
+  const value = data.extra_body;
+  if (value === undefined || value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value))
+    throw new Error(`${label} extra_body must be a JSON object or null`);
+  let copy: unknown;
+  try {
+    copy = JSON.parse(JSON.stringify(value));
+  } catch {
+    throw new Error(`${label} extra_body must be plain JSON data`);
+  }
+  if (copy === null || typeof copy !== 'object' || Array.isArray(copy))
+    throw new Error(`${label} extra_body must be a JSON object or null`);
+  const extra = copy as JsonObject;
+  for (const key of EXTRA_BODY_RESERVED_KEYS) {
+    if (Object.hasOwn(extra, key))
+      throw new Error(
+        `${label} extra_body may not set "${key}": the provider writes that field itself`,
+      );
+  }
+  return Object.keys(extra).length > 0 ? extra : null;
+}
+
+/** A protocol that has no chat-completions body to add to says so, instead of dropping the field
+ *  silently: a row that carries `extra_body` on the Anthropic or Responses wire is refused. */
+export function refuseExtraBody(data: JsonObject, label: string): void {
+  if (extraBodyOf(data, label) === null) return;
+  throw new Error(
+    `${label} providers cannot send extra_body: it is an OpenAI-compatible chat-completions field, ` +
+      'so use an openai or deepseek row for it',
+  );
+}
+
+/** Merge one row's `extra_body` into a request body: what the provider wrote first, the row's own
+ *  fields on top. The reserved keys cannot appear here (they are refused when the row is built), so
+ *  `model`, `messages`, `stream` and `stream_options` are always the provider's own. */
+export function mergeExtraBody(body: JsonObject, extra: JsonObject | null): JsonObject {
+  if (extra === null) return body;
+  const merged: JsonObject = { ...body };
+  for (const [key, value] of Object.entries(extra)) {
+    if (EXTRA_BODY_RESERVED_KEYS.includes(key))
+      throw new Error(`extra_body may not set "${key}": the provider writes that field itself`);
+    merged[key] = value;
+  }
+  return merged;
+}
+
 export function timeoutOf(data: JsonObject, label: string): number | null {
   const value = data.timeout;
   if (value !== undefined && value !== null && (typeof value !== 'number' || Number.isNaN(value)))
@@ -875,6 +940,8 @@ export class OpenAIProvider extends Provider {
   readonly baseUrl: string | null;
   readonly timeout: number | null;
   readonly effort: string | null;
+  /** The row's own fields for the wire, merged into every request body it sends; null means none. */
+  readonly extraBody: JsonObject | null;
   readonly fetcher: Fetcher;
   readonly client: OpenAI | null;
   readonly host: string;
@@ -887,6 +954,7 @@ export class OpenAIProvider extends Provider {
       baseUrl: optionalString(data, 'base_url'),
       timeout: timeoutOf(data, 'OpenAI'),
       effort: thinkingEffort(data),
+      extraBody: extraBodyOf(data, 'OpenAI'),
       fetcher,
     });
   }
@@ -898,6 +966,7 @@ export class OpenAIProvider extends Provider {
     baseUrl?: string | null;
     timeout?: number | null;
     effort?: string | null;
+    extraBody?: JsonObject | null;
     fetcher: Fetcher;
   }) {
     super();
@@ -907,6 +976,7 @@ export class OpenAIProvider extends Provider {
     this.baseUrl = options.baseUrl ?? null;
     this.timeout = options.timeout ?? null;
     this.effort = options.effort ?? null;
+    this.extraBody = options.extraBody ?? null;
     this.fetcher = options.fetcher;
     this.host = endpointHost(this.baseUrl, OPENAI_BASE_URL);
     this.client = this.apiKey
@@ -930,6 +1000,7 @@ export class OpenAIProvider extends Provider {
       base_url: this.baseUrl,
       timeout: this.timeout,
       thinking_effort: this.effort,
+      extra_body: this.extraBody,
     };
   }
 
@@ -960,13 +1031,34 @@ export class OpenAIProvider extends Provider {
     return body;
   }
 
+  /** One request body as the wire gets it: what `body` built, then the row's `extra_body` on top.
+   *
+   *  The merge is last so a private field an upstream wants (`top_k`, `for_training`,
+   *  `chat_template_kwargs`, …) reaches the request exactly as the row spelled it; the fields the
+   *  provider itself writes are protected, because `extra_body` naming one is refused when the row
+   *  is built (see `extraBodyOf`). `chat` and `chatStream` both go through here, so a stream carries
+   *  the same extra fields a plain chat does, and `stream`/`stream_options` stay the provider's. */
+  protected requestBody(
+    messages: Message[],
+    tools?: ToolSpec[] | null,
+    limit?: number | null,
+    stream?: { stream: true; stream_options: JsonObject },
+  ): JsonObject {
+    const body = this.body(messages, tools, limit);
+    if (stream !== undefined) {
+      body.stream = stream.stream;
+      body.stream_options = stream.stream_options;
+    }
+    return mergeExtraBody(body, this.extraBody);
+  }
+
   async chat(
     messages: Message[],
     tools?: ToolSpec[] | null,
     maxCompletionTokens?: number | null,
     _previousResponseId?: string | null,
   ): Promise<ChatOutput> {
-    const body = this.body(messages, tools, maxCompletionTokens);
+    const body = this.requestBody(messages, tools, maxCompletionTokens);
     if (this.client === null) throw new Error(blankProviderMessage());
     const client = this.client;
     const response = await this.attempt(() => client.chat.completions.create(body as never));
@@ -987,11 +1079,10 @@ export class OpenAIProvider extends Provider {
     _previousResponseId?: string | null,
     signal?: AbortSignal,
   ): AsyncGenerator<StreamOutput, void, unknown> {
-    const body = {
-      ...this.body(messages, tools, maxCompletionTokens),
+    const body = this.requestBody(messages, tools, maxCompletionTokens, {
       stream: true,
       stream_options: { include_usage: true },
-    };
+    });
     if (this.client === null) throw new Error(blankProviderMessage());
     const client = this.client;
     yield* this.attemptStream(async function* () {

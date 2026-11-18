@@ -24,7 +24,8 @@ it was published: the id comes back first, the caller subscribes to it, and only
 `stream_ready` let the model speak. No first delta can be published into an empty room, and the id
 is forgotten when the stream ends, fails, is cancelled, or waits more than a minute for a ready.
 
-A row is `{ type, model_name, base_url, timeout, api_key, organization?, thinking_effort? }`, saved in
+A row is `{ type, model_name, base_url, timeout, api_key, organization?, thinking_effort?, extra_body? }`,
+saved in
 history and handed
 back by `dump`/`build`. Three protocols sit behind that one shape, which is the whole point of the node:
 the agent, the page and a transcript never learn which wire an answer came from.
@@ -100,6 +101,66 @@ reopens on `Custom…` with the text field filled in.
 
 Only `minimal` needs a name of its own: the Messages API has no such level, so it is sent as `low`.
 
+## Extra request body
+
+Some endpoints want fields of their own in a chat request — a vLLM `top_k`, a `chat_template_kwargs`
+that turns thinking off on a Qwen template, a flag a gateway invented. A row may carry them as
+`extra_body`, a JSON object merged into the body the node already builds:
+
+```json
+{
+  "type": "openai",
+  "model_name": "qwen3-32b",
+  "base_url": "https://api.llm.example.cn/v1",
+  "api_key": "sk-…",
+  "extra_body": {
+    "top_k": -1,
+    "for_training": false,
+    "chat_template_kwargs": { "thinking": false }
+  }
+}
+```
+
+Both the finished answer and a stream post it, so `chat` and `chatStream` send:
+
+```json
+{
+  "model": "qwen3-32b",
+  "messages": [ … ],
+  "top_k": -1,
+  "for_training": false,
+  "chat_template_kwargs": { "thinking": false }
+}
+```
+
+and a stream additionally sends `stream: true` and `stream_options: { "include_usage": true }`.
+
+How the merge works, and where it stops:
+
+- the body is built first and `extra_body` is merged on top of it, so its fields are the last word —
+  a nested object is sent exactly as written, and nothing of it is flattened or renamed;
+- `model`, `messages`, `stream` and `stream_options` may never appear in it. They are refused when the
+  row is built (`extraBodyOf`), so a request can never be sent with somebody else's transcript, a
+  replaced model, or a `stream: false` under a caller that is waiting for deltas; a stream keeps
+  `stream: true` and `stream_options.include_usage: true` whichever extra fields the row adds;
+- `null`, a missing field and `{}` all mean "send nothing extra": a row saved before this field
+  existed builds the very same request it did before;
+- the value is a JSON object, not JSON text. A string, an array or a number is refused with a sentence
+  naming the field — the page parses its box before saving, so what reaches the node is already an object;
+- it is stored like every other field (`dump` writes `extra_body` back, both stores persist it, and
+  `providers list` returns it), so it survives a restart and clears by clearing the box;
+- **OpenAI-compatible only.** `openai` and `deepseek` rows send it; an `anthropic` or `responses` row
+  that carries it is refused when the row is built, with a message naming `extra_body` — never
+  dropped silently. The page does not even offer the box for those two protocols.
+
+On the page the box lives in a folded **Advanced configuration** section: the form stays the five
+everyday fields, the fold starts closed for a row with nothing extra, opens by itself for a row that
+has some, and is not drawn at all for the two protocols above.
+
+On a `deepseek` row the `thinking_effort` select is written by `deepseek.ts` before the merge, so an
+`extra_body` of `{ "thinking": … }` wins over the select; the same holds for `reasoning_effort` on a
+plain `openai` row. The escape hatch is the last word by design — except for the four reserved keys.
+
 ## State: the agent chooses full context or a delta
 
 The Responses API stores each response and can continue from it with `previous_response_id` (the
@@ -126,6 +187,9 @@ therefore sends the active transcript in full.
 - `type` that is not one of `openai`, `anthropic`, `responses`;
 - a timeout that is not a number, and a base URL the page can see is missing `http(s)://`;
 - a `tool_calls` entry whose arguments are not a JSON object, named before a request leaves;
+- an `extra_body` that is not a JSON object, that is a string/array/number, or that names `model`,
+  `messages`, `stream` or `stream_options`; and any `extra_body` at all on an `anthropic` or
+  `responses` row (the field is OpenAI-compatible only);
 - a content part neither protocol can carry (`image_url` is translated; anything else is an error);
 - an Anthropic classifier refusal (`stop_reason: "refusal"`): it is raised as an error carrying
   `stop_details.category` and `stop_details.explanation`, never returned as an empty assistant
@@ -165,4 +229,6 @@ cd node_agent/nodes/provider
 npm test
 ```
 
-Tests use a fake provider client, so no real API key is needed and no network call is made.
+Tests use a fake provider client, so no real API key is needed. The `extra_body` suites go one step
+further: a throwaway HTTP server on `127.0.0.1` reads the bytes a chat and a stream really post, so a
+body is asserted on the wire and not only in a mock — and nothing leaves the machine.

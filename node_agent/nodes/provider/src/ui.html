@@ -22,6 +22,12 @@
     /* `hidden` is a UA rule and loses to the grid above, so hiding a field needs a say here. */
     [hidden] { display:none !important; }
     input, select { width:100%; min-height:40px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--soft); color:var(--text); font:inherit; }
+    /* The extra-body field is JSON somebody types by hand: monospace, and tall enough to read. */
+    textarea { width:100%; min-height:88px; padding:8px 10px; border:1px solid var(--line); border-radius:9px; background:var(--soft); color:var(--text); font:12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize:vertical; }
+    /* Advanced settings fold away: the form is the everyday five fields, and the fold is the rest. */
+    details.advanced { display:grid; gap:10px; }
+    details.advanced > summary { cursor:pointer; color:var(--muted); font-size:12px; }
+    details.advanced[open] > summary { color:var(--text); }
     .actions { display:flex; flex-wrap:wrap; gap:8px; }
     button { min-height:36px; padding:0 13px; border:0; border-radius:9px; background:var(--accent-fill); color:white; cursor:pointer; }
     button.secondary { border:1px solid var(--line); background:var(--soft); color:var(--text); }
@@ -76,6 +82,11 @@
           <option value="custom" data-text-key="thinking.custom">Custom…</option>
         </select></label>
         <label id="provider-thinking-custom-field" hidden><span data-text-key="form.thinkingCustom">Custom effort</span><input id="provider-thinking-custom" autocomplete="off" /></label>
+        <details id="provider-advanced" class="advanced" hidden><summary data-text-key="form.advanced">Advanced configuration</summary>
+          <label><span data-text-key="form.extraBody">Extra request body (JSON)</span>
+            <textarea id="provider-extra-body" spellcheck="false" autocapitalize="off" autocomplete="off" placeholder='{ "top_k": -1 }'></textarea>
+            <span class="note" data-text-key="hint.extraBody">Merged into every request: model, messages, stream and stream_options cannot be set here. Leave it empty for none.</span></label>
+        </details>
         <div id="provider-error" class="feedback error" role="alert"></div>
         <div id="provider-status" class="feedback success" role="status" aria-live="polite"></div>
         <div class="actions">
@@ -120,6 +131,10 @@ const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
   const thinking = byId('provider-thinking');
   const thinkingCustom = byId('provider-thinking-custom');
   const thinkingCustomField = byId('provider-thinking-custom-field');
+  const extraBody = byId('provider-extra-body');
+  const advanced = byId('provider-advanced');
+  // The protocols whose wire is a chat-completions body, and so the only ones `extra_body` reaches.
+  const EXTRA_BODY_PROTOCOLS = ['openai', 'deepseek'];
   const THINKING_PRESETS = ['', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   const CUSTOM_THINKING = 'custom';
   const error = byId('provider-error');
@@ -158,6 +173,9 @@ const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
 
   function applyType() {
     organizationField.hidden = protocol() !== 'openai';
+    // Only a chat-completions row has a body to add to: the node refuses `extra_body` on the other
+    // two wires, so the whole advanced section is not offered there rather than offered and rejected.
+    advanced.hidden = !EXTRA_BODY_PROTOCOLS.includes(protocol());
     url.placeholder = TYPES[protocol()].url;
     // The key travels on the element, so a language change redraws this sentence in place.
     const hintKey = TYPES[protocol()].hint;
@@ -206,6 +224,12 @@ const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
       thinkingCustom.value = effort;
     }
     applyThinking();
+    // One row's fields as text: an empty box is "send nothing extra", and a saved object is shown
+    // pretty-printed so it can be read and edited rather than guessed at.
+    extraBody.value = config.extra_body ? JSON.stringify(config.extra_body, null, 2) : '';
+    // Folded by default, and opened only when there is something in it: a saved object must not sit
+    // behind a fold nobody has a reason to open.
+    advanced.open = Object.keys(config.extra_body ?? {}).length > 0;
     remove.disabled = !provider || (state?.providers.length ?? 0) <= 1;
     applyType();
     render();
@@ -253,6 +277,24 @@ const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
       error.textContent = t('error.baseUrl');
       return;
     }
+    // The extra body is typed as JSON, so it is parsed here: a half-typed object is refused with
+    // the sentence that says why, instead of being saved as a string every later call would reject.
+    let savedExtraBody = null;
+    const extraText = extraBody.value.trim();
+    if (extraText !== '' && EXTRA_BODY_PROTOCOLS.includes(protocol())) {
+      let parsed;
+      try {
+        parsed = JSON.parse(extraText);
+      } catch {
+        error.textContent = t('error.extraBodyJson');
+        return;
+      }
+      if (parsed !== null && (typeof parsed !== 'object' || Array.isArray(parsed))) {
+        error.textContent = t('error.extraBodyObject');
+        return;
+      }
+      savedExtraBody = parsed;
+    }
     save.disabled = true;
     try {
       const saved = await call({
@@ -263,7 +305,8 @@ const t = (key, params) => T[key]?.get(currentLocale(), params) ?? key;
           timeout:timeoutValue === '' ? null : Number(timeoutValue),
           thinking_effort:(thinking.value === CUSTOM_THINKING
             ? thinkingCustom.value.trim()
-            : thinking.value) || null},
+            : thinking.value) || null,
+          extra_body:savedExtraBody},
       });
       if (!saved) return;
       show(state.providers.find((item) => item.name === savedName));

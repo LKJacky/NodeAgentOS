@@ -11,6 +11,7 @@ import {
   type Message,
   type ToolSpec,
   OpenAIProvider,
+  extraBodyOf,
   optionalString,
   thinkingEffort,
   timeoutOf,
@@ -40,6 +41,7 @@ export class DeepSeekProvider extends OpenAIProvider {
       baseUrl: optionalString(data, 'base_url') ?? DEEPSEEK_BASE_URL,
       timeout: timeoutOf(data, 'DeepSeek'),
       effort: thinkingEffort(data),
+      extraBody: extraBodyOf(data, 'DeepSeek'),
       fetcher,
     });
   }
