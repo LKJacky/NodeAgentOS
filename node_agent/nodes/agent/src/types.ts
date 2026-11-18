@@ -40,6 +40,11 @@ export type Message = {
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   reasoning_content?: string;
+  /** What happened around this line that the reader should see and the model should not: a cut
+   *  the compression made, a line that was trimmed into the cache. It is a field of the line
+   *  rather than a line of its own, so it never takes an index in the transcript; the provider is
+   *  never handed it, and compression neither counts nor quotes it. */
+  log?: string;
   usage?: TokenUsage;
   at?: string;
   took_ms?: number;

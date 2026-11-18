@@ -149,6 +149,9 @@ export class CachedModel {
    *  (`setCompressionNotice`). */
   compressionNotice: string;
   nextForgetIndex = -1;
+  /** A note about a cut that happened between two lines: it is written onto the next line
+   *  committed, because a log is a field of a line and not a line of its own. */
+  #pendingLog: string | null = null;
   readonly #onCommit: ModelOptions['onCommit'];
   readonly #onDelta: ModelOptions['onDelta'];
 
@@ -214,7 +217,10 @@ export class CachedModel {
     if (this.previousResponseId === null || this.sentMessages > active.length) {
       return { messages: active, previous: null };
     }
-    return { messages: active.slice(this.sentMessages), previous: this.previousResponseId };
+    return {
+      messages: active.slice(this.sentMessages),
+      previous: this.previousResponseId,
+    };
   }
 
   /** One streamed round: the assistant line it commits, and whether it was cut short. */
@@ -350,8 +356,20 @@ export class CachedModel {
     for (const message of messages) {
       if (message.at === undefined) message.at = utcNow();
     }
-    this.messages.push(...messages);
-    if (this.#onCommit !== undefined) await this.#onCommit(messages);
+    // A note about what just happened belongs to the line that follows the event: it rides on
+    // that line's `log` field, so the transcript keeps every index it had.
+    const pending = this.#pendingLog;
+    let lines: readonly Message[] = messages;
+    if (pending !== null && messages.length > 0) {
+      this.#pendingLog = null;
+      const first = messages[0] as Message;
+      lines = [
+        { ...first, log: first.log === undefined ? pending : `${pending}\n${first.log}` },
+        ...messages.slice(1),
+      ];
+    }
+    this.messages.push(...lines);
+    if (this.#onCommit !== undefined) await this.#onCommit(lines);
   }
 
   /** Measure the transcript with the provider that is answering now. */
@@ -388,7 +406,16 @@ export class CachedModel {
 
   /** Forget everything before an absolute index, and the plan that led here. */
   async resetForgetIndex(forgetIndex: number, tools: readonly ToolSpec[]): Promise<void> {
-    this.messages.forgetThrough(Math.max(forgetIndex, this.messages.forgotten));
+    const through = Math.max(forgetIndex, this.messages.forgotten);
+    const gone = through - this.messages.forgotten;
+    this.messages.forgetThrough(through);
+    // The cut is recorded on the next line committed, not as a line of its own: the reader sees
+    // what went, the model is handed none of it, and no index moves.
+    if (gone > 0) {
+      this.#pendingLog =
+        `forgot ${gone} message${gone === 1 ? '' : 's'} (through index ${through - 1}); ` +
+        `${this.messages.length} held, ${this.messages.forgotten} forgotten`;
+    }
     this.nextForgetIndex = -1;
     this.previousResponseId = null;
     this.sentMessages = 0;
@@ -833,14 +860,17 @@ function chunkEvents(chunk: unknown, calls: Map<number, string>): StreamEvent[] 
 export const STREAM_TOPIC_PREFIX = 'provider.stream.';
 
 /** Stateless provider proxy to a provider bus node. */
-/** `message` with every string it carries made valid Unicode (see `wellFormed`). */
-function wellFormedMessage(message: Message): Message {
+/** `message` as the provider reads it: every string it carries made valid Unicode (see
+ *  `wellFormed`), and no `log` -- a note about a cut is the reader's page, and a server that
+ *  validates its message shape would refuse the field. */
+export function wellFormedMessage(message: Message): Message {
   const calls = message.tool_calls?.map((call) => ({
     ...call,
     function: { ...call.function, arguments: wellFormed(call.function.arguments) },
   }));
+  const { log: _note, ...rest } = message;
   return {
-    ...message,
+    ...rest,
     ...(typeof message.content === 'string' ? { content: wellFormed(message.content) } : {}),
     ...(typeof message.reasoning_content === 'string'
       ? { reasoning_content: wellFormed(message.reasoning_content) }

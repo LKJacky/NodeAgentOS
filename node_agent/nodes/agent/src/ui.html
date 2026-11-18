@@ -568,6 +568,17 @@
       .assistant {
         align-self: flex-start;
       }
+      /* The record a line carries of what happened around it: a cut, a trim. Quiet, monospaced,
+         and separate from the prose, so it reads as a note and not as something the model said. */
+      .msg-log {
+        margin-top: 6px;
+        padding-top: 6px;
+        border-top: 1px dashed var(--line);
+        color: var(--muted);
+        font-size: 11px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        white-space: pre-wrap;
+      }
       .system {
         align-self: center;
         border-style: dashed;
@@ -4043,6 +4054,8 @@
               ? systemParts(body, streaming)
               : [el('div', 'plain', body)];
         box.append(roleLine(roles()[msg.role] ?? msg.role, msg, pushed), ...thought, ...content);
+        // What happened around this line (a cut, a trim): the reader's record, never the model's.
+        if (typeof msg.log === 'string' && msg.log !== '') box.append(el('div', 'msg-log', msg.log));
         // The end of the message: its time and the way to copy it, as one row (see `messageFoot`).
         const foot = messageFoot(msg, body, t('copy.thisMessage'));
         if (foot) box.append(foot);
