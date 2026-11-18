@@ -28,6 +28,39 @@ class BusError(Exception):
         self.code = code
 
 
+# The wire carries one frame in one WebSocket message up to this many bytes; past it a frame
+# travels as `part` frames that the peer joins back into the one frame it was (bus/src/wire.ts).
+MAX_FRAME_CHARS = 1 << 20
+# A joined frame may be this big: one chat turn carries the whole transcript.
+MAX_MESSAGE_CHARS = 512 << 20
+
+
+def _pieces(text: str) -> list[str]:
+    """`text` as the messages that carry it: itself when one message carries it whole."""
+    if len(text.encode('utf-8')) <= MAX_FRAME_CHARS:
+        return [text]
+    if len(text) > MAX_MESSAGE_CHARS:
+        raise BusError(
+            'a frame of %d characters is past the %d this wire carries' % (len(text), MAX_MESSAGE_CHARS)
+        )
+    identity = uuid.uuid4().hex
+    size = max(1, (MAX_FRAME_CHARS - 256) // 2)
+    values: list[str] = []
+    at = 0
+    while at < len(text):
+        end = min(len(text), at + size)
+        piece = text[at:end]
+        while len(json.dumps({'op': 'part', 'id': identity, 'seq': len(values), 'value': piece, 'last': False}).encode('utf-8')) > MAX_FRAME_CHARS and len(piece) > 1:
+            end = at + max(1, len(piece) // 2)
+            piece = text[at:end]
+        values.append(piece)
+        at += len(piece)
+    return [
+        json.dumps({'op': 'part', 'id': identity, 'seq': seq, 'value': value, 'last': seq == len(values) - 1})
+        for seq, value in enumerate(values)
+    ]
+
+
 def _deadline(timeout: float) -> int:
     return int(time.time() * 1000) + int(timeout * 1000)
 
@@ -52,6 +85,8 @@ class BusClient:
         self._reader: asyncio.Task[None] | None = None
         self._pending: dict[str, asyncio.Future[Json]] = {}
         self._closed = asyncio.Event()
+        self._parts: dict[str, list[str]] = {}
+        self._parts_chars = 0
         self._call_handler: CallHandler | None = None
         self._event_handler: EventHandler | None = None
 
@@ -110,7 +145,7 @@ class BusClient:
                 "to": str(manifest.get("name", "")),
                 "tenantId": "*",
                 "deadline": _deadline(self.timeout),
-                "payload": {"manifest": dict(manifest), "chunks": False},
+                "payload": {"manifest": dict(manifest), "chunks": True},
             }
         )
         _ok(result)
@@ -226,9 +261,52 @@ class BusClient:
         if self._ws is None:
             raise BusError("bus client is not connected")
         try:
-            await self._ws.send_json(frame)
+            text = json.dumps(frame)
+            for piece in _pieces(text):
+                await self._ws.send_str(piece)
+        except BusError:
+            raise
         except Exception as error:
             raise BusError(f"bus send failed: {error}") from None
+
+    def _joined(self, frame: Json) -> Json | None:
+        """The frame `frame` carries: itself, or the whole one its pieces add up to.
+
+        A piece is held until the one marked `last` arrives, and the joined text is parsed and
+        handed back as the one frame the sender wrote, however many messages carried it. A gap in
+        the sequence drops the frame, and the total is bounded: a peer that streams pieces and
+        never says last is not carrying a frame this client will hold.
+        """
+        if frame.get("op") != "part":
+            return frame
+        identity = frame.get("id")
+        value = frame.get("value")
+        seq = frame.get("seq")
+        if not isinstance(identity, str) or not isinstance(value, str) or not isinstance(seq, int):
+            return None
+        pieces = self._parts.get(identity, [])
+        if seq != len(pieces):
+            self._forget(identity, pieces)
+            return None
+        pieces.append(value)
+        self._parts[identity] = pieces
+        self._parts_chars += len(value)
+        if self._parts_chars > MAX_MESSAGE_CHARS:
+            self._parts.clear()
+            self._parts_chars = 0
+            return None
+        if frame.get("last") is not True:
+            return None
+        self._forget(identity, pieces)
+        try:
+            return json.loads("".join(pieces))
+        except ValueError:
+            return None
+
+    def _forget(self, identity: str, pieces: list[str]) -> None:
+        if self._parts.pop(identity, None) is None:
+            return
+        self._parts_chars -= sum(len(piece) for piece in pieces)
 
     async def _read_loop(self) -> None:
         from aiohttp import WSMsgType
@@ -240,7 +318,9 @@ class BusClient:
                     if message.type in (WSMsgType.CLOSE, WSMsgType.CLOSED, WSMsgType.ERROR):
                         break
                     continue
-                frame = json.loads(message.data)
+                frame = self._joined(json.loads(message.data))
+                if frame is None:
+                    continue
                 if frame.get("type") == "result":
                     future = self._pending.get(frame.get("replyTo", ""))
                     if future is not None and not future.done():
