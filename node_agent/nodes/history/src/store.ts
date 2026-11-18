@@ -45,6 +45,14 @@ export interface HistoryStore {
   usage?(user: string): MaybePromise<HistoryUsage>;
   /** Delete every unit one calling node stored for this user, and answer how many were removed. */
   reset?(user: string, node: string): MaybePromise<number>;
+  /** Is the store reachable at all: one statement that proves the machinery underneath answers,
+   *  without reading a single unit. `/healthz` asks this, so a probe costs a `SELECT 1` and never a
+   *  scan of somebody's history. A backend that cannot answer cheaply leaves it out. */
+  ping?(): MaybePromise<void>;
+  /** Let go of the backend. `close` is the contract — it returns at once — and a backend that needs
+   *  to wait for something (a worker thread finishing its file) may also offer this: whoever owns the
+   *  process awaits it before leaving. */
+  shutdown?(): MaybePromise<void>;
   close(): void;
 }
 
@@ -60,6 +68,15 @@ export class UnitNotFoundError extends Error {}
 
 /** A write would put one user over the storage ceiling the history server was given. */
 export class StorageLimitError extends Error {}
+
+/** The backend is not taking work right now: as many requests are already waiting as it will hold.
+ *  It is a refusal rather than a failure — nothing of it ran, and asking again later is the right
+ *  answer — so it carries the status a server sends for that (`503`) and a caller can tell it apart
+ *  from a conflict or a bug without reading the message. */
+export class HistoryQueueFullError extends Error {
+  readonly status = 503;
+  readonly code = 'queue_full';
+}
 
 const SCHEMA_VERSION = 4;
 
@@ -165,13 +182,35 @@ function splitMessages(data: unknown): { meta: unknown; messages: unknown[] } {
   return { meta, messages };
 }
 
+/** How to open the file. A reader is the same store with its hands tied: no migration, no chmod, and
+ *  `PRAGMA query_only` set, so the connection that answers reads cannot change the database even by
+ *  mistake. It is what lets N readers run beside the one writer (see worker-store.ts). */
+export type SqliteHistoryStoreOptions = {
+  readOnly?: boolean;
+};
+
 export class SqliteHistoryStore implements HistoryStore {
   private readonly database: DatabaseSync;
   private closed = false;
 
-  constructor(path = defaultHistoryPath()) {
+  constructor(path = defaultHistoryPath(), options: SqliteHistoryStoreOptions = {}) {
+    const readOnly = options.readOnly === true;
     if (path !== ':memory:') mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     this.database = new DatabaseSync(path);
+    if (readOnly) {
+      // WAL is the writer's to set: it is a write, and query_only would refuse it. A reader only asks
+      // to wait for a lock instead of failing on it, and to be told the schema it was promised.
+      this.database.exec('PRAGMA busy_timeout = 5000; PRAGMA query_only = ON;');
+      const version = (this.database.prepare('PRAGMA user_version').get() as { user_version: number })
+        .user_version;
+      if (version !== SCHEMA_VERSION) {
+        this.database.close();
+        throw new Error(
+          `history database schema ${version} is not ${SCHEMA_VERSION}: open it for writing first`,
+        );
+      }
+      return;
+    }
     if (path !== ':memory:') chmodSync(path, 0o600);
     this.database.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL;');
     this.migrate();
@@ -297,6 +336,12 @@ export class SqliteHistoryStore implements HistoryStore {
         .run(user, node);
       return Number(result.changes);
     });
+  }
+
+  /** One statement through the same prepared-statement path every read takes, touching no unit: a
+   *  probe that the file is still open and the schema still answers. */
+  ping(): void {
+    this.database.prepare('SELECT 1 AS ok').get();
   }
 
   close(): void {
