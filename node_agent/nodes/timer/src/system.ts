@@ -42,8 +42,23 @@ type RemoteWake = {
   firesAt: number;
 };
 
+/** One row of the family the agent node runs, as its `agents` capability answers it: the name a wake
+ *  reaches a sub-agent by, and the agent that started it (`null` for the family's own agent). */
+type FamilyRow = { name: string; parent: string | null };
+
+/** The `agent` argument a family row asks for: none for the family's own agent (it is what the node
+ *  is), and the name a sub-agent is reached by. */
+function agentArgument(row: FamilyRow): string | null {
+  return row.parent === null ? null : row.name;
+}
+
 const NODE_ID = 'timer';
 const WAKE_CAP = 'wake';
+/** The capability the agent node answers with the family it runs: its own agent first, then every
+ *  sub-agent it started. */
+const FAMILY_CAP = 'agents';
+/** The agent node: the one node a timer wakes by name, and the node the family is always read from. */
+const AGENT_NODE = 'agent';
 const PAGE = readFileSync(new URL('./ui.html', import.meta.url), 'utf8');
 /** The page's words, read from next to the compiled JS (the same copy the page comes from). */
 const RESOURCE: Resource = loadResource(new URL('./i18n/', import.meta.url));
@@ -321,6 +336,12 @@ function remoteRow(wake: RemoteWake, now: number, timeZone: string): ScheduledWa
 class TimerNode extends Node {
   readonly handlers: NodeHandlers;
 
+  // The family the agent node runs, read once per invocation: a `set` asks for it to describe the
+  // target it was given, a `wake` asks for it to know where the wake goes, and neither should ask
+  // twice. A `Node` lives for one invocation only, so this is a memo and not a cache: a handler always
+  // sees the family as it is while that handler runs.
+  #family: FamilyRow[] | null | undefined = undefined;
+
   constructor(ctx: NodeContext) {
     super(ctx);
     this.handlers = {
@@ -359,15 +380,69 @@ class TimerNode extends Node {
     return await this.ctx.call<string>('system', 'timezone', {});
   }
 
+  /** The family the agent node runs, or `null` when it is not there to ask: the root agent first,
+   *  then every sub-agent it started. Every target a `set` or a `wake` sees is judged against it. */
+  private async family(): Promise<FamilyRow[] | null> {
+    if (this.#family === undefined) this.#family = await this.readFamily();
+    return this.#family;
+  }
+
+  /** What `agent.agents` answers. `null` means the bus has no agent node: every target is a plain
+   *  node then, which is what a timer set before the agent existed names. */
+  private async readFamily(): Promise<FamilyRow[] | null> {
+    try {
+      const answer = await this.ctx.call<{ agents: FamilyRow[] }>(AGENT_NODE, FAMILY_CAP, {});
+      return answer.agents;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The one wake call: `chat_no_wait` on the agent node — with `agent` for a sub-agent, without it for
+   *  the family's own agent — or on the node a timer names. */
+  private async deliver(
+    node: string,
+    agent: string | null,
+    content: string,
+    priority: Priority,
+  ): Promise<void> {
+    const msg = { role: 'system', content };
+    if (agent === null) await this.ctx.call(node, 'chat_no_wait', { msg, priority });
+    else await this.ctx.call(node, 'chat_no_wait', { msg, priority, agent });
+  }
+
+  /** Hand one timer's wake to what its target names. A name the family runs is woken through the
+   *  agent node - its own agent without an `agent` argument, a sub-agent by name. Every other name is
+   *  a node that answers `chat_no_wait` itself, which is what this node did before the family. */
+  private async wakeFor(wake: RemoteWake, timeZone: string): Promise<void> {
+    const content = this.wakeContent(wake, timeZone);
+    const family = await this.family();
+    const row = family?.find((each) => each.name === wake.target);
+    if (row !== undefined)
+      return await this.deliver(AGENT_NODE, agentArgument(row), content, wake.priority);
+    return await this.deliver(wake.target, null, content, wake.priority);
+  }
+
+  /** What a `set` says about a target the family does not run, or `''` when there is nothing to say.
+   *  Such a name is not refused: it may be a sub-agent the model is about to create, and the timer
+   *  looks again when it fires. */
+  private async targetNote(target: string): Promise<string> {
+    const family = await this.family();
+    if (family === null || family.some((row) => row.name === target)) return '';
+    return ` (no agent named "${target}" is running yet: the timer looks again when it fires)`;
+  }
+
   private async set(args: ToolArgs): Promise<string> {
     const message = text(args.message, 'message');
     if (message === '')
       throw new Error('timer.set wants a message: it is what the target wakes up to');
-    const target = args.node === undefined ? this.ctx.from : text(args.node, 'node');
+    const target = text(args.agent, 'agent', false);
     if (target === '')
       throw new Error(
-        'timer.set has no target: the call carried no caller id, so name one in "node"',
+        'timer.set needs "agent": the name of the agent to wake, as `whoami` answers it',
       );
+    // A target the family does not run is said so, and still set: it may be a sub-agent created later.
+    const note = await this.targetNote(target);
 
     const now = Date.now();
     const timeZone = await this.timeZone();
@@ -396,7 +471,7 @@ class TimerNode extends Node {
     const row = remoteRow(wake, now, timeZone);
     this.ctx.publish(NODE_ID, { type: 'set', ...row });
     const when = mode === 'alarm' ? `at ${row.phrase}` : row.phrase;
-    return `set timer id=${id}: ${mode} wakes ${target} ${when}${repeat === 'once' ? '' : `, ${repeat}`}`;
+    return `set timer id=${id}: ${mode} wakes ${target} ${when}${repeat === 'once' ? '' : `, ${repeat}`}${note}`;
   }
 
   private async cancel(args: ToolArgs): Promise<string> {
@@ -441,10 +516,7 @@ class TimerNode extends Node {
     let woke = false;
     let error = '';
     try {
-      await this.ctx.call(wake.target, 'chat_no_wait', {
-        msg: { role: 'system', content: this.wakeContent(wake, timeZone) },
-        priority: wake.priority,
-      });
+      await this.wakeFor(wake, timeZone);
       woke = true;
     } catch (failure: unknown) {
       error = failure instanceof Error ? failure.message : String(failure);

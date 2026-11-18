@@ -24,7 +24,8 @@ const RESOURCE = loadResource(new URL('./i18n/', import.meta.url));
 /** The topic a language change is announced on. A page subscribes to it through the webui's /events. */
 const LANGUAGE_TOPIC = 'language';
 
-/** Tests and the standalone `serve.ts` entry can install one scheduler directly. */
+/** A test can install one scheduler directly, for a context it builds by hand. The entry installs
+ *  none: a scheduler belongs to a tenant, and a process does not have just one. */
 let active: SystemScheduler | null = null;
 
 export function setSystemScheduler(scheduler: SystemScheduler | null): void {
@@ -102,8 +103,15 @@ export class SystemNode extends Node {
 
   constructor(ctx: NodeContext) {
     super(ctx);
+    // One scheduler per tenant, held by the host: a timer is set in the tenant of the call that set
+    // it and must fire there too - its wake reaches that tenant's agent, and its `fire` event is
+    // published where the page that set it is listening. `active` is a whole-process scheduler a
+    // test installs directly, and it serves its own tenant only: any other tenant binds one of its
+    // own rather than storing its timers in a stranger's queue.
     this.scheduler =
-      active ?? requireBindings(ctx).bind(SCHEDULER_BINDING, (scope) => bound(scope));
+      active !== null && active.tenant === ctx.tenantId
+        ? active
+        : requireBindings(ctx).bind(SCHEDULER_BINDING, (scope) => bound(scope));
     this.handlers = {
       language: async () => await this.scheduler.language(),
       locale: async () => await this.scheduler.locale(),

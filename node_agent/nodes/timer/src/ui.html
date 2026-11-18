@@ -501,6 +501,18 @@
         font-size: 12.5px;
         overflow-wrap: anywhere;
       }
+      /* The line under a target field: why the agents could not be read just now, or that the value
+         the form is holding is not one of them. Quieter than an error, because the form still works:
+         the choice it already has is what it will submit. */
+      .form-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        overflow-wrap: anywhere;
+      }
+      .form-note.bad {
+        color: var(--danger);
+      }
       .form-actions {
         display: grid;
         grid-template-columns: 1fr 1.4fr;
@@ -756,8 +768,11 @@
               </select>
             </div>
             <div class="field">
-              <label for="alarmTarget" data-text-key="form.target">Wake which node?</label>
-              <input id="alarmTarget" type="text" value="agent" />
+              <label for="alarmTarget" data-text-key="form.target">Wake which agent?</label>
+              <select id="alarmTarget">
+                <option value="agent">agent</option>
+              </select>
+              <p class="form-note" id="alarmTargetNote" role="status" hidden></p>
             </div>
             <p class="form-error" id="alarmError" role="alert" hidden></p>
             <div class="form-actions">
@@ -849,8 +864,11 @@
               </select>
             </div>
             <div class="field">
-              <label for="countdownTarget" data-text-key="form.target">Wake which node?</label>
-              <input id="countdownTarget" type="text" value="agent" />
+              <label for="countdownTarget" data-text-key="form.target">Wake which agent?</label>
+              <select id="countdownTarget">
+                <option value="agent">agent</option>
+              </select>
+              <p class="form-note" id="countdownTargetNote" role="status" hidden></p>
             </div>
             <p class="form-error" id="countdownError" role="alert" hidden></p>
             <div class="form-actions">
@@ -929,6 +947,122 @@
           body: JSON.stringify({ tool, args }),
         });
         return await res.json();
+      }
+
+      // Which agent a timer wakes is chosen from the family the `agent` node runs, not typed: the node
+      // answers `agents` with its main agent and every sub-agent it started, and the name of one of
+      // them is what `timer.set` has always taken as `node`. The node's own name is the agent node's
+      // (`agent` unless whoever started it said otherwise), and a page has no way to discover it.
+      const AGENT_NODE = 'agent';
+      // What a form starts on: the agent a timer has always woken by default, and the one name a
+      // family is sure to carry. A page whose list never arrives therefore submits exactly what it
+      // submitted before the list existed.
+      const DEFAULT_TARGET = 'agent';
+      // How long an answer stays good while a form is open: agents are created and destroyed by the
+      // agent itself (`create_agent` / `destroy_agent`) without telling this page, so a form left open
+      // asks again rather than trusting a list it read minutes ago.
+      const AGENTS_TTL_MS = 15_000;
+      const TARGET_KINDS = ['alarm', 'countdown'];
+
+      // The family as the node last answered it, when that answer came, and why the last read failed.
+      // A failed read clears none of them: a page that cannot ask is a page that keeps what it had.
+      let agentRows = [];
+      let agentsAt = 0;
+      let agentsError = '';
+      let agentsReading = null;
+      // What each form is holding, per form: `null` means nothing was chosen and the default applies.
+      // It is kept apart from the `<select>` so a redraw cannot forget a choice the reader made.
+      const targetChoice = { alarm: null, countdown: null };
+
+      /** An agent's state in the page's language — the node's own word for it, or the raw word when
+       *  this page has none for it (a state a newer node grows, beside an older page). */
+      function agentState(state) {
+        if (typeof state !== 'string' || state === '') return '';
+        const word = t(`agent.state.${state}`);
+        return word === `agent.state.${state}` ? state : word;
+      }
+
+      /** The agent a form starts on: `agent` when the family runs one, else the first agent it runs. */
+      function defaultTarget() {
+        if (agentRows.length === 0) return DEFAULT_TARGET;
+        if (agentRows.some((row) => row.name === DEFAULT_TARGET)) return DEFAULT_TARGET;
+        return agentRows[0].name;
+      }
+
+      /** One row of a form's list: the agent's name and the state it is in. A sub-agent is drawn one
+       *  step in, and a value the list no longer carries is marked as kept — which is what an old
+       *  timer's target, or the target of a sub-agent that has since gone, looks like. */
+      function targetOption(name, state, sub, kept) {
+        const option = document.createElement('option');
+        option.value = name;
+        const parts = [`${sub ? '↳ ' : ''}${name}`];
+        if (state !== '') parts.push(state);
+        if (kept) parts.push(t('agent.kept'));
+        option.textContent = parts.join(' · ');
+        if (kept) option.dataset.kept = 'true';
+        return option;
+      }
+
+      /** Draw both forms' lists from the answer the page holds. A form keeps the value it has: the
+       *  list is only ever given the chance to describe it, never to replace it with another agent. */
+      function renderTargets() {
+        for (const kind of TARGET_KINDS) {
+          const select = $(`${kind}Target`);
+          if (select === undefined || select === null) continue;
+          const wanted = targetChoice[kind] === null ? defaultTarget() : targetChoice[kind];
+          const known = agentRows.some((row) => row.name === wanted);
+          const options = agentRows.map((row) =>
+            targetOption(
+              row.name,
+              agentState(row.state),
+              row.parent !== null && row.parent !== undefined,
+              false,
+            ),
+          );
+          // Nothing in the list is the value this form holds, so it becomes a row of its own. Before
+          // the first answer that is just the default; afterwards it is a target being kept.
+          if (!known && wanted !== '')
+            options.push(targetOption(wanted, '', false, agentRows.length > 0));
+          select.replaceChildren(...options);
+          select.value = wanted;
+        }
+        const note = agentsError === '' ? '' : t('agent.unavailable', { error: agentsError });
+        for (const kind of TARGET_KINDS) {
+          const line = $(`${kind}TargetNote`);
+          if (line === undefined || line === null) continue;
+          line.textContent = note;
+          line.hidden = note === '';
+          line.classList.toggle('bad', note !== '');
+        }
+      }
+
+      /** Ask the family which agents it runs. One read at a time; a failure says so beside the field
+       *  and changes nothing else, because an answer the page did not get is no reason to lose the
+       *  target the form is holding. */
+      function refreshAgents() {
+        if (agentsReading !== null) return agentsReading;
+        const run = (async () => {
+          try {
+            const reply = await call(`${AGENT_NODE}.agents`, {});
+            if (!reply.ok) throw new Error(reply.error ?? 'the agent node did not answer');
+            const listed = reply.value === null || reply.value === undefined ? null : reply.value.agents;
+            if (!Array.isArray(listed)) throw new Error('the agent node named no agents');
+            agentRows = listed.filter(
+              (row) => row !== null && typeof row === 'object' && typeof row.name === 'string' && row.name !== '',
+            );
+            agentsError = '';
+          } catch (error) {
+            agentsError = error instanceof Error ? error.message : String(error);
+          } finally {
+            agentsReading = null;
+            // A failed read is a read too: the form waits out the same interval before asking again,
+            // so a node that is not there is not asked once a second.
+            agentsAt = Date.now();
+            renderTargets();
+          }
+        })();
+        agentsReading = run;
+        return run;
       }
 
       function toast(text, bad) {
@@ -1202,6 +1336,8 @@
         // on the list.
         document.body.dataset.view = next;
         if (next === 'list') renderList();
+        // A form is opened onto the family as it is now, not as it was when the page loaded.
+        else void refreshAgents();
       }
 
       // Navigation always goes through the hash, so the two Back buttons (this page's and the
@@ -1225,6 +1361,10 @@
       // survives a look at the list. Nothing is ever created without Save.
       function resetForm(kind) {
         $(`${kind}Form`).reset();
+        // The target is part of the draft: a cancelled alarm leaves its form on the default agent
+        // again, not on the agent the draft had picked.
+        targetChoice[kind] = null;
+        renderTargets();
         formError(kind, '', null);
       }
 
@@ -1263,7 +1403,7 @@
           message,
           at,
           repeat: $('alarmRepeat').value,
-          node: $('alarmTarget').value.trim() || 'agent',
+          agent: $('alarmTarget').value.trim() || 'agent',
         });
       }
 
@@ -1283,7 +1423,7 @@
           message,
           after_seconds: seconds,
           repeat: $('countdownRepeat').value,
-          node: $('countdownTarget').value.trim() || 'agent',
+          agent: $('countdownTarget').value.trim() || 'agent',
         });
       }
 
@@ -1315,6 +1455,9 @@
             soonest: phrase(secondsLeft(shown[0])),
           });
         }
+        // A form that has been open for a while asks about the family again: a sub-agent can appear
+        // or go while the reader is deciding what to say.
+        if (view !== 'list' && Date.now() - agentsAt >= AGENTS_TTL_MS) void refreshAgents();
       }
 
       const feed = window.NodeAgentEvents.connect('/events?topic=' + encodeURIComponent(NODE));
@@ -1330,6 +1473,9 @@
       };
       feed.onmessage = async (frame) => {
         const event = JSON.parse(frame.data).value ?? {};
+        // The family can change between two timers (an agent that woke is one more running agent),
+        // and every event below is a moment worth asking again on.
+        void refreshAgents();
         if (event.type === 'set') {
           // The moment is said from `next_at`, the way this page says every other moment, so a
           // countdown and an alarm read the same on the toast and on their row.
@@ -1386,6 +1532,15 @@
       });
       $('alarmForm').addEventListener('submit', saveAlarm);
       $('countdownForm').addEventListener('submit', saveCountdown);
+      // A choice is the form's from the moment it is made: a later answer from the node redraws the
+      // list under it and must not move the selection back to the default.
+      for (const kind of TARGET_KINDS) {
+        const select = $(`${kind}Target`);
+        if (select === undefined || select === null) continue;
+        select.addEventListener('change', () => {
+          targetChoice[kind] = select.value;
+        });
+      }
       // Escape is the Back button for a keyboard: it leaves the form without saving the draft.
       document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape' && view !== 'list') {
@@ -1402,16 +1557,23 @@
       document.addEventListener('node-agent:language', () => {
         paintChrome();
         renderList();
+        // An agent's state and the kept-target note are this page's words, built here, so they are
+        // redrawn from the same answer rather than asked for again.
+        renderTargets();
       });
 
       // The first view is the list, and it is a real entry in the history, so Back from a form lands
       // on it rather than on whatever page was open before.
       if (location.hash === '') history.replaceState(null, '', '#/list');
+      // Both forms are drawn from the family before anyone opens one, so the first look is not a
+      // list that fills in a second later.
+      renderTargets();
       show(route());
       // One second is what a countdown needs; it is the only repeating thing on this page.
       tick();
       setInterval(tick, 1000);
       void refresh();
+      void refreshAgents();
     </script>
   </body>
 </html>

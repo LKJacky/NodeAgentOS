@@ -196,6 +196,7 @@ export class AgentBusEnv {
     }
     const toolArgs = args as Record<string, unknown>;
 
+    if (name === 'whoami') return this.whoami();
     if (name === 'list_nodes') return await this.listNodes();
     if (name === 'list_node_tools') return await this.listNodeTools(toolArgs);
     if (name === 'run_on_node') return await this.runOnNode(toolArgs, signal);
@@ -210,6 +211,18 @@ export class AgentBusEnv {
     if (name === 'create_agent') return await this.createAgent(toolArgs);
     if (name === 'destroy_agent') return await this.destroyAgent(toolArgs);
     return `no such tool: ${name}`;
+  }
+
+  /** The agent this turn belongs to: the name a call's `agent` argument takes, and the one a timer
+   *  wakes. Every agent of the family shares one bus node, so a sub-agent's name is its own and the
+   *  node is said apart. */
+  whoami(): string {
+    const self = this.host.selfName ?? '';
+    if (self === '') return 'this agent has no name';
+    const bus = this.host.busName ?? '';
+    return bus === '' || bus === self
+      ? `you are "${self}"`
+      : `you are "${self}", a sub-agent of "${bus}"`;
   }
 
   async createAgent(args: Record<string, unknown>): Promise<string> {
