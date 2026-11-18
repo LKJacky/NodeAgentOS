@@ -77,6 +77,15 @@ above, including what a stale writer is told:
   The store's methods still take a `user` argument to satisfy the interface, and a network client
   drops it: its token is its user.
 
+A third implementation lives beside them and is the server's, not the node's: **`WorkerHistoryStore`**
+(`src/worker-store.ts`). It is the same `SqliteHistoryStore` — same file, same schema, same revision
+rule — moved into worker threads, because a server answers HTTP on one thread and a synchronous query
+there stops every other request for as long as it runs. One writer thread takes every write in the
+order it arrived (so writes stay serial) and commits before it answers; N reader threads answer
+`load` / `list` / `usage` / `ping` on `PRAGMA query_only` connections to the same file, round robin.
+A local history node still opens `SqliteHistoryStore` directly: there a synchronous answer is the
+right one, and a thread would be one more thing to own.
+
 Which one is used is decided when the node starts:
 
 | variable                   | meaning                                                                                                           | default                                        |

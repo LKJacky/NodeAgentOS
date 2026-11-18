@@ -24,6 +24,7 @@ import {
 } from './store.js';
 
 export {
+  HistoryQueueFullError,
   RevisionConflictError,
   SqliteHistoryStore,
   StorageLimitError,
@@ -42,7 +43,19 @@ export type {
   MaybePromise,
   PersistentUnit,
   PersistentUnitSummary,
+  SqliteHistoryStoreOptions,
 } from './store.js';
+
+// The same store, off the event loop: one writer thread and N readers, which is what the history
+// server opens (see worker-store.ts). A local history node still uses SqliteHistoryStore directly.
+export {
+  DEFAULT_QUEUE_LIMIT,
+  DEFAULT_READER_COUNT,
+  MAX_READER_COUNT,
+  WorkerHistoryStore,
+  defaultReaderCount,
+} from './worker-store.ts';
+export type { WorkerHistoryStoreOptions } from './worker-store.ts';
 
 export const DEFAULT_HISTORY_USER = 'default';
 
