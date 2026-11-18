@@ -1,10 +1,21 @@
-// The tools the model is handed: three about the bus, two about the cache of trimmed lines, and one
-// that asks the reader. They travel in the request's own `tools` field — nothing about tools belongs
+// The tools the model is handed: one about the agent itself, three about the bus, two about the cache
+// of trimmed lines, and one that asks the reader. They travel in the request's own `tools` field — nothing about tools belongs
 // in the prompt — and they are the same for every bus, because they are about the bus rather than
 // about what happens to be on it.
 import type { ToolSpec } from './types.js';
 
 export const TOOLS: ToolSpec[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'whoami',
+      description:
+        'Say which agent you are: the name this agent answers to. Calls that name an agent take it - ' +
+        "a timer's `agent` argument and `run_on_node`'s `agent` alike - and a sub-agent's name is its " +
+        'own, so call this rather than guessing what to put there.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
   {
     type: 'function',
     function: {

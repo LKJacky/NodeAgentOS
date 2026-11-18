@@ -68,9 +68,9 @@
             "type": "string",
             "description": "an alarm repeats: once (default), daily, weekdays, weekly. A countdown repeats: once, or every:<seconds> (>= 60)"
           },
-          "node": {
+          "agent": {
             "type": "string",
-            "description": "which node to wake; default is the caller, so a timer wakes me"
+            "description": "the agent to wake, by name: the name `whoami` answers with, for the agent you are or one of its sub-agents. Required: a timer always names who it wakes"
           },
           "priority": {
             "type": "string",
@@ -86,9 +86,10 @@
           }
         },
         "required": [
-          "message"
+          "message",
+          "agent"
         ],
-        "description": "Wake a node at a time (mode alarm, at) or after a delay (mode countdown, after_seconds), optionally repeating; returns the id",
+        "description": "Wake an agent at a time (mode alarm, at) or after a delay (mode countdown, after_seconds), optionally repeating; returns the id. `agent` names it: the name `whoami` answers with",
         "callers": ["*"]
       },
       "cancel": {

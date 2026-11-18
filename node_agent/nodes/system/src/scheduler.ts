@@ -286,6 +286,13 @@ export class SystemScheduler {
     this.#tenantId = tenantId;
   }
 
+  /** The tenant this scheduler serves. One kept for the whole process is the right one only for the
+   *  calls that arrive in this tenant; every other tenant needs its own (see `SystemNode`), because a
+   *  timer fires in the tenant that set it - not in whichever tenant the process happened to join. */
+  get tenant(): string {
+    return this.#tenantId;
+  }
+
   start(): Promise<void> {
     if (this.#loaded) return Promise.resolve();
     this.#ready ??= this.#load().finally(() => {
@@ -630,7 +637,10 @@ export class SystemScheduler {
     const delay = Math.max(0, Date.parse(timer.at) - Date.now());
     const handle = setTimeout(
       () => {
-        void this.#fire(timer.id);
+        // A fire that cannot finish (the host stopping under it) has already said so on its own way
+        // out; nothing awaits this timer handle, so an unhandled rejection here would be the only
+        // trace of it.
+        void this.#fire(timer.id).catch(() => undefined);
       },
       Math.min(delay, MAX_TIMEOUT_MS),
     );

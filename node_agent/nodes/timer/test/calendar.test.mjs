@@ -61,7 +61,7 @@ test('the page is painted with the system profile timezone', async (t) => {
 
 test('the system profile timezone wins over the process timezone', async (t) => {
   const { node, scheduled } = fixture(t, '2026-03-07T12:00:00-05:00');
-  await node.handlers.set({ at: '09:00', message: 'morning reminder' });
+  await node.handlers.set({ at: '09:00', agent: 'agent', message: 'morning reminder' });
   // 09:00 in New York on 2026-03-08 is 13:00Z, even though the process itself runs in UTC.
   assert.equal(scheduled[0].at, '2026-03-08T13:00:00.000Z');
 });
@@ -72,7 +72,7 @@ for (const [season, before, after] of [
 ]) {
   test(`a passed clock time stays at 09:00 tomorrow across ${season} DST`, async (t) => {
     const { node, scheduled } = fixture(t, before);
-    await node.handlers.set({ at: '09:00', message: 'morning reminder' });
+    await node.handlers.set({ at: '09:00', agent: 'agent', message: 'morning reminder' });
     assert.equal(scheduled.length, 1);
     assert.equal(scheduled[0].at, new Date(after).toISOString());
   });
@@ -100,7 +100,7 @@ for (const [rule, before, after] of [
 
 test('a weekday alarm set on the weekend advances to Monday at the same clock time', async (t) => {
   const { node, scheduled } = fixture(t, '2026-03-07T08:00:00-05:00');
-  await node.handlers.set({ at: '09:00', repeat: 'weekdays', message: 'work reminder' });
+  await node.handlers.set({ at: '09:00', agent: 'agent', repeat: 'weekdays', message: 'work reminder' });
   assert.equal(scheduled[0].at, '2026-03-09T13:00:00.000Z');
 });
 
@@ -116,7 +116,7 @@ test('an overdue daily alarm skips missed days and keeps the local clock time', 
 for (const before of ['2026-03-07T09:00:00-05:00', '2026-10-31T09:00:00-04:00']) {
   test(`countdowns retain elapsed-time semantics across DST after ${before}`, async (t) => {
     const { node, scheduled } = fixture(t, before);
-    await node.handlers.set({ after_seconds: 86400, message: 'elapsed reminder' });
+    await node.handlers.set({ after_seconds: 86400, agent: 'agent', message: 'elapsed reminder' });
     await node.handlers.wake({
       id: 1, target: 'webui', message: 'elapsed reminder', mode: 'countdown',
       repeat: 'every:86400', firesAt: Date.parse(before),
