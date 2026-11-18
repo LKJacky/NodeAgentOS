@@ -18,3 +18,4 @@
 # Local git worktrees used during development.
 /worktrees/
 **/__pycache__/
+/task*.sh

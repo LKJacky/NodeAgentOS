@@ -25,6 +25,20 @@ export const FORGET_MESSAGE: Message = {
   content: 'This message represents some context that has been forgotten.',
 };
 
+/** A system line that asks a cut-off answer to go on. A round stopped at the output cap ends before
+ *  it writes the tool call or the reply it was in the middle of, and one line that long is also what
+ *  `maybeCompress` cannot fold away -- so the turn asks once more instead of ending on half a thought. */
+export const CONTINUE_MESSAGE: Message = {
+  role: 'system',
+  content:
+    'The previous answer was cut off at the output limit. Continue from where it stopped, and write the tool call or the answer now.',
+};
+
+/** How many times one round may be asked to go on after the output cap cut it off. Each ask is a
+ *  pricey round of its own, so a small number: past it the cut is kept as the answer it is, and the
+ *  turn's own round cap is where a model that will not stop is finally stopped. */
+export const MAX_CONTINUE = 1000;
+
 /** What is written when a cut is announced: how many leading messages go, and a quote of the first
  *  and the last of them, so the model can see what it is losing. */
 export const COMPRESSION_NOTICE = `{count} earlier messages are too old to keep; they will be dropped from this transcript soon. Only
@@ -223,8 +237,30 @@ export class CachedModel {
     };
   }
 
-  /** One streamed round: the assistant line it commits, and whether it was cut short. */
+  /** One streamed round: the assistant line it commits, and whether it was cut short.
+   *
+   *  A round the output cap cut off is asked to go on, at most `MAX_CONTINUE` times: it stopped
+   *  before it could write the tool call or the answer it was in the middle of, and the line it left
+   *  is too long for the compression to fold away. A cut is kept as it is when the line already
+   *  carries tool calls (the round has what it needs; a tool result answers it next) or when every
+   *  ask is used up -- the caller's own round cap, not this one, stops a model that will not stop. */
   async chatStream(
+    tools: readonly ToolSpec[],
+    options: { signal?: AbortSignal } = {},
+  ): Promise<RoundResult> {
+    let round = await this.#round(tools, options);
+    for (let left = MAX_CONTINUE; left > 0; left -= 1) {
+      const { message, canceled } = round;
+      if (canceled || message.finish_reason !== 'length') return round;
+      if ((message.tool_calls?.length ?? 0) > 0) return round;  // the call is written; let it run
+      await this.pushMessages([CONTINUE_MESSAGE]);
+      round = await this.#round(tools, options);
+    }
+    return round;
+  }
+
+  /** The wire's own round: one request, one stream, one line. */
+  async #round(
     tools: readonly ToolSpec[],
     options: { signal?: AbortSignal } = {},
   ): Promise<RoundResult> {
