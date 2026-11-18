@@ -23,6 +23,8 @@ export type CacheMatch = { entry: number; position: number; text: string };
 
 /** The history node's surface, as this package uses it. A bus without history makes a cache that
  *  holds nothing but still answers, which is what a deployment with no history node gets. */
+import { Worker } from 'node:worker_threads';
+
 import { isHigh, isLow } from './helpers.js';
 
 export interface CacheHistory {
@@ -98,6 +100,80 @@ function windowOf(text: string, start: number, end: number): string {
   if (from > 0 && from < text.length && isLow(text.charCodeAt(from))) from += 1;
   if (to > 0 && to < text.length && isHigh(text.charCodeAt(to - 1))) to -= 1;
   return text.slice(from, to);
+}
+
+/** One search, in a thread that can be killed when the budget runs out.
+ *
+ *  The worker is source rather than a file so it loads the same way from `src` (tests run the TS
+ *  through a loader) and from `dist`. It answers either the matches or the reason it could not
+ *  compile the pattern; nothing else crosses back. */
+const SEARCH_WORKER = `
+const { parentPort } = require('node:worker_threads');
+
+// A window that never leaves half a surrogate pair at an edge (the same rule as \`windowOf\`).
+const high = (u) => u >= 0xd800 && u <= 0xdbff;
+const low = (u) => u >= 0xdc00 && u <= 0xdfff;
+const windowOf = (text, start, end) => {
+  let from = Math.max(0, start);
+  let to = Math.min(text.length, end);
+  if (from > 0 && from < text.length && low(text.charCodeAt(from))) from += 1;
+  if (to > 0 && to < text.length && high(text.charCodeAt(to - 1))) to -= 1;
+  return text.slice(from, to);
+};
+
+parentPort.on('message', ({ text, pattern, context }) => {
+  try {
+    const compiled = new RegExp(pattern, 'g');
+    const matches = [];
+    for (const match of text.matchAll(compiled)) {
+      const at = match.index ?? 0;
+      matches.push({ position: at, text: windowOf(text, at - context, at + match[0].length + context) });
+    }
+    parentPort.postMessage({ matches });
+  } catch (error) {
+    parentPort.postMessage({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+`;
+
+/** Run one search in its own thread; answers its matches or throws the budget's error. */
+async function searchInThread(
+  text: string,
+  pattern: string,
+  context: number,
+  timeoutMs: number,
+  id: number,
+): Promise<CacheMatch[]> {
+  const worker = new Worker(SEARCH_WORKER, { eval: true });
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  try {
+    const answer = await Promise.race([
+      new Promise<{ matches?: Omit<CacheMatch, 'entry'>[]; error?: string }>((resolve, reject) => {
+        worker.once('message', resolve);
+        worker.once('error', (error: unknown) =>
+          reject(error instanceof Error ? error : new Error(String(error))),
+        );
+        worker.postMessage({ text, pattern, context });
+      }),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () =>
+            reject(
+              new Error(
+                `pattern took longer than ${timeoutMs / 1000}s on cache entry ${id}; use a simpler pattern`,
+              ),
+            ),
+          timeoutMs,
+        );
+      }),
+    ]);
+    if (answer.error !== undefined) throw new Error(answer.error);
+    return (answer.matches ?? []).map((match) => ({ entry: id, ...match }));
+  } finally {
+    if (timer !== null) clearTimeout(timer);
+    // Whether it answered, failed, or was killed for running long: the thread is done either way.
+    void worker.terminate();
+  }
 }
 
 export class Cache {
@@ -199,7 +275,12 @@ export class Cache {
     return { text: slice, total: text.length, start, length: slice.length };
   }
 
-  /** Find `pattern` (a regular expression) in entry `id`, with `context` characters on each side. */
+  /** Find `pattern` (a regular expression) in entry `id`, with `context` characters on each side.
+   *
+   *  The match runs in a thread of its own and the budget is enforced by killing that thread. A
+   *  regex is not interruptible: `(a+)+b` over a megabyte never yields a first match, so a
+   *  between-match deadline never fires and the node spins at one core for as long as it lives. A
+   *  thread can be terminated, so that is where the search happens. */
   async search(
     id: number,
     pattern: string,
@@ -208,9 +289,8 @@ export class Cache {
   ): Promise<CacheMatch[]> {
     if (context < 0) throw new Error('context must not be negative');
     if (timeoutMs <= 0) throw new Error('timeout must be positive');
-    let compiled: RegExp;
     try {
-      compiled = new RegExp(pattern, 'g');
+      new RegExp(pattern, 'g');
     } catch (error) {
       throw new Error(
         `pattern is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,
@@ -218,24 +298,7 @@ export class Cache {
     }
     const slice = await this.read(id);
     if (slice === null) return [];
-    const text = slice.text;
-
-    const matches: CacheMatch[] = [];
-    const deadline = Date.now() + timeoutMs;
-    for (const match of text.matchAll(compiled)) {
-      const at = match.index ?? 0;
-      const start = Math.max(0, at - context);
-      const end = Math.min(text.length, at + match[0].length + context);
-      matches.push({ entry: id, position: at, text: windowOf(text, start, end) });
-      // A catastrophic pattern cannot be interrupted inside one `exec`, but a long list of matches
-      // can, and that is the case this budget is for.
-      if (Date.now() > deadline) {
-        throw new Error(
-          `pattern took longer than ${timeoutMs / 1000}s on cache entry ${id}; use a simpler pattern`,
-        );
-      }
-    }
-    return matches;
+    return await searchInThread(slice.text, pattern, context, timeoutMs, id);
   }
 
   async delete(id: number): Promise<void> {
