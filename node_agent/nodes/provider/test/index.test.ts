@@ -163,6 +163,46 @@ test('save keeps a blank key, persists the row, and a new instance loads it', as
   assert.equal(state.providers.find((provider) => provider.name === 'work')?.has_api_key, true);
 });
 
+test('a row is handed over whole, with the key, for a caller that dials it itself', async () => {
+  const ctx = context(async () => new Response('{}'));
+  await run(new ProviderNode(ctx), 'providers', {
+    action: 'save',
+    name: 'work',
+    config: {
+      type: 'openai',
+      model_name: 'gpt-test',
+      api_key: 'sk-secret',
+      base_url: 'https://x.test/v1',
+    },
+  });
+  const row = await run<{ name: string; config: Record<string, unknown> }>(
+    new ProviderNode(ctx),
+    'row',
+    { name: 'work' },
+  );
+  assert.equal(row.name, 'work');
+  assert.equal(row.config.api_key, 'sk-secret', 'a caller that dials itself needs the key');
+  assert.equal(row.config.model_name, 'gpt-test');
+  assert.equal(row.config.base_url, 'https://x.test/v1');
+
+  // The listing still hides it: the two answers are not the same question.
+  const state = await run<{ providers: { config: Record<string, unknown> }[] }>(
+    new ProviderNode(ctx),
+    'providers',
+    { action: 'list' },
+  );
+  assert.equal(state.providers[0]?.config.api_key, undefined);
+
+  await assert.rejects(
+    () => run(new ProviderNode(ctx), 'row', { name: 'nope' }),
+    /no provider "nope"/,
+  );
+  await assert.rejects(
+    () => run(new ProviderNode(ctx), 'row', {}),
+    /provider name must use/,
+  );
+});
+
 test('chat dispatches through the saved row, and the page carries the node id', async () => {
   const fetcher = (async () =>
     new Response(

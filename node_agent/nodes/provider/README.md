@@ -11,6 +11,9 @@ npm start runs it against the bus.
 Capabilities:
 
 - `provider.providers({ action: list | save | delete, name, config })` — the named rows, never the keys
+- `provider.row({ name })` — one row exactly as it is stored, key included, for a caller that dials the
+  model in its own process (declared for `agent` alone; the rows are filed in history under this
+  node's name, so this is the one way to them)
 - `provider.chat({ name, messages, tools?, max_completion_tokens? })` — one finished answer
 - `provider.start_stream({ name, messages, tools?, max_completion_tokens? })` → `{ stream_id, topic }` —
   an id for one stream; the model is not dialled yet
@@ -24,11 +27,15 @@ it was published: the id comes back first, the caller subscribes to it, and only
 `stream_ready` let the model speak. No first delta can be published into an empty room, and the id
 is forgotten when the stream ends, fails, is cancelled, or waits more than a minute for a ready.
 
+The node is the address, not the model call: `@node-agent/provider/core` exports the same rows, the
+same `buildProvider` wires, `providerRequest` / `runChat` and the row stores, so a caller that holds a
+row can dial it in its own process with exactly this package's behaviour and failure sentences. The
+node itself is built on that module, so there is one implementation of a model request, not two.
+
 A row is `{ type, model_name, base_url, timeout, api_key, organization?, thinking_effort?, extra_body? }`,
-saved in
-history and handed
-back by `dump`/`build`. Three protocols sit behind that one shape, which is the whole point of the node:
-the agent, the page and a transcript never learn which wire an answer came from.
+saved in history and handed back by `dump`/`build`. Three protocols sit behind that one shape, which
+is the whole point of the node: the agent, the page and a transcript never learn which wire an answer
+came from.
 
 ## The three protocols
 

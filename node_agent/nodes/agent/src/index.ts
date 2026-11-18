@@ -1,6 +1,6 @@
 // node-agent-agent: the only node that holds a model — AgentNode, the runtime behind it, and the two
-// ways a model gets plugged in (a provider on the bus or an endpoint in the environment, and the
-// rule-based stand-in used when neither is configured).
+// ways a model gets plugged in: a `provider` row dialled in this process (the provider package's own
+// core), a `local-provider` row read over the bus, and the provider an embedder hands over.
 export { AgentNode, CAPABILITIES, RUNTIME_BINDING, page, readAsset, runtimeFor } from './agent.js';
 export { default } from './agent.js';
 export type { AgentOptions } from './agent.js';
@@ -38,6 +38,12 @@ export {
   StreamHub,
   WindowMessages,
 } from './model.js';
+export {
+  DirectProvider,
+  missingConfig,
+  type CoreBuilder,
+  type DirectProviderOptions,
+} from './direct.js';
 export { AgentBusEnv, type EnvHost, type UsableEntry } from './env.js';
 export {
   DEFAULT_SETTINGS,
