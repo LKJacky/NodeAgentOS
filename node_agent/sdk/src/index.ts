@@ -82,10 +82,13 @@ export {
   isArchivePath,
   packageFiles,
   packLocalPackage,
+  publishedLabels,
   writeArchive,
   type ArchiveFile,
   type PackedPackage,
+  type PublishedLabels,
   type PublishedManifest,
+  type PublishedText,
 } from './archive.js';
 
 export { nodeAgentDir, nodeAgentHome } from './home.js';

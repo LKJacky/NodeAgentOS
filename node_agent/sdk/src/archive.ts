@@ -9,10 +9,22 @@
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { gzipSync } from 'node:zlib';
+import type { NodeLabels } from './i18n-resource.js';
 import { manifestFromPackage } from './package.js';
 
 /** One file in an archive, at its slash-separated path inside the package. */
 export type ArchiveFile = { path: string; data: Uint8Array; mode: number };
+
+/** One translated line of a published node: a locale tag in, the words to show out. */
+export type PublishedText = Record<string, string>;
+
+/** The words a published manifest carries for a listing page: the node's own name and its one line,
+ *  per language. Only these two travel: a card shows a name and a description, while a capability is
+ *  still called by the identifier it answers to on the bus. */
+export type PublishedLabels = {
+  node?: PublishedText;
+  desc?: PublishedText;
+};
 
 /** The manifest a store holds for a published node: the package's `node` block, flattened, with the
  *  capability *names* rather than their schemas. This is the wire shape, not the bus manifest. */
@@ -27,6 +39,10 @@ export type PublishedManifest = {
   /** The node's own mark, inline: an `<svg>` document or a `data:image/...` URL. The published
    *  manifest carries it so a store page can draw a card for a node this machine never unpacked. */
   icon?: string;
+  /** The node's own words per language, so a store page shows what the package's resource files say
+   *  instead of the canonical name and description. Absent for a package that translates nothing,
+   *  which is the manifest a store page has always had to work with. */
+  labels?: PublishedLabels;
 };
 
 /** What one upload carries: the manifest, the bytes, and how many files went into them. */
@@ -221,6 +237,37 @@ export function packageFiles(directory: string): ArchiveFile[] {
   return files.sort((left, right) => (left.path < right.path ? -1 : 1));
 }
 
+/** Characters one published label may hold. A name or a one-line description is a sentence, and a
+ *  manifest is copied into every listing answer: anything longer is a document, not a label. */
+const MAX_LABEL_CHARS = 500;
+
+/** Languages one published label may carry. A package that translated its own name into more than
+ *  this many would be shipping a dictionary to every reader of the catalogue. */
+const MAX_LABEL_LOCALES = 16;
+
+/** The labels a publish carries out of a package's own manifest: its name and its description, per
+ *  language, cleaned to what a page can draw. An empty, oversized or non-text entry is dropped rather
+ *  than refused - a missing translation falls back to the canonical name, while a refused publish
+ *  would lose the whole package over one bad line. */
+export function publishedLabels(labels: NodeLabels | undefined): PublishedLabels | undefined {
+  if (labels === undefined) return undefined;
+  const found: PublishedLabels = {};
+  for (const field of ['node', 'desc'] as const) {
+    const table = labels[field];
+    if (table === undefined) continue;
+    const kept: PublishedText = {};
+    for (const [locale, value] of Object.entries(table)) {
+      if (typeof value !== 'string') continue;
+      const trimmed = value.trim();
+      if (trimmed === '' || trimmed.length > MAX_LABEL_CHARS) continue;
+      kept[locale] = trimmed;
+      if (Object.keys(kept).length >= MAX_LABEL_LOCALES) break;
+    }
+    if (Object.keys(kept).length > 0) found[field] = kept;
+  }
+  return Object.keys(found).length === 0 ? undefined : found;
+}
+
 /** Pack one local package for publishing: the manifest its own `package.json` declares, and the
  *  bytes of its build. The store node owns the URL and token; this is only the local half. */
 export function packLocalPackage(options: { directory: string; version?: string }): PackedPackage {
@@ -243,6 +290,11 @@ export function packLocalPackage(options: { directory: string; version?: string 
   if (Array.isArray(declared.keywords)) manifest.keywords = declared.keywords as string[];
   const icon = declaredIcon(options.directory, declared);
   if (icon !== undefined) manifest.icon = icon;
+  // The words the package's resource files declare travel with it: a store page has no copy of the
+  // package and no way to resolve `node.i18n`, so a name it cannot translate is a name it shows in
+  // English on a Chinese page. A package with no `label.*` keys carries no labels at all.
+  const labels = publishedLabels(base.labels);
+  if (labels !== undefined) manifest.labels = labels;
 
   const files = packageFiles(options.directory);
   if (manifest.entry !== undefined && !files.some((file) => file.path === manifest.entry)) {

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { loadNodePackage, manifestFromPackage, nodeManifestOfPackage } from './dist/index.js';
+import { loadNodePackage, manifestFromPackage, nodeManifestOfPackage, packLocalPackage } from './dist/index.js';
 
 const root = mkdtempSync(join(tmpdir(), 'node-agent-package-'));
 mkdirSync(join(root, 'dist'), { recursive: true });
@@ -104,6 +104,80 @@ try {
   assert.throws(() => nodeManifestOfPackage(labelledRoot), /no i18n resource files/);
 } finally {
   rmSync(labelledRoot, { recursive: true, force: true });
+}
+
+// A packed package carries those labels in the manifest it publishes: the store page draws a card
+// from the manifest alone and has no copy of the package to resolve `node.i18n` against, so a label
+// left behind is a name it can only show in English. Only the two a card draws travel.
+const packRoot = mkdtempSync(join(tmpdir(), 'node-agent-pack-labels-'));
+mkdirSync(join(packRoot, 'dist', 'i18n'), { recursive: true });
+writeFileSync(join(packRoot, 'dist', 'index.js'), 'export default class PackedNode {}\n');
+writeFileSync(
+  join(packRoot, 'dist', 'i18n', 'en.json'),
+  '{"label":{"node":"Packed","desc":"A packed node","caps":{"ping":"Ping"}}}',
+);
+writeFileSync(
+  join(packRoot, 'dist', 'i18n', 'zh-CN.json'),
+  '{"label":{"node":"打包","desc":"一个打包的节点","caps":{"ping":"探查"}}}',
+);
+writeFileSync(
+  join(packRoot, 'package.json'),
+  JSON.stringify({
+    name: 'node-agent-packed',
+    version: '1.0.0',
+    publisher: 'tester',
+    type: 'module',
+    node: {
+      id: 'packed',
+      desc: 'a packed node',
+      entry: 'dist/index.js',
+      i18n: 'dist/i18n',
+      caps: { ping: { type: 'object', properties: {} } },
+      icon: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    },
+  }),
+);
+try {
+  const packed = packLocalPackage({ directory: packRoot });
+  assert.deepEqual(packed.manifest.labels, {
+    node: { en: 'Packed', 'zh-CN': '打包' },
+    desc: { en: 'A packed node', 'zh-CN': '一个打包的节点' },
+  });
+  assert.equal(packed.manifest.desc, 'a packed node', 'the canonical description still travels');
+  assert.equal(
+    packed.manifest.labels?.caps,
+    undefined,
+    'a cap label is not something a store card draws, so it stays home',
+  );
+} finally {
+  rmSync(packRoot, { recursive: true, force: true });
+}
+
+// A package with no `label.*` keys publishes no labels at all: the manifest every store already has.
+const bareRoot = mkdtempSync(join(tmpdir(), 'node-agent-pack-bare-'));
+mkdirSync(join(bareRoot, 'dist'), { recursive: true });
+writeFileSync(join(bareRoot, 'dist', 'index.js'), 'export default class BareNode {}\n');
+writeFileSync(
+  join(bareRoot, 'package.json'),
+  JSON.stringify({
+    name: 'node-agent-bare',
+    version: '1.0.0',
+    publisher: 'tester',
+    type: 'module',
+    node: {
+      id: 'bare',
+      desc: 'a bare node',
+      entry: 'dist/index.js',
+      caps: { ping: { type: 'object', properties: {} } },
+      icon: '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    },
+  }),
+);
+try {
+  const bare = packLocalPackage({ directory: bareRoot });
+  assert.equal('labels' in bare.manifest, false, 'a package that translates nothing has no labels');
+} finally {
+  rmSync(bareRoot, { recursive: true, force: true });
 }
 
 assert.throws(
