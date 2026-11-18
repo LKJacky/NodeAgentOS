@@ -118,6 +118,23 @@ test('the six fields this release removed are not settings any more', async () =
   }
 });
 
+test('a compression notice that cannot say how many go is refused', async () => {
+  const net = new FakeNet().withHistory();
+  const agent = await startAgent({ net, tenantId: 'notice-one' });
+  try {
+    await assert.rejects(
+      () => settingsOf(agent, { action: 'update', compressionNotice: 'dropping some' }),
+      /it must say \{count\}/,
+    );
+    const held = await settingsOf(agent, { action: 'get' });
+    assert.equal(held.settings.compressionNotice, DEFAULT_SETTINGS.compressionNotice);
+    const kept = await settingsOf(agent, { action: 'update', compressionNotice: '{count} go now' });
+    assert.equal(kept.settings.compressionNotice, '{count} go now');
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('a save writes the fields it was given and leaves the others alone', async () => {
   const net = new FakeNet().withHistory();
   const agent = await startAgent({ net, tenantId: 'save-one' });
@@ -139,7 +156,7 @@ test('a save writes the fields it was given and leaves the others alone', async 
 
     // A whole settings object comes back, whether or not the caller asked for one field.
     assert.equal(Object.keys(second.settings).length, Object.keys(DEFAULT_SETTINGS).length);
-    assert.equal(Object.keys(second.settings).length, 7, 'seven fields, and no more');
+    assert.equal(Object.keys(second.settings).length, 9, 'nine fields, and no more');
   } finally {
     await agent.stop();
   }

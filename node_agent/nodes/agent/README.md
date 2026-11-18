@@ -97,7 +97,7 @@ tail. The cache is history-backed: one unit per entry (`cache.<n>`), one counter
 { "action": "update", "reset": true }
 ```
 
-Seven fields, each read by code that was already here — no setting is a knob with nothing behind it:
+Nine fields, each read by code that was already here — no setting is a knob with nothing behind it:
 
 | setting                 | what it changes                                                                     | in force   |
 | ----------------------- | ----------------------------------------------------------------------------------- | ---------- |
@@ -106,16 +106,31 @@ Seven fields, each read by code that was already here — no setting is a knob w
 | `compressionThreshold`  | the prompt tokens above which the oldest lines are summed up and forgotten (1,024–1,000,000) | next round |
 | `compressionTokens`     | how many tokens one compression lets go of at once (256–262,144)                    | next round |
 | `cacheSize`             | how many long texts the cache keeps; one more deletes the oldest (1–10,000)         | next turn  |
+| `maxCompletionTokens`   | the cap one round may answer with; 0 is the model server's own default (0–1,000,000) | next round |
+| `compressionNotice`     | what the model is told when the oldest messages are cut away; must say `{count}` (1–4,000 characters) | next round |
 | `allowSpawn`            | whether the model is offered `create_agent` / `destroy_agent` at all (true/false)    | next round |
 | `allowAskUser`          | whether the model is offered `ask_user` (true/false)                                 | next round |
 
 The defaults are what this package already did: 32 sub-agents, 8192 characters, a 128K-token
 compression threshold with a 32K-token step (`COMPRESSION_THRESHOLD` / `COMPRESSION_TOKENS` in
-`src/model.ts`), a cache of 500 (`DEFAULT_CACHE_SIZE` in `src/cache.ts`), and both switches on.
+`src/model.ts`), a cache of 500 (`DEFAULT_CACHE_SIZE` in `src/cache.ts`), no answer cap of its own (the model
+server's default answers), and both switches on.
+
+`maxCompletionTokens` is the number one round may answer with: it travels as
+`max_completion_tokens` on the request, so a round that would otherwise run to whatever the
+server allows stops at this cap. `compressionNotice` replaces the paragraph a compression leaves behind: `{count}` is where the
+number of messages that go is put, and a save that does not say it is refused, because that
+count is the one fact the model cannot do without when it decides whether to keep something.
+The default is `COMPRESSION_NOTICE` in `src/model.ts` — the exact text every release before this
+setting wrote.
+
+`0` sends no cap at all, and a deployment that already set
+`NODE_AGENT_MAX_COMPLETION_TOKENS` keeps that number as the fallback a saved value is laid
+over — the way `NODE_AGENT_CACHE_SIZE` is the fallback for `cacheSize`.
 
 The answer carries the full settings in force, the `defaults` they fall back to (a sub-agent's
 parent, or the package default with `NODE_AGENT_MAX_AGENTS` / `NODE_AGENT_MAX_INPUT_LENGTH_PER_TURN` /
-`NODE_AGENT_CACHE_SIZE` over it), the `provider` row in force (read from `provider`, never chosen
+`NODE_AGENT_CACHE_SIZE` / `NODE_AGENT_MAX_COMPLETION_TOKENS` over it), the `provider` row in force (read from `provider`, never chosen
 here), `live` and `restartRequired`. Every field is live: `restartRequired` is empty because a saved
 value is handed to the components that read it — the cache takes a new `cacheSize` and lets go of
 what is past it, a model that was already built takes a new compression pair (`setCompression`) — so

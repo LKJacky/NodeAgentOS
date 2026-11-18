@@ -110,6 +110,10 @@ export type RuntimeOptions = {
   readonly maxInputPerTurn?: number;
   readonly compressionThreshold?: number;
   readonly compressionTokens?: number;
+  /** How many tokens one round may answer with; 0 leaves the model server's own default. */
+  readonly maxCompletionTokens?: number;
+  /** What the model is told when the oldest messages are cut away; the agent's own notice otherwise. */
+  readonly compressionNotice?: string;
   /** A provider handed in by the caller (a test, or an embedder that holds its own model). */
   readonly provider?: Provider;
   /** The provider row to start from when history has none (Python's provider_name). */
@@ -428,6 +432,11 @@ export class AgentRuntime {
       // number from the next round on.
       compressionThreshold: this.settings.compressionThreshold,
       compressionTokens: this.settings.compressionTokens,
+      // 0 is "no cap of our own": the wire carries no max_completion_tokens then, and the model
+      // server's own default answers.
+      maxCompletionTokens:
+        this.settings.maxCompletionTokens > 0 ? this.settings.maxCompletionTokens : null,
+      compressionNotice: this.settings.compressionNotice,
       onCommit: this.options.onCommit ?? ((messages) => this.#announce(messages)),
       onDelta: (delta) => this.#announceDelta(delta),
     };
@@ -894,6 +903,13 @@ export class AgentRuntime {
       compressionThreshold:
         this.options.compressionThreshold ?? DEFAULT_SETTINGS.compressionThreshold,
       compressionTokens: this.options.compressionTokens ?? DEFAULT_SETTINGS.compressionTokens,
+      // `NODE_AGENT_MAX_COMPLETION_TOKENS` was the way a deployment capped one answer before there
+      // was a setting: it is still the fallback, and a saved value is laid over it.
+      compressionNotice: this.options.compressionNotice ?? DEFAULT_SETTINGS.compressionNotice,
+      maxCompletionTokens:
+        this.options.maxCompletionTokens ??
+        envNumber('NODE_AGENT_MAX_COMPLETION_TOKENS') ??
+        DEFAULT_SETTINGS.maxCompletionTokens,
       // `NODE_AGENT_CACHE_SIZE` was the way a deployment sized the cache before there was a setting:
       // it is still the fallback, and a saved value is laid over it.
       cacheSize:
@@ -940,6 +956,10 @@ export class AgentRuntime {
     if (this.cache.maxSize !== settings.cacheSize) await this.cache.setMaxSize(settings.cacheSize);
     if (this.model !== null) {
       this.model.setCompression(settings.compressionThreshold, settings.compressionTokens);
+      this.model.setMaxCompletionTokens(
+        settings.maxCompletionTokens > 0 ? settings.maxCompletionTokens : null,
+      );
+      this.model.setCompressionNotice(settings.compressionNotice);
     }
     // The two switches are read per round (the tools the model is offered) and per call (the refusal
     // a tool that is off answers), so handing them to the environment is all a save has to do.

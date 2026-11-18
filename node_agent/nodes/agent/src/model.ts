@@ -111,6 +111,12 @@ export type ModelOptions = {
   readonly compressionThreshold?: number;
   /** How many tokens one compression lets go of at once: the agent's `compressionTokens` setting. */
   readonly compressionTokens?: number;
+  /** How many tokens one round may answer with: the agent's `maxCompletionTokens` setting. Null
+   *  (a deployment that names nothing) carries no cap, so the model server's own default answers. */
+  readonly maxCompletionTokens?: number | null;
+  /** What is written when a cut is announced: the agent's `compressionNotice` setting. `{count}`
+   *  is where the number of messages that go is put. */
+  readonly compressionNotice?: string;
   /** Called with every line as it is committed: the page hears a turn happen without polling. */
   readonly onCommit?: (messages: readonly Message[]) => Promise<void> | void;
   /** Called with each increment of the answer while it streams — the text that just arrived, or one
@@ -135,6 +141,13 @@ export class CachedModel {
   compressionThreshold: number;
   /** How many tokens one compression lets go of at once. */
   compressionTokens: number;
+  /** How many tokens one round may answer with, or null for no cap. Not readonly: a saved setting
+   *  is put in force on a model that was already built (`setMaxCompletionTokens`). */
+  maxCompletionTokens: number | null;
+  /** The notice a compression leaves behind (`COMPRESSION_NOTICE` unless a setting said otherwise).
+   *  Not readonly: a saved setting is put in force on a model that was already built
+   *  (`setCompressionNotice`). */
+  compressionNotice: string;
   nextForgetIndex = -1;
   readonly #onCommit: ModelOptions['onCommit'];
   readonly #onDelta: ModelOptions['onDelta'];
@@ -143,6 +156,8 @@ export class CachedModel {
     this.provider = provider;
     this.compressionThreshold = options.compressionThreshold ?? COMPRESSION_THRESHOLD;
     this.compressionTokens = options.compressionTokens ?? COMPRESSION_TOKENS;
+    this.maxCompletionTokens = options.maxCompletionTokens ?? null;
+    this.compressionNotice = options.compressionNotice ?? COMPRESSION_NOTICE;
     this.#onCommit = options.onCommit;
     this.#onDelta = options.onDelta;
   }
@@ -153,6 +168,19 @@ export class CachedModel {
   setCompression(threshold: number, tokens: number): void {
     this.compressionThreshold = threshold;
     this.compressionTokens = tokens;
+  }
+
+  /** Put a new answer cap in force (the `maxCompletionTokens` setting): the runtime calls this when
+   *  a setting is saved, so a model built before the save answers under the new cap from the next
+   *  round on. Null carries no cap at all. */
+  setMaxCompletionTokens(tokens: number | null): void {
+    this.maxCompletionTokens = tokens;
+  }
+
+  /** Put a new compression notice in force: what a model built before the save writes when it
+   *  announces a cut. `{count}` is replaced with the number of messages that go. */
+  setCompressionNotice(notice: string): void {
+    this.compressionNotice = notice;
   }
 
   /** Point the model at another provider. A size belongs to the provider that measured it, so the
@@ -229,6 +257,9 @@ export class CachedModel {
         tools,
         previous_response_id: outgoing.previous,
         signal: options.signal,
+        ...(this.maxCompletionTokens === null
+          ? {}
+          : { max_completion_tokens: this.maxCompletionTokens }),
       });
       for await (const event of stream as AsyncIterable<StreamEvent>) {
         if (options.signal?.aborted) {
@@ -402,7 +433,7 @@ export class CachedModel {
     const count = this.nextForgetIndex - this.messages.forgotten;
     return {
       role: 'system',
-      content: `${COMPRESSION_NOTICE.replace('{count}', String(count))}<too-old>\n${first}\n\n...\n\n${last}\n</too-old>`,
+      content: `${this.compressionNotice.replace('{count}', String(count))}<too-old>\n${first}\n\n...\n\n${last}\n</too-old>`,
     };
   }
 

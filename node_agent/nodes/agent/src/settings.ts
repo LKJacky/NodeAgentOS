@@ -12,7 +12,7 @@
 // - a value read back from history is checked exactly like one a caller sent, so a unit written by
 //   hand, or by an older release, cannot put the agent in a state its own validation refuses.
 import { DEFAULT_CACHE_SIZE } from './cache.js';
-import { COMPRESSION_THRESHOLD, COMPRESSION_TOKENS } from './model.js';
+import { COMPRESSION_NOTICE, COMPRESSION_THRESHOLD, COMPRESSION_TOKENS } from './model.js';
 
 /** The history unit one agent's settings live in. The runtime prefixes it for a sub-agent, so one
  *  identity's agents keep one set each (`agent.settings`, `sub.agent.settings`). */
@@ -34,6 +34,11 @@ export type AgentSettings = {
   compressionTokens: number;
   /** How many long texts the cache keeps: one more than this deletes the oldest entry. */
   cacheSize: number;
+  /** How many tokens one round may answer with, or 0 for the model server's own default. */
+  maxCompletionTokens: number;
+  /** What the model is told when the oldest messages are cut away: `{count}` is where the number
+   *  of messages that go is put. */
+  compressionNotice: string;
   /** Whether the model is offered `create_agent` / `destroy_agent` at all. A sub-agent never is,
    *  whatever this says: an agent that was started by another may not start one of its own. */
   allowSpawn: boolean;
@@ -49,6 +54,8 @@ export type SettingsPatch = {
   compressionThreshold?: number;
   compressionTokens?: number;
   cacheSize?: number;
+  maxCompletionTokens?: number;
+  compressionNotice?: string;
   allowSpawn?: boolean;
   allowAskUser?: boolean;
 };
@@ -63,6 +70,12 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   compressionThreshold: COMPRESSION_THRESHOLD,
   compressionTokens: COMPRESSION_TOKENS,
   cacheSize: DEFAULT_CACHE_SIZE,
+  // 0 is "no cap of our own": the server's default answers, which is what every release before
+  // this setting did.
+  maxCompletionTokens: 0,
+  // The notice the model already read: a deployment that names nothing writes exactly what every
+  // release before this setting wrote.
+  compressionNotice: COMPRESSION_NOTICE,
   allowSpawn: true,
   allowAskUser: true,
 };
@@ -75,11 +88,23 @@ const NUMBERS: Record<string, { min: number; max: number }> = {
   compressionThreshold: { min: 1_024, max: 1_000_000 },
   compressionTokens: { min: 256, max: 262_144 },
   cacheSize: { min: 1, max: 10_000 },
+  maxCompletionTokens: { min: 0, max: 1_000_000 },
 };
 
 /** The settings a save may give as a key of their own: a value that is not `true` or `false` is
  *  refused, because there is nothing else a switch could mean. */
 const BOOLEANS = ['allowSpawn', 'allowAskUser'] as const;
+
+/** The string settings: what one may hold, and what it must keep. The compression notice has to
+ *  say `{count}`, because the number of messages that go is the one fact the model cannot do
+ *  without when it decides whether to keep something. */
+const STRINGS: Record<string, { max: number; must: RegExp; because: string }> = {
+  compressionNotice: {
+    max: 4_000,
+    must: /\{count\}/,
+    because: 'it must say {count}, the number of messages that go',
+  },
+};
 
 /** Every name a caller may use, for the sentence that refuses the one it did not. */
 export const SETTINGS_NAMES: readonly string[] = [
@@ -88,6 +113,8 @@ export const SETTINGS_NAMES: readonly string[] = [
   'compressionThreshold',
   'compressionTokens',
   'cacheSize',
+  'maxCompletionTokens',
+  'compressionNotice',
   'allowSpawn',
   'allowAskUser',
 ];
@@ -137,7 +164,8 @@ function putNumber(
     | 'maxInputLengthPerTurn'
     | 'compressionThreshold'
     | 'compressionTokens'
-    | 'cacheSize',
+    | 'cacheSize'
+    | 'maxCompletionTokens',
   value: number,
 ): void {
   values[name] = value;
@@ -149,6 +177,7 @@ const PLAIN_NUMBERS = [
   'compressionThreshold',
   'compressionTokens',
   'cacheSize',
+  'maxCompletionTokens',
 ] as const;
 
 /**
@@ -170,6 +199,23 @@ export function parseSettingsPatch(
       const problem = numberProblem(name, value);
       if (problem !== null) reject(problem);
       else putNumber(values, name as (typeof PLAIN_NUMBERS)[number], value as number);
+      continue;
+    }
+    if ((STRINGS as Record<string, unknown>)[name] !== undefined) {
+      const rule = STRINGS[name]!;
+      if (typeof value !== 'string') {
+        reject(`${name} must be text (got ${describe(value)})`);
+        continue;
+      }
+      if (value.length > rule.max) {
+        reject(`${name} must be at most ${rule.max} characters (got ${value.length})`);
+        continue;
+      }
+      if (!rule.must.test(value)) {
+        reject(`${name} cannot be saved: ${rule.because}`);
+        continue;
+      }
+      values[name as 'compressionNotice'] = value;
       continue;
     }
     if ((BOOLEANS as readonly string[]).includes(name)) {
@@ -199,6 +245,8 @@ export function effectiveSettings(base: AgentSettings, stored: SettingsPatch): A
     compressionThreshold: stored.compressionThreshold ?? base.compressionThreshold,
     compressionTokens: stored.compressionTokens ?? base.compressionTokens,
     cacheSize: stored.cacheSize ?? base.cacheSize,
+    maxCompletionTokens: stored.maxCompletionTokens ?? base.maxCompletionTokens,
+    compressionNotice: stored.compressionNotice ?? base.compressionNotice,
     allowSpawn: stored.allowSpawn ?? base.allowSpawn,
     allowAskUser: stored.allowAskUser ?? base.allowAskUser,
   };
