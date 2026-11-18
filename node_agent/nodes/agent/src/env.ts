@@ -70,6 +70,9 @@ export interface EnvHost {
   readonly selfName?: string;
   readonly bus: BindingScope;
   readonly cache: Cache;
+  /** How many characters a `read_cache` call reads when it names no `length`: the agent's own
+   *  maxInputLengthPerTurn, the length one line is trimmed at. */
+  defaultReadLength?(): number;
   /** Put a question in front of the reader and wait; answers the tool's text. */
   ask(callId: string | undefined, args: Record<string, unknown>): Promise<string>;
   /** Start / stop a sub-agent; a host that cannot is why the tools are not offered. */
@@ -329,7 +332,7 @@ export class AgentBusEnv {
   async readCache(args: Record<string, unknown>): Promise<string> {
     const entry = args.entry;
     const start = args.start ?? 0;
-    const length = args.length ?? null;
+    const length = args.length ?? this.host.defaultReadLength?.() ?? null;
     if (entry === undefined || entry === null) {
       return 'entry is required: the cache warning names the number to read';
     }
@@ -340,13 +343,22 @@ export class AgentBusEnv {
       return 'start must be an integer offset into the text';
     }
     if (length !== null && (typeof length !== 'number' || !Number.isSafeInteger(length))) {
-      return 'length must be an integer, or left out to read through the end';
+      return 'length must be an integer, or left out to read maxInputLengthPerTurn characters';
     }
-    const text = await this.host.cache.read(entry, start, length as number | null);
-    if (text === null) {
+    const slice = await this.host.cache.read(entry, start, length as number | null);
+    if (slice === null) {
       return `no cache entry ${entry}: it was never added or has already left the cache`;
     }
-    return text;
+    // Where this read sits in the whole entry, then the text: a model reading a long text a page at
+    // a time cannot tell from the page alone whether there is more, or where it is.
+    const end = slice.start + slice.length;
+    const rest = end < slice.total ? `; read on with start: ${end}` : '; that is the end';
+    return (
+      `cache entry ${entry}: ${slice.total} characters in total; this read covers ` +
+      `${slice.start}..${end} (${slice.length} characters)${rest}
+
+${slice.text}`
+    );
   }
 
   async searchCache(args: Record<string, unknown>): Promise<string> {

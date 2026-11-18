@@ -56,7 +56,8 @@ export const TOOLS: ToolSpec[] = [
       description:
         'Read the cache of long inputs that were trimmed before they reached you. Without an entry it ' +
         "lists what is held, newest first, with each text's length and its head. With an entry it " +
-        'returns that text, or the slice `start ... start+length` of it.',
+        'returns the slice `start ... start+length` of that text, saying how long the whole entry is ' +
+        'and which window this read covers.',
       parameters: {
         type: 'object',
         properties: {
@@ -67,7 +68,9 @@ export const TOOLS: ToolSpec[] = [
           },
           length: {
             type: 'integer',
-            description: 'how many characters to return (optional, to the end)',
+            description:
+              'how many characters to return (optional, default: the maxInputLengthPerTurn the ' +
+              'text was trimmed at)',
           },
         },
         required: ['entry'],

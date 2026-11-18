@@ -38,8 +38,12 @@ test('an entry is written, read in slices, searched, and numbered across restart
   const text = 'alpha beta gamma delta';
   const id = await cache.add(text);
   assert.equal(id, 1);
-  assert.equal(await cache.read(id), text);
-  assert.equal(await cache.read(id, 6, 4), 'beta');
+  const whole = await cache.read(id);
+  assert.equal(whole?.text, text);
+  assert.deepEqual([whole?.total, whole?.start, whole?.length], [text.length, 0, text.length]);
+  const slice = await cache.read(id, 6, 4);
+  assert.equal(slice?.text, 'beta');
+  assert.deepEqual([slice?.total, slice?.start, slice?.length], [text.length, 6, 4]);
   assert.deepEqual(await cache.ids(), [1]);
   const matches = await cache.search(id, 'beta', 2);
   assert.deepEqual(matches, [{ entry: 1, position: 6, text: 'a beta g' }]);
@@ -58,7 +62,7 @@ test('the oldest entry leaves when one past the size arrives', async () => {
   const third = await cache.add('three');
   assert.equal(third, 3);
   assert.equal(await cache.read(1), null);
-  assert.equal(await cache.read(3), 'three');
+  assert.equal((await cache.read(3))?.text, 'three');
   assert.deepEqual(await cache.ids(), [2, 3]);
 });
 
@@ -88,7 +92,7 @@ test('a trimmed line keeps its whole text in the cache and says where', async ()
     );
     const at = /cache entry (\d+)/.exec(kept);
     assert.ok(at !== null, 'the warning names the entry');
-    assert.equal(await runtime.cache.read(Number(at[1])), long, 'nothing was thrown away');
+    assert.equal((await runtime.cache.read(Number(at[1])))?.text, long, 'nothing was thrown away');
   } finally {
     await agent.stop();
   }
@@ -109,7 +113,11 @@ test('the read_cache and search_cache tools answer the model', async () => {
         arguments: JSON.stringify({ entry: id, start: 0, length: 6 }),
       },
     });
-    assert.equal(read, 'needle');
+    assert.equal(
+      read,
+      'cache entry 1: 20 characters in total; this read covers 0..6 (6 characters); ' +
+        'read on with start: 6\n\nneedle',
+    );
     const searched = await runtime.env?.execute({
       id: 'call_2',
       type: 'function',

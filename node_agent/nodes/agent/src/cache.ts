@@ -75,6 +75,19 @@ export function historyOverBus(bus: BindingScope, prefix = ''): CacheHistory {
   };
 }
 
+/** One slice of a cache entry: the text, how long the whole entry is, and the window this read
+ *  covers. A model reading a long text a page at a time needs the first two to know where it is. */
+export interface CacheSlice {
+  /** The characters `start ... start+length` of the entry. */
+  text: string;
+  /** Characters in the whole entry. */
+  total: number;
+  /** Where the slice starts in the entry. */
+  start: number;
+  /** Characters in the slice. */
+  length: number;
+}
+
 export class Cache {
   /** How many entries are kept. Not readonly: a saved `cacheSize` is put in force on a cache that was
    *  already built (`setMaxSize`). */
@@ -161,15 +174,17 @@ export class Cache {
     return id;
   }
 
-  /** The slice `start ... start+length` of entry `id` (`length === null`: through the end). `null`
-   *  means history does not hold that entry. */
-  async read(id: number, start = 0, length: number | null = null): Promise<string | null> {
+  /** The slice `start ... start+length` of entry `id` (`length === null`: through the end), with
+   *  the entry's whole length and the window it covers. `null` means history does not hold that
+   *  entry. */
+  async read(id: number, start = 0, length: number | null = null): Promise<CacheSlice | null> {
     const text = await this.#loadEntry(id);
     if (text === null) return null;
     if (start < 0 || (length !== null && length < 0)) {
       throw new Error('start and length must not be negative');
     }
-    return length === null ? text.slice(start) : text.slice(start, start + length);
+    const slice = length === null ? text.slice(start) : text.slice(start, start + length);
+    return { text: slice, total: text.length, start, length: slice.length };
   }
 
   /** Find `pattern` (a regular expression) in entry `id`, with `context` characters on each side. */
@@ -189,8 +204,9 @@ export class Cache {
         `pattern is not a valid regular expression: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
-    const text = await this.read(id);
-    if (text === null) return [];
+    const slice = await this.read(id);
+    if (slice === null) return [];
+    const text = slice.text;
 
     const matches: CacheMatch[] = [];
     const deadline = Date.now() + timeoutMs;

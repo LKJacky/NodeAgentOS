@@ -109,7 +109,7 @@ test('a cache keeps the cap it was built with, and a new one lets go of what is 
   assert.equal(cache.maxSize, 1, 'the cache that was already built takes the new cap');
   assert.deepEqual(await cache.ids(), [3], 'and the entries past it are gone');
   assert.equal(await cache.read(1), null);
-  assert.equal(await cache.read(3), 'three');
+  assert.equal((await cache.read(3))?.text, 'three');
 
   // The cap an `add` enforces from then on is the new one too.
   await cache.add('four');

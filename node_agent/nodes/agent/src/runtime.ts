@@ -365,6 +365,7 @@ export class AgentRuntime {
         selfName: this.name,
         bus,
         cache: this.cache,
+        defaultReadLength: () => this.#maxInput(),
         ask: (callId, args) => this.ask(callId, args),
         spawnAgent: (name, icon, provider) => this.spawnAgent(name, icon, provider),
         destroyAgent: (name) => this.destroyAgent(name),
@@ -1384,7 +1385,7 @@ export class AgentRuntime {
     const entry = await this.cache.add(text);
     const warning =
       `<warning>Inputted Context is too long over the maximum allowed length of ${maxLength} ` +
-      `characters. Therefore it has been trimmed; the whole text is in cache entry ${entry} ` +
+      `characters. Therefore it has been trimmed; the whole text (${text.length} characters) is in cache entry ${entry} ` +
       '(read it with read_cache).</warning>';
     return [text.slice(0, keep), '', warning, '', text.slice(-keep)].join('\n');
   }
