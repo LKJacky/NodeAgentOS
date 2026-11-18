@@ -16,10 +16,12 @@
 // keeps its own transcript, queue, round budget and stop, and reaches the bus through its parent's
 // identity - so it may call whatever the parent may call.
 import type { BindingScope } from '@node-agent/sdk';
+import type { JsonObject } from '@node-agent/provider/core';
 import { Cache, historyOverBus, type CacheHistory } from './cache.js';
 import { agentLog } from './log.js';
 import { agentNameOf } from './names.js';
 import { AgentBusEnv, CANCELLED } from './env.js';
+import { DirectProvider, missingConfig, type CoreBuilder } from './direct.js';
 import {
   emptyUsage,
   headOf,
@@ -35,6 +37,7 @@ import {
   CachedModel,
   NodeProvider,
   ProviderNodes,
+  SHARED_PROVIDER_NODE,
   STREAM_TOPIC_PREFIX,
   StatedModel,
   StreamHub,
@@ -118,6 +121,9 @@ export type RuntimeOptions = {
   readonly compressionNotice?: string;
   /** A provider handed in by the caller (a test, or an embedder that holds its own model). */
   readonly provider?: Provider;
+  /** How a `provider` row is dialled when this process does it: the provider package's core, unless
+   *  an embedder (or a test) passes its own builder. `local-provider` rows never take this path. */
+  readonly buildProvider?: CoreBuilder;
   /** The provider row to start from when history has none (Python's provider_name). */
   readonly providerName?: string;
   /** A tab drawing for this agent's own panel (validated `<svg>...</svg>`). */
@@ -489,7 +495,7 @@ export class AgentRuntime {
     const selected = this.#providerName ?? stored ?? this.options.providerName ?? null;
     const chosen = ProviderNodes.rowOf(selected, rows) ?? selected ?? rows[0] ?? null;
     this.#providerName = chosen;
-    this.#provider = this.#makeNodeProvider(chosen);
+    this.#provider = this.#makeProvider(chosen);
     return this.#provider;
   }
 
@@ -842,6 +848,62 @@ export class AgentRuntime {
     // The idle timeout is the deployment's, read every time a stream starts: `streamIdleMs()` is
     // NODE_AGENT_STREAM_IDLE_MS with this package's default under it, and is no longer a setting.
     return new NodeProvider(() => this.bus(), this.providerNodes, this.hub, name, streamIdleMs);
+  }
+
+  /** A `provider` row, dialled here: the provider package's own core, the row as the node holds it,
+   *  and this process's `fetch`. No `chat` and no stream crosses the bus for it. */
+  #makeDirectProvider(name: string): DirectProvider {
+    const { node, name: row } = ProviderNodes.split(name);
+    const owner = node ?? SHARED_PROVIDER_NODE;
+    return new DirectProvider(name, {
+      row,
+      node: owner,
+      config: () => this.#directConfig(owner, row),
+      fetcher: this.bus().fetch,
+      idleMs: streamIdleMs,
+      ...(this.options.buildProvider !== undefined
+        ? { build: this.options.buildProvider }
+        : {}),
+    });
+  }
+
+  /** Which seam a selected row means.
+   *
+   *  A row of the shared `provider` node is dialled in this process (`DirectProvider`), because its
+   *  rows are this stack's own and the node would only hand the same request back over the bus. A
+   *  `local-provider` row is not: that node is the stack's own endpoint, and the bus is the only path
+   *  that knows where it is. A bare name, or none at all, keeps the old bus behaviour, where the node
+   *  picks the nearest row itself. */
+  #makeProvider(name: string | null): Provider {
+    const { node } = ProviderNodes.split(name ?? '');
+    if (node === SHARED_PROVIDER_NODE && name !== null) return this.#makeDirectProvider(name);
+    return this.#makeNodeProvider(name);
+  }
+
+  /** One row of a `provider` node, as the node holds it: what this process dials with.
+   *
+   *  The rows are filed in the bus history under the *node's* own name, so no other node can read
+   *  them; the node's `row` capability - declared for `agent` alone - is the one way to them. What
+   *  travels is the row itself. It is never published on a topic and never logged: the only place
+   *  the key goes from here is the endpoint's own request. */
+  async #directConfig(node: string, row: string): Promise<JsonObject> {
+    let reply: { config?: unknown } | null;
+    try {
+      reply = await this.bus().call<{ config?: unknown } | null>(node, 'row', { name: row });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      // A node from before direct inference has no `row` at all. Say so, rather than reporting the
+      // bus's bare "no such capability" as though the row were the problem.
+      if (/no such capability/i.test(message)) {
+        throw new Error(
+          `the provider node "${node}" cannot hand over row "${row}": it does not serve the "row" capability (${message}) — upgrade @node-agent/provider, or select a local-provider row to go through the bus`,
+        );
+      }
+      throw error;
+    }
+    const config = reply?.config;
+    if (config === undefined || config === null) throw new Error(missingConfig(row, node));
+    return config as JsonObject;
   }
 
   /** The provider this agent has chosen for itself: the row it settled on, the one it stored, or the
@@ -1649,7 +1711,7 @@ export class AgentRuntime {
       throw new Error(`no provider "${wanted}"${available}`);
     }
     this.#providerName = row;
-    const provider = this.#makeNodeProvider(row);
+    const provider = this.#makeProvider(row);
     this.#provider = provider;
     this.model?.setProvider(provider);
     await this.#persistActiveProvider(row);

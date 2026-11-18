@@ -306,7 +306,9 @@ test('stop ends a turn while the provider is still handing out a stream id', asy
   const net = new FakeNet().withHistory();
   let streamStarted = false;
   let canceled = 0;
-  net.node('provider', 'the shared providers', {
+  // A `local-provider` row is the stack's own endpoint: the bus is still the only path to it, so
+  // this is the seam where a stream id can be handed out and never come back.
+  net.node('local-provider', 'the local endpoint', {
     providers: () => ({ providers: [{ name: 'fast' }] }),
     chat: () => ({
       message: { content: '' },

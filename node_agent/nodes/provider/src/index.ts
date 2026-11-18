@@ -30,23 +30,32 @@ import {
   type Resource,
   type ToolArgs,
 } from '@node-agent/sdk';
+import type {
+  ChatOutput,
+  JsonObject,
+  Message,
+  Provider,
+  ProviderRequest,
+  ProviderStore,
+  StreamOutput,
+  ToolSpec,
+} from './core.js';
 import {
-  type ChatOutput,
-  type Provider,
-  type StreamOutput,
-  type ToolSpec,
-} from './providers/base.js';
-import { buildProvider } from './providers/index.js';
-import { localConfigPath } from './mode.js';
-import { providerStore, type ProviderStore, validateName } from './persistency/index.js';
-import type { JsonObject, Message } from './providers/base.js';
+  buildProvider,
+  localConfigPath,
+  providerRequest,
+  providerRow,
+  providerStore,
+  runChat,
+  seededRows,
+  validateName,
+} from './core.js';
 
 export type ProviderConfig = JsonObject;
 export type InstalledProvider = { name: string; config: ProviderConfig; has_api_key: boolean };
 export type ProviderState = { providers: InstalledProvider[]; persistent: boolean };
 
 const PANEL = 'ui';
-const MODEL_TIMEOUT = 120;
 
 const PAGE = readFileSync(new URL('./ui.html', import.meta.url), 'utf8');
 
@@ -93,26 +102,6 @@ type StreamSession = {
 /** The streams this node is serving, keyed by the id it handed out for each one. */
 const activeStreams = new Map<string, StreamSession>();
 
-function missingProvider(name: string, known: string[]): string {
-  const others = [...known].sort().join(', ');
-  return `no provider "${name}" yet — open the provider page and add one${others ? ` (configured: ${others})` : ''}`;
-}
-
-function environmentProvider(): ProviderConfig | null {
-  const url = (process.env.NODE_AGENT_MODEL_URL ?? '').trim();
-  const key = (process.env.NODE_AGENT_MODEL_KEY ?? '').trim();
-  const model = (process.env.NODE_AGENT_MODEL_NAME ?? '').trim();
-  if (!url || !key || !model) return null;
-  return {
-    type: 'openai',
-    api_key: key,
-    model_name: model,
-    base_url: url.replace(/\/$/, '').replace(/\/chat\/completions$/, ''),
-    timeout: MODEL_TIMEOUT,
-    thinking_effort: null,
-  };
-}
-
 class ProviderManager {
   readonly ctx: NodeContext;
   /** Where the rows live: this bus's history, or this machine's file (see `persistency/`). */
@@ -146,13 +135,7 @@ class ProviderManager {
   async load(): Promise<void> {
     const saved = await this.store.read();
     this.persistence = this.store.persistent;
-    this.providers = saved ?? this.seeded();
-  }
-
-  /** What a stack nobody configured starts with: the three model variables, else one blank row. */
-  private seeded(): Record<string, ProviderConfig> {
-    const env = environmentProvider();
-    return env ? { default: env } : { default: { type: 'openai' } };
+    this.providers = saved ?? seededRows();
   }
 
   /** The rows as the provider's own `dump()`, which is the shape both stores hold. */
@@ -207,55 +190,26 @@ class ProviderManager {
     });
   }
 
-  chatRequest(args: ToolArgs): {
-    provider: Provider;
-    messages: Message[];
-    tools: ToolSpec[] | null;
-    limit: number | null;
-    previous: string | null;
-  } {
-    const name = validateName(args.name);
-    const config = this.providers[name];
-    if (!config) throw new Error(missingProvider(name, Object.keys(this.providers)));
-    const messages = args.messages;
-    if (!Array.isArray(messages)) throw new Error('provider chat needs a messages array');
-    const tools = args.tools;
-    if (tools !== undefined && tools !== null && !Array.isArray(tools))
-      throw new Error('provider chat tools must be an array or null');
-    const limit = args.max_completion_tokens;
-    if (
-      limit !== undefined &&
-      limit !== null &&
-      (!Number.isInteger(limit) || typeof limit === 'boolean')
-    )
-      throw new Error('max_completion_tokens must be an integer or null');
-    const previous = args.previous_response_id;
-    if (previous !== undefined && previous !== null && typeof previous !== 'string')
-      throw new Error('previous_response_id must be a string or null');
-    return {
-      // The row's name travels with the provider: a connection that fails says which row and which
-      // host, instead of the SDK's bare "Connection error."
-      provider: buildProvider(config, this.ctx.fetch, name),
-      messages: messages as Message[],
-      tools: (tools as ToolSpec[] | undefined) ?? null,
-      limit: (limit as number | undefined) ?? null,
-      previous: (previous as string | undefined) ?? null,
-    };
+  /** One row, credentials and all, for a caller that dials the model in its own process.
+   *
+   *  The rows are filed in history under *this* node's name, so no other node can read them; and a
+   *  caller that is told only the row's name and base URL cannot sign a request. This is the one
+   *  capability that hands a row over, it is declared for `agent` alone (`callers`), and the reply
+   *  is the same document the page saves - never logged, and never published on a topic. */
+  async row(args: ToolArgs): Promise<{ name: string; config: ProviderConfig }> {
+    await this.load();
+    return providerRow(this.providers, args);
+  }
+
+  /** The row and the request it names, checked and dialled by the core both this node and an agent
+   *  that talks to a `provider` row in its own process use. */
+  chatRequest(args: ToolArgs): ProviderRequest {
+    return providerRequest(this.providers, args, this.ctx.fetch);
   }
 
   async chat(args: ToolArgs): Promise<ChatOutput> {
     await this.load();
-    const request = this.chatRequest(args);
-    try {
-      return await request.provider.chat(
-        request.messages,
-        request.tools,
-        request.limit,
-        request.previous,
-      );
-    } finally {
-      await request.provider.close();
-    }
+    return await runChat(this.chatRequest(args));
   }
 
   /** Ask for a stream: answer with its id, and dial nothing yet.
@@ -414,6 +368,7 @@ export class ProviderNode extends Node {
     );
     this.handlers = {
       providers: (args) => manager.handle(args),
+      row: (args) => manager.row(args),
       chat: (args) => manager.chat(args),
       start_stream: (args) => manager.startStream(args),
       stream_ready: (args) => manager.streamReady(args),

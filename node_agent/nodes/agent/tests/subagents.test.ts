@@ -937,7 +937,9 @@ test('a sub-agent reads the stream of the provider it was handed', async () => {
   const id = 'f'.repeat(32);
   const net = new FakeNet();
   let deliver: (value: unknown) => void = () => undefined;
-  net.node('provider', 'the shared providers', {
+  // A `local-provider` row: the bus is the only path to that endpoint, which is what makes the
+  // family's shared stream hub observable.
+  net.node('local-provider', 'the local endpoint', {
     providers: () => ({ providers: [{ name: 'fast' }] }),
     chat: () => ({ message: { content: 'from chat' }, previous_response_id: null }),
     start_stream: () => ({ stream_id: id, topic: `provider.stream.${id}` }),
@@ -960,7 +962,7 @@ test('a sub-agent reads the stream of the provider it was handed', async () => {
     await agent.runtime.spawnAgent('kid', ICON);
     const kid = agent.runtime.agent('kid');
     assert.ok(kid !== null, 'the sub-agent exists');
-    assert.equal(kid.options.providerName, 'provider.fast', 'it copied the row its parent was on');
+    assert.equal(kid.options.providerName, 'local-provider.fast', 'it copied the row its parent was on');
     const said = await kid.chat({ content: 'hi' });
     assert.equal(
       said.at(-1)?.content,

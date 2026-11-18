@@ -50,15 +50,29 @@ scope and nothing else; each handler passes its request facts explicitly
 (`runtime.chat(msg, { from: ctx.from, deadline: ctx.deadline })`), and no module here builds
 envelopes or holds a context bus.
 
-The model is reached through a **provider node on the bus** (`local-provider` first, then
-`provider`), streamed over `start_stream` / `stream_ready`: the provider hands back an id, the agent
-subscribes to `provider.stream.<id>` and only then says the stream may start, so the first delta is
-never published before there is a listener. Its rows are the bus names `<node>.<row>`; the first one
-is where an agent starts, and `provider` selects.
+The model is reached through a **provider node's rows**, as the bus names them `<node>.<row>`, and
+which row the agent starts on is the first one; `provider` selects another. The two nodes are not the
+same path:
 
-There is no embedded model and no keyless stand-in: an agent on a bus with no provider node answers
-the turn with `no provider on the bus` rather than inventing one. An embedder (tests, a hosted
-runtime) may pass `provider` in `RuntimeOptions` to hand the runtime one directly.
+- a **`provider`** row is dialled in the agent's own process. The rows are filed in the bus history
+  under the provider node's name, so the node hands one over (its `row` capability, declared for
+  `agent`) and the agent then speaks to the endpoint itself, through `@node-agent/provider`'s core -
+  the same wires, chunk parsing and failure sentences the node uses. Deltas, `usage`, the stateful
+  handle, errors, abort and the idle bound are the same as before; what is gone is the round trip, the
+  stream topic and the subscribe/start dance per answer. A row that cannot be handed over is an error
+  naming the row - never a quiet fall back to the bus.
+- a **`local-provider`** row stays on the bus, streamed over `start_stream` / `stream_ready`: that
+  node is the stack's own endpoint, and it hands back a stream id the agent subscribes to
+  (`provider.stream.<id>`) before saying the stream may start, so the first delta is never published
+  before there is a listener.
+
+Listing rows, saving them and choosing one still go over the bus: `providers {action: list | save |
+select}` is the node's business, and the API key never appears in a listing.
+
+There is no keyless stand-in: an agent on a bus with no provider node answers the turn with `no
+provider on the bus` rather than inventing one. An embedder (tests, a hosted runtime) may pass
+`provider` in `RuntimeOptions` to hand the runtime one directly, or `buildProvider` to say how a
+`provider` row is dialled.
 
 ## The tools the model gets
 
@@ -296,6 +310,9 @@ node whose units are a map, an injectable provider and a log of what the agent p
   keys in each, the settings panel naming every field of its capability;
 - `provider.test.ts` — row names and selection (stored in history), a streamed provider node,
   `ask_user` answered and timed out;
+- `provider_direct.test.ts` — a `provider` row dialled in this process with no model call on the bus
+  (deltas, `usage`, state, the provider's own error, a cancel, the idle bound, and the real wire),
+  and a `local-provider` row that still goes over the bus;
 - `tenants.test.ts` — `ctx.bind` hands one runtime per tenant and `unbind` makes the next call build
   a new one; a scope without a name is refused; two tenants on one host keep transcripts, tools,
   cache, queue and publications apart; and a reused `AgentNode` follows the context it is handed;

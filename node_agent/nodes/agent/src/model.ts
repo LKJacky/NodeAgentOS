@@ -780,7 +780,7 @@ export class ProviderNodes {
   }
 }
 
-function abortError(): Error {
+export function abortError(): Error {
   const error = new Error('the turn was stopped');
   error.name = 'AbortError';
   return error;
@@ -788,7 +788,7 @@ function abortError(): Error {
 
 /** Resolve with `wait`, or reject as soon as `signal` aborts. The listener is removed when the
  *  wait settles; an abort after that is somebody else's concern. */
-function abortable<T>(wait: Promise<T>, signal?: AbortSignal): Promise<T> {
+export function abortable<T>(wait: Promise<T>, signal?: AbortSignal): Promise<T> {
   if (signal === undefined) return wait;
   if (signal.aborted) return Promise.reject(abortError());
   return new Promise<T>((resolve, reject) => {
@@ -808,7 +808,7 @@ function abortable<T>(wait: Promise<T>, signal?: AbortSignal): Promise<T> {
 }
 
 /** Maps one provider chunk (`{delta, usage?, previous_response_id?, provider_state?}`) to events. */
-function chunkEvents(chunk: unknown, calls: Map<number, string>): StreamEvent[] {
+export function chunkEvents(chunk: unknown, calls: Map<number, string>): StreamEvent[] {
   if (typeof chunk !== 'object' || chunk === null) return [];
   const payload = chunk as {
     delta?: { content?: unknown; reasoning_content?: unknown; tool_calls?: unknown };
