@@ -22,9 +22,11 @@ import { agentNameOf } from './names.js';
 import { AgentBusEnv, CANCELLED } from './env.js';
 import {
   emptyUsage,
+  headOf,
   PRIORITY_RANK,
   priorityOf,
   QUEUE,
+  tailOf,
   utcIn,
   utcNow,
   type Priority,
@@ -1407,7 +1409,7 @@ export class AgentRuntime {
       `<warning>Inputted Context is too long over the maximum allowed length of ${maxLength} ` +
       `characters. Therefore it has been trimmed; the whole text (${text.length} characters) is in cache entry ${entry} ` +
       '(read it with read_cache).</warning>';
-    return [text.slice(0, keep), '', warning, '', text.slice(-keep)].join('\n');
+    return [headOf(text, keep), '', warning, '', tailOf(text, keep)].join('\n');
   }
 
   /** One line longer than this does not go to the model whole: this agent's own setting, the one the

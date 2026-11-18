@@ -5,7 +5,7 @@
 // atomically with an expected revision.
 import type { BindingScope } from '@node-agent/sdk';
 import type { CacheHistory } from './cache.js';
-import { emptyUsage, tokenUsage, utcNow } from './helpers.js';
+import { emptyUsage, headOf, tailOf, tokenUsage, utcNow, wellFormed } from './helpers.js';
 import { isEmptyDelta, type StreamDelta } from './stream.js';
 import type {
   ChatReply,
@@ -408,8 +408,8 @@ export class CachedModel {
       const excerpt =
         content.length > SNIPPET_CHARS
           ? head
-            ? `${content.slice(0, SNIPPET_CHARS)}\n...`
-            : `...\n${content.slice(-SNIPPET_CHARS)}`
+            ? `${headOf(content, SNIPPET_CHARS)}\n...`
+            : `...\n${tailOf(content, SNIPPET_CHARS)}`
           : content;
       return `${message.role}: \n${excerpt}`;
     };
@@ -833,6 +833,22 @@ function chunkEvents(chunk: unknown, calls: Map<number, string>): StreamEvent[] 
 export const STREAM_TOPIC_PREFIX = 'provider.stream.';
 
 /** Stateless provider proxy to a provider bus node. */
+/** `message` with every string it carries made valid Unicode (see `wellFormed`). */
+function wellFormedMessage(message: Message): Message {
+  const calls = message.tool_calls?.map((call) => ({
+    ...call,
+    function: { ...call.function, arguments: wellFormed(call.function.arguments) },
+  }));
+  return {
+    ...message,
+    ...(typeof message.content === 'string' ? { content: wellFormed(message.content) } : {}),
+    ...(typeof message.reasoning_content === 'string'
+      ? { reasoning_content: wellFormed(message.reasoning_content) }
+      : {}),
+    ...(calls !== undefined ? { tool_calls: calls } : {}),
+  };
+}
+
 export class NodeProvider implements Provider {
   readonly #bus: () => BindingScope;
   readonly #nodes: ProviderNodes;
@@ -871,7 +887,9 @@ export class NodeProvider implements Provider {
   #request(args: Record<string, unknown>, request: ChatRequest): Record<string, unknown> {
     return {
       ...args,
-      messages: request.messages,
+      // Nothing leaves this package carrying half a surrogate pair: a lone half is not valid
+      // Unicode, and a server that reads strict JSON refuses the whole request over it.
+      messages: request.messages.map(wellFormedMessage),
       ...(request.tools !== undefined && request.tools.length > 0 ? { tools: request.tools } : {}),
       ...(request.max_completion_tokens !== undefined
         ? { max_completion_tokens: request.max_completion_tokens }

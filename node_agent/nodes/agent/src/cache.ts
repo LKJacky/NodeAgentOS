@@ -23,6 +23,8 @@ export type CacheMatch = { entry: number; position: number; text: string };
 
 /** The history node's surface, as this package uses it. A bus without history makes a cache that
  *  holds nothing but still answers, which is what a deployment with no history node gets. */
+import { isHigh, isLow } from './helpers.js';
+
 export interface CacheHistory {
   load(unitId: string): Promise<{ meta?: unknown; revision?: number } | null>;
   save(unitId: string, meta: unknown, expectedRevision?: number): Promise<number | null>;
@@ -86,6 +88,16 @@ export interface CacheSlice {
   start: number;
   /** Characters in the slice. */
   length: number;
+}
+
+/** `text` from `start` to `end`, never cut between the two halves of a surrogate pair: an edge that
+ *  would leave a lone half moves in by one unit instead. */
+function windowOf(text: string, start: number, end: number): string {
+  let from = Math.max(0, start);
+  let to = Math.min(text.length, end);
+  if (from > 0 && from < text.length && isLow(text.charCodeAt(from))) from += 1;
+  if (to > 0 && to < text.length && isHigh(text.charCodeAt(to - 1))) to -= 1;
+  return text.slice(from, to);
 }
 
 export class Cache {
@@ -214,7 +226,7 @@ export class Cache {
       const at = match.index ?? 0;
       const start = Math.max(0, at - context);
       const end = Math.min(text.length, at + match[0].length + context);
-      matches.push({ entry: id, position: at, text: text.slice(start, end) });
+      matches.push({ entry: id, position: at, text: windowOf(text, start, end) });
       // A catastrophic pattern cannot be interrupted inside one `exec`, but a long list of matches
       // can, and that is the case this budget is for.
       if (Date.now() > deadline) {
