@@ -136,6 +136,7 @@ test('the settings defaults are the numbers the model and the cache were already
   assert.deepEqual(
     Object.keys(DEFAULT_SETTINGS).sort(),
     [
+      'addMetaInfo',
       'allowAskUser',
       'allowSearchCache',
       'allowSpawn',

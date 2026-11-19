@@ -1170,7 +1170,8 @@ export class AgentRuntime {
     await this.ready();
     const priority = priorityOf(priorityValue);
     const line = messageOf(value);
-    line.content = addMetaInfo(meta.from ?? 'unknown', line.content ?? '');
+    if (this.settings.addMetaInfo)
+      line.content = addMetaInfo(meta.from ?? 'unknown', line.content ?? '');
     await this.#ensureModel();
     // The promise exists before the line joins the queue: a turn that runs to its end inside the
     // first microtasks must find a place to answer already there.
@@ -1197,7 +1198,8 @@ export class AgentRuntime {
     await this.ready();
     const priority = priorityOf(priorityValue);
     const line = messageOf(value);
-    line.content = addMetaInfo(meta.from ?? 'unknown', line.content ?? '');
+    if (this.settings.addMetaInfo)
+      line.content = addMetaInfo(meta.from ?? 'unknown', line.content ?? '');
     await this.#ensureModel();
     agentLog('debug', 'message.queued', {
       agent: this.name,

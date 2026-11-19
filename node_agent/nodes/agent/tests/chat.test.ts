@@ -174,6 +174,22 @@ test('the caller is named in front of the line the model reads', async () => {
   }
 });
 
+test('addMetaInfo off leaves the line as the caller sent it', async () => {
+  const agent = await startAgent({ provider: new GatedProvider(['hi']) });
+  try {
+    await agent.call('settings', { action: 'update', addMetaInfo: false });
+    const pending = agent.call('chat', { msg: { content: 'hello' } }, 'report');
+    await sleep(20);
+    (agent.runtime.options.provider as GatedProvider).release();
+    await pending;
+    const history = (await agent.call('history', {})) as HistoryWindow;
+    const user = history.messages.find((line) => line.role === 'user');
+    assert.equal(user?.content, 'hello', 'no FROM/TIME prefix was added');
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('a system-only transcript is stored without a model round', async () => {
   const provider = new NeverProvider();
   const agent = await startAgent({ provider });
