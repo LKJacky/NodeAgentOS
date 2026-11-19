@@ -45,6 +45,9 @@ export type AgentSettings = {
   /** Whether the model is offered `ask_user`. Off, a turn that has to ask a person ends with the
    *  tool's refusal instead of a question nobody is watching for. */
   allowAskUser: boolean;
+  /** Whether the model may search the cache of trimmed lines. Off, `search_cache` is not offered
+   *  and a call is refused. */
+  allowSearchCache: boolean;
 };
 
 /** What one save may name: every field, all optional, laid over what is already stored. */
@@ -58,11 +61,12 @@ export type SettingsPatch = {
   compressionNotice?: string;
   allowSpawn?: boolean;
   allowAskUser?: boolean;
+  allowSearchCache?: boolean;
 };
 
 /** What a bus with no stored unit, and no environment saying otherwise, runs on. The compression pair
  *  and the cache size are the numbers the model and the cache were already built with, so a
- *  deployment that saves nothing behaves exactly as it did before these settings existed; the two
+ *  deployment that saves nothing behaves exactly as it did before these settings existed; the
  *  switches are on, which is what an agent could do before they existed. */
 export const DEFAULT_SETTINGS: AgentSettings = {
   maxAgents: 32,
@@ -78,6 +82,7 @@ export const DEFAULT_SETTINGS: AgentSettings = {
   compressionNotice: COMPRESSION_NOTICE,
   allowSpawn: true,
   allowAskUser: true,
+  allowSearchCache: true,
 };
 
 /** The whole numbers a setting accepts: the range is the one its own validation keeps it in, so a
@@ -93,7 +98,7 @@ const NUMBERS: Record<string, { min: number; max: number }> = {
 
 /** The settings a save may give as a key of their own: a value that is not `true` or `false` is
  *  refused, because there is nothing else a switch could mean. */
-const BOOLEANS = ['allowSpawn', 'allowAskUser'] as const;
+const BOOLEANS = ['allowSpawn', 'allowAskUser', 'allowSearchCache'] as const;
 
 /** The string settings: what one may hold, and what it must keep. The compression notice has to
  *  say `{count}`, because the number of messages that go is the one fact the model cannot do
@@ -117,6 +122,7 @@ export const SETTINGS_NAMES: readonly string[] = [
   'compressionNotice',
   'allowSpawn',
   'allowAskUser',
+  'allowSearchCache',
 ];
 
 /** The settings that are in force from the next turn on: every one of them, because the runtime hands
@@ -249,6 +255,7 @@ export function effectiveSettings(base: AgentSettings, stored: SettingsPatch): A
     compressionNotice: stored.compressionNotice ?? base.compressionNotice,
     allowSpawn: stored.allowSpawn ?? base.allowSpawn,
     allowAskUser: stored.allowAskUser ?? base.allowAskUser,
+    allowSearchCache: stored.allowSearchCache ?? base.allowSearchCache,
   };
 }
 

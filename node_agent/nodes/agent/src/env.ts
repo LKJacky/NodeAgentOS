@@ -82,33 +82,44 @@ export interface EnvHost {
 
 export class AgentBusEnv {
   readonly host: EnvHost;
-  /** Whether the model is offered `ask_user`, and whether it is offered the spawn tools. Not
-   *  readonly: an agent's settings may be saved while it runs, and a switch that is in force from the
-   *  next turn is this pair (`gate`). */
+  /** Whether the model is offered `ask_user`, the spawn tools and `search_cache`. Not readonly: an
+   *  agent's settings may be saved while it runs, and a switch that is in force from the next turn is
+   *  this set (`gate`). */
   #allowAskUser: boolean;
   #allowSpawn: boolean;
+  #allowSearchCache: boolean;
 
-  constructor(host: EnvHost, options: { allowAskUser?: boolean; allowSpawn?: boolean } = {}) {
+  constructor(
+    host: EnvHost,
+    options: { allowAskUser?: boolean; allowSpawn?: boolean; allowSearchCache?: boolean } = {},
+  ) {
     this.host = host;
     this.#allowAskUser = options.allowAskUser ?? true;
     this.#allowSpawn = options.allowSpawn ?? false;
+    this.#allowSearchCache = options.allowSearchCache ?? true;
   }
 
-  /** The tools the model is offered right now: the bus and cache tools, the question (unless an
-   *  agent's settings switched it off) and the spawn pair (unless it may not, or has no host that
-   *  could start one). Read per round, so a switch takes effect on the next one. */
+  /** The tools the model is offered right now: the bus and cache tools (search omitted when switched
+   *  off), the question (unless an agent's settings switched it off) and the spawn pair (unless it may
+   *  not, or has no host that could start one). Read per round, so a switch takes effect on the next
+   *  one. */
   get tools(): ToolSpec[] {
-    const tools = [...TOOLS];
+    const tools = this.#allowSearchCache
+      ? [...TOOLS]
+      : TOOLS.filter((tool) => tool.function.name !== 'search_cache');
     if (this.#allowAskUser) tools.push(ASK_USER_TOOL);
     if (this.#allowSpawn && this.host.spawnAgent !== undefined) tools.push(...SPAWN_TOOLS);
     return tools;
   }
 
-  /** Put the two switches in force. The runtime calls this when it starts and after every save, so a
+  /** Put the switches in force. The runtime calls this when it starts and after every save, so a
    *  switch a page turned off is the one the next round sees. */
-  gate(options: { allowAskUser?: boolean; allowSpawn?: boolean } = {}): void {
+  gate(
+    options: { allowAskUser?: boolean; allowSpawn?: boolean; allowSearchCache?: boolean } = {},
+  ): void {
     if (options.allowAskUser !== undefined) this.#allowAskUser = options.allowAskUser;
     if (options.allowSpawn !== undefined) this.#allowSpawn = options.allowSpawn;
+    if (options.allowSearchCache !== undefined) this.#allowSearchCache = options.allowSearchCache;
   }
 
   /** Whether `ask_user` is offered at all. */
@@ -119,6 +130,11 @@ export class AgentBusEnv {
   /** Whether the spawn tools are offered at all. */
   get allowSpawn(): boolean {
     return this.#allowSpawn && this.host.spawnAgent !== undefined;
+  }
+
+  /** Whether `search_cache` is offered at all. */
+  get allowSearchCache(): boolean {
+    return this.#allowSearchCache;
   }
 
   /** Whether a bus node is this agent itself: one tenant registers one identity, so the node under
@@ -202,7 +218,10 @@ export class AgentBusEnv {
     if (name === 'list_node_tools') return await this.listNodeTools(toolArgs);
     if (name === 'run_on_node') return await this.runOnNode(toolArgs, signal);
     if (name === 'read_cache') return await this.readCache(toolArgs);
-    if (name === 'search_cache') return await this.searchCache(toolArgs);
+    if (name === 'search_cache') {
+      if (!this.#allowSearchCache) return 'search_cache is switched off for this agent';
+      return await this.searchCache(toolArgs);
+    }
     if (name === 'ask_user') {
       // Switched off in the agent's settings: a tool that is not offered must not be callable either,
       // and the model is told why rather than being left with a tool that hangs.

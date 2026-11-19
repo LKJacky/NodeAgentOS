@@ -1486,6 +1486,17 @@
             Off, ask_user is not offered.
           </small>
         </div>
+        <div class="settings-field" id="settings-field-allow-search-cache">
+          <div class="settings-check">
+            <input id="settings-allow-search-cache" name="allowSearchCache" type="checkbox" />
+            <label for="settings-allow-search-cache" data-text-key="settings.allowSearchCache">
+              Let the model search the cache
+            </label>
+          </div>
+          <small class="settings-hint" data-text-key="settings.allowSearchCacheHint">
+            Off, search_cache is not offered.
+          </small>
+        </div>
         <p class="settings-readonly">
           <span data-text-key="settings.provider">Active provider</span>
           <strong id="settings-provider">—</strong>
@@ -2703,6 +2714,7 @@
       const settingsChecks = {
         allowSpawn: document.getElementById('settings-allow-spawn'),
         allowAskUser: document.getElementById('settings-ask-user'),
+        allowSearchCache: document.getElementById('settings-allow-search-cache'),
       };
       // The fields a sub-agent has no use for: it may not start one of its own and it has nobody to
       // ask, so its cap and its two switches are hidden rather than shown as values nothing reads.

@@ -388,6 +388,7 @@ export class AgentRuntime {
         // stored switch is in force on the first turn and not only on the turn after a restart.
         allowAskUser: this.allowAskUser,
         allowSpawn: this.allowSpawn(),
+        allowSearchCache: this.settings.allowSearchCache,
       },
     );
     const history = await this.#historyIfPresent();
@@ -862,9 +863,7 @@ export class AgentRuntime {
       config: () => this.#directConfig(owner, row),
       fetcher: this.bus().fetch,
       idleMs: streamIdleMs,
-      ...(this.options.buildProvider !== undefined
-        ? { build: this.options.buildProvider }
-        : {}),
+      ...(this.options.buildProvider !== undefined ? { build: this.options.buildProvider } : {}),
     });
   }
 
@@ -979,10 +978,11 @@ export class AgentRuntime {
       // it is still the fallback, and a saved value is laid over it.
       cacheSize:
         this.options.cacheSize ?? envNumber('NODE_AGENT_CACHE_SIZE') ?? DEFAULT_SETTINGS.cacheSize,
-      // Both switches default to what an agent could do before they existed. What an embedder passed
+      // The switches default to what an agent could do before they existed. What an embedder passed
       // is the floor: a runtime told it may not spawn cannot turn that back on from its page.
       allowSpawn: this.options.allowSpawn ?? DEFAULT_SETTINGS.allowSpawn,
       allowAskUser: this.options.allowAskUser ?? DEFAULT_SETTINGS.allowAskUser,
+      allowSearchCache: DEFAULT_SETTINGS.allowSearchCache,
     };
   }
 
@@ -1028,7 +1028,11 @@ export class AgentRuntime {
     }
     // The two switches are read per round (the tools the model is offered) and per call (the refusal
     // a tool that is off answers), so handing them to the environment is all a save has to do.
-    this.env?.gate({ allowAskUser: this.allowAskUser, allowSpawn: this.allowSpawn() });
+    this.env?.gate({
+      allowAskUser: this.allowAskUser,
+      allowSpawn: this.allowSpawn(),
+      allowSearchCache: settings.allowSearchCache,
+    });
     // A child inherits what it did not set, so a save made here reaches the children's own cache and
     // model too: the numbers a sub-agent runs on are the parent's new ones from the next round on.
     for (const child of this.#children.values()) await child.#applyRuntimeSettings();

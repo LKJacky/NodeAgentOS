@@ -4,7 +4,7 @@ import { AgentBusEnv, type EnvHost } from '../src/env.ts';
 import { TOOLS } from '../src/tools.ts';
 import type { ToolCall } from '../src/types.ts';
 
-function env(): AgentBusEnv {
+function env(options: { allowSearchCache?: boolean } = {}): AgentBusEnv {
   const host = {
     busName: 'agent',
     selfName: 'agent',
@@ -12,7 +12,7 @@ function env(): AgentBusEnv {
     cache: {} as EnvHost['cache'],
     ask: async () => '',
   } as EnvHost;
-  return new AgentBusEnv(host);
+  return new AgentBusEnv(host, options);
 }
 
 const call: ToolCall = {
@@ -33,4 +33,20 @@ test('read_all_tools returns every offered definition as JSON', async () => {
   assert.ok(names.includes('read_all_tools'));
   assert.ok(names.includes('whoami'));
   assert.ok(names.includes('ask_user'));
+});
+
+test('allowSearchCache off hides search_cache and refuses it if called', async () => {
+  const envWithNoSearch = env({ allowSearchCache: false });
+  const defs = JSON.parse(envWithNoSearch.readAllTools()) as { function: { name: string } }[];
+  assert.equal(
+    defs.some((tool) => tool.function.name === 'search_cache'),
+    false,
+    'search_cache is not offered',
+  );
+  const answer = await envWithNoSearch.execute({
+    id: 'call_search',
+    type: 'function',
+    function: { name: 'search_cache', arguments: '{"entry":1,"pattern":"x"}' },
+  });
+  assert.match(answer, /switched off/);
 });

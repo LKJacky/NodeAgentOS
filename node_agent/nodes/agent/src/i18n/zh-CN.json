@@ -59,6 +59,8 @@
     "cacheSizeHint": "1–10,000：再多一条就删掉最旧的缓存文本（NODE_AGENT_CACHE_SIZE 是环境回退值）。",
     "allowSpawn": "允许模型创建子智能体",
     "allowSpawnHint": "关闭后不再向模型提供 create_agent，调用也会被拒绝；已保存的子智能体启动时不再恢复。子智能体本身无论这项如何都不能再创建。",
+    "allowSearchCache": "允许模型搜索缓存",
+    "allowSearchCacheHint": "关闭后不再向模型提供 search_cache，调用会被拒绝。",
     "allowAskUser": "允许模型向读者提问",
     "allowAskUserHint": "关闭后不再向模型提供 ask_user，调用会直接得到拒绝文本：需要问人的那一轮就在这里结束。",
     "provider": "当前模型服务",
@@ -193,6 +195,7 @@
         "compressionTokens": "每次压缩的 token 数",
         "cacheSize": "缓存文本数",
         "allowSpawn": "允许创建子智能体",
+        "allowSearchCache": "允许搜索缓存",
         "allowAskUser": "允许提问",
         "reset": "恢复默认",
         "agent": "智能体"

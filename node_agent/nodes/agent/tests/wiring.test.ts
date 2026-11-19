@@ -138,6 +138,7 @@ test('the settings defaults are the numbers the model and the cache were already
     Object.keys(DEFAULT_SETTINGS).sort(),
     [
       'allowAskUser',
+      'allowSearchCache',
       'allowSpawn',
       'cacheSize',
       'compressionNotice',

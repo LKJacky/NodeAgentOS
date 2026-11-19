@@ -46,6 +46,7 @@ test('an agent starts on the settings this deployment gives it', async () => {
     // The two switches start on: what an agent could do before they existed.
     assert.equal(answer.settings.allowSpawn, true);
     assert.equal(answer.settings.allowAskUser, true);
+    assert.equal(answer.settings.allowSearchCache, true);
     assert.deepEqual(
       answer.restartRequired,
       [],
@@ -156,7 +157,7 @@ test('a save writes the fields it was given and leaves the others alone', async 
 
     // A whole settings object comes back, whether or not the caller asked for one field.
     assert.equal(Object.keys(second.settings).length, Object.keys(DEFAULT_SETTINGS).length);
-    assert.equal(Object.keys(second.settings).length, 9, 'nine fields, and no more');
+    assert.equal(Object.keys(second.settings).length, 10, 'ten fields, and no more');
   } finally {
     await agent.stop();
   }
@@ -392,18 +393,23 @@ test('the two switches decide what the model is offered, from the turn they are 
       (agent.runtime.env?.tools ?? []).map((tool) => tool.function.name);
     assert.ok(offered().includes('ask_user'), 'a question is offered by default');
     assert.ok(offered().includes('create_agent'), 'and so is a sub-agent');
+    assert.ok(offered().includes('search_cache'), 'and searching the cache');
 
     const answer = await settingsOf(agent, {
       action: 'update',
       allowSpawn: false,
       allowAskUser: false,
+      allowSearchCache: false,
     });
     assert.equal(answer.settings.allowSpawn, false);
     assert.equal(answer.settings.allowAskUser, false);
+    assert.equal(answer.settings.allowSearchCache, false);
     assert.deepEqual(
-      offered().filter((name) => name === 'ask_user' || name === 'create_agent'),
+      offered().filter(
+        (name) => name === 'ask_user' || name === 'create_agent' || name === 'search_cache',
+      ),
       [],
-      'the environment the turn reads no longer offers either',
+      'the environment the turn reads no longer offers them',
     );
     assert.equal(agent.runtime.allowSpawn(), false, 'and the runtime agrees');
 
@@ -419,6 +425,10 @@ test('the two switches decide what the model is offered, from the turn they are 
       /may not create sub-agents/,
     );
     assert.match(await env.execute(call('ask_user', { title: 'well?' })), /switched off/);
+    assert.match(
+      await env.execute(call('search_cache', { entry: 1, pattern: 'x' })),
+      /switched off/,
+    );
     assert.match(await agent.runtime.ask(undefined, { title: 'well?' }), /switched off/);
 
     // Off for spawning, a saved child is not restored either: starting one is starting one.
@@ -437,6 +447,7 @@ test('the two switches decide what the model is offered, from the turn they are 
     const read = await settingsOf(again);
     assert.equal(read.settings.allowSpawn, false, 'the switch outlived the process');
     assert.equal(read.settings.allowAskUser, false);
+    assert.equal(read.settings.allowSearchCache, false);
   } finally {
     await again.stop();
   }
