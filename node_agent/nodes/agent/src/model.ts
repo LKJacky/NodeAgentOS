@@ -5,7 +5,7 @@
 // atomically with an expected revision.
 import type { BindingScope } from '@node-agent/sdk';
 import type { CacheHistory } from './cache.js';
-import { emptyUsage, headOf, tailOf, tokenUsage, utcNow, wellFormed } from './helpers.js';
+import { charCount, emptyUsage, headOf, tailOf, tokenUsage, utcNow, wellFormed } from './helpers.js';
 import { isEmptyDelta, type StreamDelta } from './stream.js';
 import type {
   ChatReply,
@@ -429,16 +429,10 @@ export class CachedModel {
       const notice = this.getCompressionMsg();
       if (notice !== null) await this.pushMessages([notice]);
     } else if (this.cachedNumTokens > this.compressionThreshold + this.compressionTokens) {
+      // Only an unanswered call stops the cut: the message after a tool result is where a turn goes
+      // on, and everything a tool has already answered is history like any other line. The notice's
+      // index spans past the trailing tool lines, so a cut never leaves a result without its call.
       if (this.getUnclosedToolCalls().length > 0) return;
-      let lastUser = -1;
-      for (let index = this.messages.length - 1; index >= 0; index -= 1) {
-        if (this.messages.at(index)?.role === 'user') {
-          lastUser = index;
-          break;
-        }
-      }
-      const after = this.messages.slice(lastUser + 1, this.messages.length);
-      if (after.some((message) => message.role === 'tool')) return;
       await this.resetForgetIndex(this.nextForgetIndex, tools);
     }
   }
@@ -472,7 +466,7 @@ export class CachedModel {
         content = `(tool_calls: ${names})`;
       }
       const excerpt =
-        content.length > SNIPPET_CHARS
+        charCount(content) > SNIPPET_CHARS
           ? head
             ? `${headOf(content, SNIPPET_CHARS)}\n...`
             : `...\n${tailOf(content, SNIPPET_CHARS)}`
@@ -909,7 +903,11 @@ export const STREAM_TOPIC_PREFIX = 'provider.stream.';
 export function wellFormedMessage(message: Message): Message {
   const calls = message.tool_calls?.map((call) => ({
     ...call,
-    function: { ...call.function, arguments: wellFormed(call.function.arguments) },
+    function: {
+      ...call.function,
+      ...(typeof call.function?.name === 'string' ? { name: wellFormed(call.function.name) } : {}),
+      arguments: wellFormed(call.function.arguments),
+    },
   }));
   const { log: _note, ...rest } = message;
   return {

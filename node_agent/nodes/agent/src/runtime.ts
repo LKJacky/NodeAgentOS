@@ -24,6 +24,7 @@ import { AgentBusEnv, CANCELLED } from './env.js';
 import { DirectProvider, missingConfig, type CoreBuilder } from './direct.js';
 import {
   emptyUsage,
+  charCount,
   headOf,
   PRIORITY_RANK,
   priorityOf,
@@ -1464,12 +1465,13 @@ export class AgentRuntime {
    *  cache and comes back as its head, a warning naming the entry, and its tail. */
   async shrink(content: unknown, maxLength: number): Promise<string> {
     const text = typeof content === 'string' ? content : String(content ?? '');
-    if (text.length <= maxLength) return text;
+    const length = charCount(text);
+    if (length <= maxLength) return text;
     const keep = Math.max(0, Math.floor(maxLength / 2));
     const entry = await this.cache.add(text);
     const warning =
       `<warning>Inputted Context is too long over the maximum allowed length of ${maxLength} ` +
-      `characters. Therefore it has been trimmed; the whole text (${text.length} characters) is in cache entry ${entry} ` +
+      `characters. Therefore it has been trimmed; the whole text (${length} characters) is in cache entry ${entry} ` +
       '(read it with read_cache).</warning>';
     return [headOf(text, keep), '', warning, '', tailOf(text, keep)].join('\n');
   }

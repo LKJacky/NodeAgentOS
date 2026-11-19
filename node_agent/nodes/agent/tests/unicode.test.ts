@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { headOf, tailOf, wellFormed } from '../src/helpers.ts';
+import { charCount, headOf, tailOf, wellFormed } from '../src/helpers.ts';
 import { Cache, type CacheHistory } from '../src/cache.ts';
 
 const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
@@ -34,10 +34,11 @@ test('a head cut never ends between the two halves of a pair', () => {
   for (let keep = 1; keep <= text.length; keep += 1) {
     const cut = headOf(text, keep);
     assert.ok(whole(cut), `keep ${keep} left a lone surrogate: ${JSON.stringify(cut)}`);
-    assert.ok(cut.length <= keep, 'a head cut never grows');
+    assert.ok(Array.from(cut).length <= keep, 'a head cut keeps at most keep characters');
   }
-  assert.equal(headOf(text, 2), EMOJI, 'a pair that fits whole is kept whole');
-  assert.equal(headOf(text, 1), '', 'a lone high half is given up, not half kept');
+  assert.equal(headOf(text, 2), EMOJI.repeat(2), 'two characters, two whole pairs');
+  assert.equal(headOf(text, 1), EMOJI, 'one character is one whole pair');
+  assert.equal(headOf(text, 0), '', 'nothing asked for, nothing cut');
 });
 
 test('a tail cut never begins between the two halves of a pair', () => {
@@ -45,10 +46,21 @@ test('a tail cut never begins between the two halves of a pair', () => {
   for (let keep = 1; keep <= text.length; keep += 1) {
     const cut = tailOf(text, keep);
     assert.ok(whole(cut), `keep ${keep} left a lone surrogate: ${JSON.stringify(cut)}`);
-    assert.ok(cut.length <= keep, 'a tail cut never grows');
+    assert.ok(Array.from(cut).length <= keep, 'a tail cut keeps at most keep characters');
   }
-  assert.equal(tailOf(text, 2), EMOJI, 'a pair that fits whole is kept whole');
-  assert.equal(tailOf(text, 1), '', 'a lone low half is given up, not half kept');
+  assert.equal(tailOf(text, 2), EMOJI.repeat(2), 'two characters, two whole pairs');
+  assert.equal(tailOf(text, 1), EMOJI, 'one character is one whole pair');
+  assert.equal(tailOf(text, 0), '', 'nothing asked for, nothing cut');
+});
+
+test('a budget counted in characters is spent in characters', () => {
+  const text = EMOJI.repeat(10);
+  assert.equal(charCount(text), 10, 'ten pairs are ten characters');
+  assert.equal(charCount(text), EMOJI.repeat(10).length / 2, 'not the twenty code units');
+  assert.equal(headOf(text, charCount(text)), text, 'a whole budget keeps the whole text');
+  assert.equal(tailOf(text, charCount(text)), text, 'in both directions');
+  const cut = headOf(text, 4);
+  assert.equal(charCount(cut), 4, 'the cut spends exactly the budget it was given');
 });
 
 test('a string that already carries half a pair is made valid on the way out', () => {

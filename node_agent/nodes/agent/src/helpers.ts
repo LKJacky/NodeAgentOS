@@ -40,23 +40,27 @@ export const isHigh = (unit: number): boolean => unit >= 0xd800 && unit <= 0xdbf
 /** True at a UTF-16 low surrogate: the second half of a pair that must not be cut in two. */
 export const isLow = (unit: number): boolean => unit >= 0xdc00 && unit <= 0xdfff;
 
-/** `text` as its first `keep` characters, never cut between the two halves of a surrogate pair.
+/** How many characters `text` holds, counted the way `headOf`/`tailOf` count them.
  *
- *  A string is counted in UTF-16 code units, so `slice(0, keep)` may end after the high half of a
- *  character that needs two (an emoji, a rare Han). The lone half that leaves is not valid
- *  Unicode: JSON keeps it, but the server reading the JSON refuses the whole request (`invalid
- *  high surrogate in string`), so the cut gives up one unit instead. */
-export function headOf(text: string, keep: number): string {
-  let end = Math.max(0, Math.min(keep, text.length));
-  if (end > 0 && end < text.length && isHigh(text.charCodeAt(end - 1))) end -= 1;
-  return text.slice(0, end);
+ *  `text.length` is UTF-16 code units: an emoji or a rare Han is two of them and one character,
+ *  so a budget compared with `.length` and then cut by character does not hold. Use this
+ *  wherever a length is compared against a budget a cut will then spend. */
+export function charCount(text: string): number {
+  return Array.from(text).length;
 }
 
-/** `text` as its last `keep` characters, never cut between the two halves of a surrogate pair. */
+/** `text` as its first `keep` characters, counted in code points.
+ *
+ *  `Array.from` walks a string by code point, so a cut can never land between the two halves of
+ *  a character that needs two (an emoji, a rare Han). Counting in code points rather than UTF-16
+ *  units is what makes the cut one line: the caller asks for characters, and gets characters. */
+export function headOf(text: string, keep: number): string {
+  return Array.from(text).slice(0, Math.max(0, keep)).join('');
+}
+
+/** `text` as its last `keep` characters, counted in code points. */
 export function tailOf(text: string, keep: number): string {
-  let start = Math.max(0, text.length - Math.max(0, keep));
-  if (start > 0 && start < text.length && isLow(text.charCodeAt(start))) start += 1;
-  return text.slice(start);
+  return keep > 0 ? Array.from(text).slice(-keep).join('') : '';
 }
 
 /** `text` as valid Unicode: a lone half of a pair -- one some other slice cut -- becomes U+FFFD.
