@@ -1279,12 +1279,12 @@ export class AgentRuntime {
     try {
       while (!this.#closed) {
         if (!turnEnded) {
-          for (const round of this.#takeInterpret()) await this.#startRound(round);
+          for (const round of this.#takeInterpret()) await this.#startRoundSafely(round);
         }
         if (turnEnded) {
           const round = await this.#nextRound();
           if (round === null) break;
-          await this.#startRound(round);
+          await this.#startRoundSafely(round);
         }
 
         // A stack starts with one system line: its instruction. That line is the history the next
@@ -1355,6 +1355,20 @@ export class AgentRuntime {
     }
     await model.pushMessages([message]);
     round.start = model.messages.total;
+  }
+
+  /** Start one round, answering its caller if the line cannot be written: a round that is waiting on
+   *  a history that vanished must fail the request, not leave the caller silent until its deadline. */
+  async #startRoundSafely(round: Round): Promise<void> {
+    try {
+      await this.#startRound(round);
+    } catch (caught) {
+      const error = caught instanceof Error ? caught : new Error(String(caught));
+      agentLog('error', 'turn.start.failed', { agent: this.name, seq: round.seq, error });
+      const at = this.#waiting.indexOf(round);
+      if (at >= 0) this.#waiting.splice(at, 1);
+      round.reject(error);
+    }
   }
 
   /** One model round, then the tools it asked for. A stopped round keeps its partial answer. */
