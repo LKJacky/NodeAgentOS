@@ -61,7 +61,9 @@ export class WebSocketBusSession implements BusSession {
   constructor(options: WebSocketBusSessionOptions = {}) {
     this.#forkOptions = options;
     this.#Socket = options.WebSocket ?? WebSocket;
-    this.#timeout = options.registerTimeoutMs ?? 5_000;
+    const configured = Number(process.env.NODE_AGENT_BUS_TIMEOUT ?? 60_000);
+    this.#timeout =
+      options.registerTimeoutMs ?? (Number.isFinite(configured) && configured > 0 ? configured : 60_000);
     this.#autoReconnect = options.autoReconnect ?? true;
     this.#reconnectDelay = Math.max(1, options.reconnectDelayMs ?? 1_000);
     this.#reconnectMaxDelay = Math.max(this.#reconnectDelay, options.reconnectMaxDelayMs ?? 30_000);
