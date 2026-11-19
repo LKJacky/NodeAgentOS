@@ -152,7 +152,16 @@ test('the settings defaults are the numbers the model and the cache were already
 });
 
 test('radical forget offers one placeholder tool only after a cut', () => {
+  const readAll: ToolSpec = {
+    type: 'function',
+    function: {
+      name: 'read_all_tools',
+      description: 'Read every tool definition',
+      parameters: { type: 'object', properties: {} },
+    },
+  };
   const real: ToolSpec[] = [
+    readAll,
     {
       type: 'function',
       function: {
@@ -167,7 +176,11 @@ test('radical forget offers one placeholder tool only after a cut', () => {
   assert.equal(radicalForget({ RADICAL_FORGET: '0' }), false);
   assert.equal(radicalForget({}), false);
   assert.equal(wireTools(real, 0, true), real, 'before a cut the real tools are untouched');
-  assert.deepEqual(wireTools(real, 1, true), [EMPTY_TOOL], 'after a cut only the placeholder goes');
+  assert.deepEqual(
+    wireTools(real, 1, true),
+    [EMPTY_TOOL],
+    'after a cut only the placeholder goes, even if read_all_tools was offered',
+  );
   assert.equal(wireTools(real, 1, false), real, 'and with the flag off nothing is swapped');
   assert.equal(EMPTY_TOOL.function.name, 'empty_tool');
   assert.match(EMPTY_TOOL.function.description, /cannot be called/);

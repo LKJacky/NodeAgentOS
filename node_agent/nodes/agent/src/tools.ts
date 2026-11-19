@@ -8,6 +8,17 @@ export const TOOLS: ToolSpec[] = [
   {
     type: 'function',
     function: {
+      name: 'read_all_tools',
+      description:
+        'Return the definitions of every tool this agent can use, including tools omitted from the ' +
+        'current request after context was forgotten. Call this when you need to recover a tool name ' +
+        'or schema.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'whoami',
       description:
         'Say which agent you are: the name this agent answers to. Calls that name an agent take it - ' +
