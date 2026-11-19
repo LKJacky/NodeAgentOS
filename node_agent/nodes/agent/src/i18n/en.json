@@ -59,8 +59,6 @@
     "cacheSizeHint": "1–10,000: one more than this deletes the oldest cached text (NODE_AGENT_CACHE_SIZE is the fallback).",
     "allowSpawn": "Let the model start sub-agents",
     "allowSpawnHint": "Off, create_agent is not offered and is refused if called; a saved child is no longer restored on start. A sub-agent never starts one, whatever this says.",
-    "allowSearchCache": "Let the model search the cache",
-    "allowSearchCacheHint": "Off, search_cache is not offered and a call is refused.",
     "allowAskUser": "Let the model ask the reader",
     "allowAskUserHint": "Off, ask_user is not offered and answers with its refusal: a turn that has to ask a person ends there.",
     "provider": "Active provider",
@@ -195,7 +193,6 @@
         "compressionTokens": "Tokens per compression",
         "cacheSize": "Cached texts",
         "allowSpawn": "May start sub-agents",
-        "allowSearchCache": "May search the cache",
         "allowAskUser": "May ask the reader",
         "reset": "Reset to defaults",
         "agent": "Agent"

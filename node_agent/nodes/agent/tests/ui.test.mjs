@@ -84,11 +84,9 @@ const IDS = [
   'settings-cache-size',
   'settings-allow-spawn',
   'settings-ask-user',
-  'settings-allow-search-cache',
   'settings-field-max-agents',
   'settings-field-allow-spawn',
   'settings-field-allow-ask-user',
-  'settings-field-allow-search-cache',
 ];
 
 //: The one agent a node with no sub-agents runs: the page draws no switch row for it.
@@ -310,7 +308,6 @@ async function openPage({
     cacheSize: 500,
     allowSpawn: true,
     allowAskUser: true,
-    allowSearchCache: true,
   };
   const settingsStored = {
     values: { ...structuredClone(settingsDefaults), ...structuredClone(settings) },
@@ -324,7 +321,6 @@ async function openPage({
       'cacheSize',
       'allowSpawn',
       'allowAskUser',
-      'allowSearchCache',
     ],
     restartRequired: [],
   };
@@ -555,12 +551,10 @@ async function openPage({
       cacheSize: dom.ids.get('settings-cache-size'),
       allowSpawn: dom.ids.get('settings-allow-spawn'),
       allowAskUser: dom.ids.get('settings-ask-user'),
-      allowSearchCache: dom.ids.get('settings-allow-search-cache'),
       // The boxes a sub-agent's panel hides (the field, not the control inside it).
       fieldMaxAgents: dom.ids.get('settings-field-max-agents'),
       fieldAllowSpawn: dom.ids.get('settings-field-allow-spawn'),
       fieldAllowAskUser: dom.ids.get('settings-field-allow-ask-user'),
-      fieldAllowSearchCache: dom.ids.get('settings-field-allow-search-cache'),
       save: dom.ids.get('settings-save'),
       reset: dom.ids.get('settings-reset'),
       cancel: dom.ids.get('settings-cancel'),
@@ -1856,12 +1850,11 @@ test('the cog opens a panel filled from the node', async () => {
   assert.equal(page.settings.compressionTokens.value, '32768');
   assert.equal(page.settings.allowSpawn.checked, true, 'a switch nobody saved shows its default');
   assert.equal(page.settings.allowAskUser.checked, true);
-  assert.equal(page.settings.allowSearchCache.checked, true);
   assert.equal(page.settings.provider.textContent, 'default', 'the provider is shown, not edited');
   assert.equal(page.settings.note.textContent, '', 'nothing to report yet');
 });
 
-test('the panel offers the five numbers and the three switches, and nothing this release removed', async () => {
+test('the panel offers the five numbers and the two switches, and nothing this release removed', async () => {
   const page = await openPage();
   const html = HTML;
   for (const gone of [
@@ -1883,7 +1876,6 @@ test('the panel offers the five numbers and the three switches, and nothing this
     'settings-cache-size',
     'settings-allow-spawn',
     'settings-ask-user',
-    'settings-allow-search-cache',
   ]) {
     assert.equal(page.dom.ids.has(field), true, `${field} is drawn`);
     assert.equal(html.includes(field), true, `${field} is in the markup`);
@@ -1897,7 +1889,6 @@ test('a save sends the fields the reader changed, and says what happened', async
   page.settings.compressionThreshold.value = '65536';
   page.settings.cacheSize.value = '120';
   page.settings.allowAskUser.checked = false;
-  page.settings.allowSearchCache.checked = false;
   await page.settings.submit();
 
   const saved = page.calls.filter(({ tool }) => tool === 'agent.settings').at(-1);
@@ -1909,12 +1900,10 @@ test('a save sends the fields the reader changed, and says what happened', async
       compressionThreshold: 65536,
       cacheSize: 120,
       allowAskUser: false,
-      allowSearchCache: false,
     },
     'the patch holds what changed and nothing else',
   );
   assert.equal(page.settings.stored().allowAskUser, false, 'the switch was saved as false');
-  assert.equal(page.settings.stored().allowSearchCache, false);
   assert.equal(page.settings.stored().allowSpawn, true, 'the switch nobody touched is untouched');
   assert.equal(page.settings.stored().maxAgents, 4);
   assert.equal(page.settings.stored().compressionThreshold, 65536);
@@ -2048,7 +2037,6 @@ test('reset asks for the defaults and puts them back in the boxes', async () => 
   assert.equal(page.settings.compressionThreshold.value, '131072');
   assert.equal(page.settings.allowSpawn.checked, true, 'a reset puts the switches back on');
   assert.equal(page.settings.allowAskUser.checked, true);
-  assert.equal(page.settings.allowSearchCache.checked, true);
   assert.equal(page.settings.note.dataset.kind, 'ok');
   assert.match(page.settings.note.textContent, /defaults/i);
 });

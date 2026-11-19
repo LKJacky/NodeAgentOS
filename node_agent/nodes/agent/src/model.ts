@@ -59,18 +59,12 @@ export const EMPTY_TOOL: ToolSpec = {
   },
 };
 
-/** Whether `RADICAL_FORGET` is on. Unset or any other value leaves the wire exactly as it was. */
-export function radicalForget(env: Record<string, string | undefined> = process.env): boolean {
-  const value = (env.RADICAL_FORGET ?? '').trim().toLowerCase();
-  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
-}
-
-/** The tools one request offers: all of them normally. Under RADICAL_FORGET the first rounds get
- *  only `read_all_tools`; after a cut even that is gone and `empty_tool` is all that remains. */
+/** The tools one request offers: all of them normally. With radical forget on, the first rounds
+ *  get only `read_all_tools`; after a cut even that is gone and `empty_tool` is all that remains. */
 export function wireTools(
   tools: readonly ToolSpec[],
   forgotten: number,
-  enabled = radicalForget(),
+  enabled: boolean,
 ): readonly ToolSpec[] {
   if (!enabled) return tools;
   if (forgotten > 0) return [EMPTY_TOOL];
@@ -170,6 +164,9 @@ export type ModelOptions = {
   /** What is written when a cut is announced: the agent's `compressionNotice` setting. `{count}`
    *  is where the number of messages that go is put. */
   readonly compressionNotice?: string;
+  /** Whether tool definitions are disclosed in two stages: only `read_all_tools` at first, and only
+   *  `empty_tool` after a forget. */
+  readonly radicalForget?: boolean;
   /** Called with every line as it is committed: the page hears a turn happen without polling. */
   readonly onCommit?: (messages: readonly Message[]) => Promise<void> | void;
   /** Called with each increment of the answer while it streams — the text that just arrived, or one
@@ -201,6 +198,9 @@ export class CachedModel {
    *  Not readonly: a saved setting is put in force on a model that was already built
    *  (`setCompressionNotice`). */
   compressionNotice: string;
+  /** The agent's radical-forget switch. Not readonly: a saved setting is put in force on a model
+   *  that was already built (`setRadicalForget`). */
+  radicalForget: boolean;
   nextForgetIndex = -1;
   /** A note about a cut that happened between two lines: it is written onto the next line
    *  committed, because a log is a field of a line and not a line of its own. */
@@ -214,6 +214,7 @@ export class CachedModel {
     this.compressionTokens = options.compressionTokens ?? COMPRESSION_TOKENS;
     this.maxCompletionTokens = options.maxCompletionTokens ?? null;
     this.compressionNotice = options.compressionNotice ?? COMPRESSION_NOTICE;
+    this.radicalForget = options.radicalForget ?? false;
     this.#onCommit = options.onCommit;
     this.#onDelta = options.onDelta;
   }
@@ -237,6 +238,11 @@ export class CachedModel {
    *  announces a cut. `{count}` is replaced with the number of messages that go. */
   setCompressionNotice(notice: string): void {
     this.compressionNotice = notice;
+  }
+
+  /** Put the radical-forget switch in force: whether the wire discloses tools in two stages. */
+  setRadicalForget(enabled: boolean): void {
+    this.radicalForget = enabled;
   }
 
   /** Point the model at another provider. A size belongs to the provider that measured it, so the
@@ -336,7 +342,7 @@ export class CachedModel {
     try {
       const stream = this.provider.stream({
         messages: outgoing.messages,
-        tools: wireTools(tools, this.messages.forgotten),
+        tools: wireTools(tools, this.messages.forgotten, this.radicalForget),
         previous_response_id: outgoing.previous,
         signal: options.signal,
         ...(this.maxCompletionTokens === null
@@ -454,7 +460,7 @@ export class CachedModel {
   async recomputeCachedNumTokens(tools: readonly ToolSpec[]): Promise<void> {
     const reply = await this.provider.chat({
       messages: this.activeMessages(),
-      tools: wireTools(tools, this.messages.forgotten),
+      tools: wireTools(tools, this.messages.forgotten, this.radicalForget),
       max_completion_tokens: 16,
       previous_response_id: null,
     });

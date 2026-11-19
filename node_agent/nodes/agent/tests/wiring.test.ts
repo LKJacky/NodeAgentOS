@@ -10,7 +10,6 @@ import {
   COMPRESSION_TOKENS,
   EMPTY_TOOL,
   FORGET_MESSAGE,
-  radicalForget,
   wireTools,
 } from '../src/model.ts';
 import { DEFAULT_SETTINGS } from '../src/settings.ts';
@@ -147,6 +146,7 @@ test('the settings defaults are the numbers the model and the cache were already
       'maxAgents',
       'maxCompletionTokens',
       'maxInputLengthPerTurn',
+      'radicalForget',
     ],
     'and no field this release removed is among them',
   );
@@ -173,9 +173,10 @@ test('radical forget offers read_all_tools first and empty_tool after a cut', ()
     },
   ];
 
-  assert.equal(radicalForget({ RADICAL_FORGET: 'on' }), true);
-  assert.equal(radicalForget({ RADICAL_FORGET: '0' }), false);
-  assert.equal(radicalForget({}), false);
+  const model = new CachedModel(new QuietProvider(), { radicalForget: true });
+  assert.equal(model.radicalForget, true, 'the option starts the switch on');
+  model.setRadicalForget(false);
+  assert.equal(model.radicalForget, false, 'and a saved setting can put it back off');
   assert.deepEqual(
     wireTools(real, 0, true),
     [readAll],

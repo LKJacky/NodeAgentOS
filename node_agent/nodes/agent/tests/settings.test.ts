@@ -47,6 +47,7 @@ test('an agent starts on the settings this deployment gives it', async () => {
     assert.equal(answer.settings.allowSpawn, true);
     assert.equal(answer.settings.allowAskUser, true);
     assert.equal(answer.settings.allowSearchCache, true);
+    assert.equal(answer.settings.radicalForget, false);
     assert.deepEqual(
       answer.restartRequired,
       [],
@@ -157,7 +158,7 @@ test('a save writes the fields it was given and leaves the others alone', async 
 
     // A whole settings object comes back, whether or not the caller asked for one field.
     assert.equal(Object.keys(second.settings).length, Object.keys(DEFAULT_SETTINGS).length);
-    assert.equal(Object.keys(second.settings).length, 10, 'ten fields, and no more');
+    assert.equal(Object.keys(second.settings).length, 11, 'eleven fields, and no more');
   } finally {
     await agent.stop();
   }
@@ -400,10 +401,12 @@ test('the two switches decide what the model is offered, from the turn they are 
       allowSpawn: false,
       allowAskUser: false,
       allowSearchCache: false,
+      radicalForget: true,
     });
     assert.equal(answer.settings.allowSpawn, false);
     assert.equal(answer.settings.allowAskUser, false);
     assert.equal(answer.settings.allowSearchCache, false);
+    assert.equal(answer.settings.radicalForget, true);
     assert.deepEqual(
       offered().filter(
         (name) => name === 'ask_user' || name === 'create_agent' || name === 'search_cache',
@@ -448,6 +451,7 @@ test('the two switches decide what the model is offered, from the turn they are 
     assert.equal(read.settings.allowSpawn, false, 'the switch outlived the process');
     assert.equal(read.settings.allowAskUser, false);
     assert.equal(read.settings.allowSearchCache, false);
+    assert.equal(read.settings.radicalForget, true);
   } finally {
     await again.stop();
   }

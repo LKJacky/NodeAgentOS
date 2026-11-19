@@ -447,6 +447,7 @@ export class AgentRuntime {
       maxCompletionTokens:
         this.settings.maxCompletionTokens > 0 ? this.settings.maxCompletionTokens : null,
       compressionNotice: this.settings.compressionNotice,
+      radicalForget: this.settings.radicalForget,
       onCommit: this.options.onCommit ?? ((messages) => this.#announce(messages)),
       onDelta: (delta) => this.#announceDelta(delta),
     };
@@ -983,6 +984,7 @@ export class AgentRuntime {
       allowSpawn: this.options.allowSpawn ?? DEFAULT_SETTINGS.allowSpawn,
       allowAskUser: this.options.allowAskUser ?? DEFAULT_SETTINGS.allowAskUser,
       allowSearchCache: DEFAULT_SETTINGS.allowSearchCache,
+      radicalForget: DEFAULT_SETTINGS.radicalForget,
     };
   }
 
@@ -1025,6 +1027,7 @@ export class AgentRuntime {
         settings.maxCompletionTokens > 0 ? settings.maxCompletionTokens : null,
       );
       this.model.setCompressionNotice(settings.compressionNotice);
+      this.model.setRadicalForget(settings.radicalForget);
     }
     // The two switches are read per round (the tools the model is offered) and per call (the refusal
     // a tool that is off answers), so handing them to the environment is all a save has to do.

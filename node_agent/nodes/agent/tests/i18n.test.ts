@@ -80,7 +80,6 @@ test('the settings panel has a sentence for every field, in both languages', () 
     'cacheSize',
     'allowSpawn',
     'allowAskUser',
-    'allowSearchCache',
   ];
   // The fields this release removed, and the words a page showed for them: a sentence left behind in
   // one language is a field nobody can change any more, spelled out on the screen.
@@ -176,7 +175,6 @@ test('the settings panel is drawn in the language asked for', () => {
   assert.match(english, /data-text-key="settings.cacheSize">Cached texts kept</);
   assert.match(english, /data-text-key="settings.allowSpawn">/);
   assert.match(english, /data-text-key="settings.allowAskUser">/);
-  assert.match(english, /data-text-key="settings.allowSearchCache">/);
   assert.equal(english.includes('settings.systemPrompt'), false, 'the instruction line is gone');
   assert.match(english, /data-text-key="settings.maxAgents">Sub-agents at once</);
   assert.match(english, /data-text-key="settings.save">/);
@@ -190,7 +188,6 @@ test('the settings panel is drawn in the language asked for', () => {
   assert.match(chinese, /data-text-key="settings.cacheSize">缓存保留的文本数</);
   assert.match(chinese, /data-text-key="settings.allowSpawn">/);
   assert.match(chinese, /data-text-key="settings.allowAskUser">/);
-  assert.match(chinese, /data-text-key="settings.allowSearchCache">/);
   assert.equal(chinese.includes('settings.systemPrompt'), false, 'the instruction line is gone');
   assert.match(chinese, /data-text-key="settings.maxAgents">同时运行的子智能体</);
   assert.match(chinese, /aria-label="智能体设置"/);
