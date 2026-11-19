@@ -957,10 +957,24 @@ test('a cancel that lands while the request waits sends no second request', asyn
 test('the retry environment is read once, and ranges and classes are understood', () => {
   const source = new URL('../src/providers/base.ts', import.meta.url).href;
   const read = (env: Record<string, string>, body: string): string =>
-    execFileSync(process.execPath, ['--input-type=module', '-e', body.replace('SOURCE', source)], {
-      env: { ...process.env, NODE_AGENT_MODEL_NO_RETRY_STATUSES: '', ...env },
-      encoding: 'utf8',
-    }).trim();
+    // The child imports `base.ts` itself, and that file imports its neighbours the way tsc
+    // writes them (`./wellformed.js`). The suite's own loader answers that case, so the child
+    // gets the same loader; without it one new module fails this test instead of the code.
+    execFileSync(
+      process.execPath,
+      [
+        '--import',
+        new URL('./ts-resolve.mjs', import.meta.url).href,
+        '--input-type=module',
+        '-e',
+        body.replace('SOURCE', source),
+      ],
+      {
+
+        env: { ...process.env, NODE_AGENT_MODEL_NO_RETRY_STATUSES: '', ...env },
+        encoding: 'utf8',
+      },
+    ).trim();
 
   assert.equal(
     read(

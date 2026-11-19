@@ -6,6 +6,8 @@
 import { setTimeout as sleep } from 'node:timers/promises';
 import OpenAI from 'openai';
 
+import { scrubSurrogates } from './wellformed.js';
+
 export type JsonPrimitive = null | boolean | number | string;
 export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
 export type JsonObject = { [key: string]: unknown };
@@ -1049,7 +1051,9 @@ export class OpenAIProvider extends Provider {
       body.stream = stream.stream;
       body.stream_options = stream.stream_options;
     }
-    return mergeExtraBody(body, this.extraBody);
+    // Every string in the body is made valid Unicode here, on the way to the wire: a lone
+    // surrogate fails the whole request with a 400 the retry policy then repeats eight times.
+    return scrubSurrogates(mergeExtraBody(body, this.extraBody));
   }
 
   async chat(
