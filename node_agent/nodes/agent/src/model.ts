@@ -5,7 +5,15 @@
 // atomically with an expected revision.
 import type { BindingScope } from '@node-agent/sdk';
 import type { CacheHistory } from './cache.js';
-import { charCount, emptyUsage, headOf, tailOf, tokenUsage, utcNow, wellFormed } from './helpers.js';
+import {
+  charCount,
+  emptyUsage,
+  headOf,
+  tailOf,
+  tokenUsage,
+  utcNow,
+  wellFormed,
+} from './helpers.js';
 import { isEmptyDelta, type StreamDelta } from './stream.js';
 import type {
   ChatReply,
@@ -39,8 +47,8 @@ export const CONTINUE_MESSAGE: Message = {
  *  turn's own round cap is where a model that will not stop is finally stopped. */
 export const MAX_CONTINUE = 1000;
 
-/** The one tool a request carries after a radical forget. The real definitions are gone from the
- *  wire; the model is meant to call the names it still remembers from the transcript. */
+/** The one tool a request carries after a radical forget: the real definitions are gone from the
+ *  wire, so the model has to recover them from the transcript. */
 export const EMPTY_TOOL: ToolSpec = {
   type: 'function',
   function: {
@@ -57,13 +65,17 @@ export function radicalForget(env: Record<string, string | undefined> = process.
   return value === '1' || value === 'true' || value === 'yes' || value === 'on';
 }
 
-/** The tools one request offers: the real ones until a cut, then the one placeholder tool. */
+/** The tools one request offers: all of them normally. Under RADICAL_FORGET the first rounds get
+ *  only `read_all_tools`; after a cut even that is gone and `empty_tool` is all that remains. */
 export function wireTools(
   tools: readonly ToolSpec[],
   forgotten: number,
   enabled = radicalForget(),
 ): readonly ToolSpec[] {
-  return enabled && forgotten > 0 ? [EMPTY_TOOL] : tools;
+  if (!enabled) return tools;
+  if (forgotten > 0) return [EMPTY_TOOL];
+  const readAll = tools.find((tool) => tool.function.name === 'read_all_tools');
+  return readAll === undefined ? [] : [readAll];
 }
 
 /** What is written when a cut is announced: how many leading messages go, and a quote of the first
@@ -279,7 +291,7 @@ export class CachedModel {
     for (let left = MAX_CONTINUE; left > 0; left -= 1) {
       const { message, canceled } = round;
       if (canceled || message.finish_reason !== 'length') return round;
-      if ((message.tool_calls?.length ?? 0) > 0) return round;  // the call is written; let it run
+      if ((message.tool_calls?.length ?? 0) > 0) return round; // the call is written; let it run
       await this.pushMessages([CONTINUE_MESSAGE]);
       round = await this.#round(tools, options);
     }
