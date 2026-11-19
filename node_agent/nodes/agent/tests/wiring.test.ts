@@ -8,10 +8,13 @@ import {
   CachedModel,
   COMPRESSION_THRESHOLD,
   COMPRESSION_TOKENS,
+  EMPTY_TOOL,
   FORGET_MESSAGE,
+  radicalForget,
+  wireTools,
 } from '../src/model.ts';
 import { DEFAULT_SETTINGS } from '../src/settings.ts';
-import type { ChatReply, ChatRequest, Provider, StreamEvent } from '../src/types.ts';
+import type { ChatReply, ChatRequest, Provider, StreamEvent, ToolSpec } from '../src/types.ts';
 
 /** A provider that never answers: a model built to be looked at, not run. */
 class QuietProvider implements Provider {
@@ -146,4 +149,26 @@ test('the settings defaults are the numbers the model and the cache were already
     ],
     'and no field this release removed is among them',
   );
+});
+
+test('radical forget offers one placeholder tool only after a cut', () => {
+  const real: ToolSpec[] = [
+    {
+      type: 'function',
+      function: {
+        name: 'get_weather',
+        description: 'Get the weather',
+        parameters: { type: 'object', properties: {} },
+      },
+    },
+  ];
+
+  assert.equal(radicalForget({ RADICAL_FORGET: 'on' }), true);
+  assert.equal(radicalForget({ RADICAL_FORGET: '0' }), false);
+  assert.equal(radicalForget({}), false);
+  assert.equal(wireTools(real, 0, true), real, 'before a cut the real tools are untouched');
+  assert.deepEqual(wireTools(real, 1, true), [EMPTY_TOOL], 'after a cut only the placeholder goes');
+  assert.equal(wireTools(real, 1, false), real, 'and with the flag off nothing is swapped');
+  assert.equal(EMPTY_TOOL.function.name, 'empty_tool');
+  assert.match(EMPTY_TOOL.function.description, /cannot be called/);
 });

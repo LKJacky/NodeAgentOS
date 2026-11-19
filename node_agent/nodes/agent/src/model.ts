@@ -39,6 +39,33 @@ export const CONTINUE_MESSAGE: Message = {
  *  turn's own round cap is where a model that will not stop is finally stopped. */
 export const MAX_CONTINUE = 1000;
 
+/** The one tool a request carries after a radical forget. The real definitions are gone from the
+ *  wire; the model is meant to call the names it still remembers from the transcript. */
+export const EMPTY_TOOL: ToolSpec = {
+  type: 'function',
+  function: {
+    name: 'empty_tool',
+    description:
+      'this tool is only a occupation,cannot be called, and you also should not call it, the real tools definitions have been forgeted, and they may exist in context, and you should call them according to your context',
+    parameters: { type: 'object', properties: {} },
+  },
+};
+
+/** Whether `RADICAL_FORGET` is on. Unset or any other value leaves the wire exactly as it was. */
+export function radicalForget(env: Record<string, string | undefined> = process.env): boolean {
+  const value = (env.RADICAL_FORGET ?? '').trim().toLowerCase();
+  return value === '1' || value === 'true' || value === 'yes' || value === 'on';
+}
+
+/** The tools one request offers: the real ones until a cut, then the one placeholder tool. */
+export function wireTools(
+  tools: readonly ToolSpec[],
+  forgotten: number,
+  enabled = radicalForget(),
+): readonly ToolSpec[] {
+  return enabled && forgotten > 0 ? [EMPTY_TOOL] : tools;
+}
+
 /** What is written when a cut is announced: how many leading messages go, and a quote of the first
  *  and the last of them, so the model can see what it is losing. */
 export const COMPRESSION_NOTICE = `{count} earlier messages are too old to keep; they will be dropped from this transcript soon. Only
@@ -297,7 +324,7 @@ export class CachedModel {
     try {
       const stream = this.provider.stream({
         messages: outgoing.messages,
-        tools,
+        tools: wireTools(tools, this.messages.forgotten),
         previous_response_id: outgoing.previous,
         signal: options.signal,
         ...(this.maxCompletionTokens === null
@@ -415,7 +442,7 @@ export class CachedModel {
   async recomputeCachedNumTokens(tools: readonly ToolSpec[]): Promise<void> {
     const reply = await this.provider.chat({
       messages: this.activeMessages(),
-      tools,
+      tools: wireTools(tools, this.messages.forgotten),
       max_completion_tokens: 16,
       previous_response_id: null,
     });
