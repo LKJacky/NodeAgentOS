@@ -39,7 +39,7 @@
     "@deepseek-ai/dsh-web": "0.1.5-rc.3",
     "@deepseek-ai/dsh-web-fetch-http": "0.1.5-rc.3",
     "@deepseek-ai/dsh-web-search-deepseek": "0.1.5-rc.3",
-    "markdown-it": "^14.1.0",
+    "markdown-it": "^15.0.3",
     "openai": "^7.45.0"
   },
   "devDependencies": {
