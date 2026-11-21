@@ -392,8 +392,10 @@
       /* The settings button at the usage row's right end, and the panel it opens: a card over the page,
          drawn the way a delete's second question is. The rows are a label, the field and the range the
          node accepts under them, so a reader knows what a refusal is about before pressing Save. */
+      /* Agent settings are owner-level controls: keep the entry point out of the ordinary
+         user-facing page. The panel stays in the markup for the owner tooling and tests. */
       .usage-settings {
-        display: flex;
+        display: none;
         flex: 0 0 auto;
         align-items: center;
       }
