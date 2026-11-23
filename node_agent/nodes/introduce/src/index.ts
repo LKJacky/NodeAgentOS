@@ -431,7 +431,7 @@ export async function runSetup(
       after_seconds: 3600,
       repeat: 'every:3600',
       name: 'heartbeat',
-      node: 'agent',
+      agent: 'agent',
       message: heartbeat,
     });
     await caller.call('agent', 'chat_no_wait', {
