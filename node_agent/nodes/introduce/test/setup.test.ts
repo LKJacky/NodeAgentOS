@@ -109,6 +109,13 @@ function wired(
         return Array.from({ length: options.timers ?? 0 }, () => ({})) as T;
       }
 
+      if (node === 'timer' && cap === 'set') {
+        // The real timer names the agent by `agent`, not by the old `node` key.
+        if (typeof args.agent !== 'string' || args.agent === '')
+          throw new Error('timer.set needs "agent"');
+        return 'set timer id=1: countdown wakes agent' as T;
+      }
+
       if (node === 'system' && cap === 'language') {
         const answer = options.language ?? 'en';
         if (answer instanceof Error) throw answer;
@@ -184,7 +191,7 @@ test('a new stack is set up once, in the language the system resolved, and the m
   assert.equal(timer.message, words('zh-CN').heartbeat);
   assert.equal(timer.repeat, 'every:3600');
   assert.equal(timer.name, 'heartbeat');
-  assert.equal(timer.node, 'agent');
+  assert.equal(timer.agent, 'agent');
   assert.equal(timer.after_seconds, 3600);
   assert.deepEqual(calls[10]?.args, {
     msg: { role: 'system', content: words('zh-CN').instruction },
@@ -482,7 +489,8 @@ test('it offers the runtime setup entry and the introduction/connect page', () =
   }
   assert.doesNotMatch(html, /第一次使用|常用配置|npm install|npm run build/);
   assert.match(html, /npx @node-agent\/shell --name computer/);
-  assert.equal((html.match(/class="os-tab"/g) ?? []).length, 3);
+  // Two platform groups: the connect card and the local-provider card.
+  assert.equal((html.match(/class="os-tab"/g) ?? []).length, 6);
   for (const platform of ['posix', 'windows'])
     assert.match(html, new RegExp(`data-os-target="${platform}"`));
   assert.match(html, /NODE_AGENT_BUS_URL/);

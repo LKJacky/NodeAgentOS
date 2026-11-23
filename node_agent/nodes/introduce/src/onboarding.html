@@ -266,6 +266,13 @@
         try {
           await callNode('system.settings', { language: picker.value });
           await callNode('introduce.setup');
+          // A failed setup answers `failed`, not an error. Read the status before telling
+          // the shell to reload, or the reader lands back on this page with no explanation.
+          const state = await callNode('introduce.status');
+          if (state?.initialized !== true)
+            throw new Error(
+              t('setup.notReady', 'the stack still reports that it is not set up'),
+            );
           const done = { kind: 'node-agent:setup-complete' };
           if (window.parent !== window) window.parent.postMessage(done, location.origin);
           if (window.top === window) {

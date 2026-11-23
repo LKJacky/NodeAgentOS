@@ -55,6 +55,7 @@
   "setup.done": "完成，正在打开 node-agent…",
   "setup.failed": "初始化没有完成：",
   "setup.refused": "这次调用被拒绝了",
+  "setup.notReady": "初始化结束了，但这个栈仍然报告未完成初始化",
   "setup.checkFailed": "读不到这个栈的状态：",
   "setup.note": "之后可以在 system 页面里改。",
   "what.connect": "连接你的电脑",

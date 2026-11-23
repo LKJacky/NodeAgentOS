@@ -55,6 +55,7 @@
   "setup.done": "Done. Opening node-agent…",
   "setup.failed": "The setup did not finish:",
   "setup.refused": "the call was refused",
+  "setup.notReady": "the setup finished, but this stack still reports that it is not set up",
   "setup.checkFailed": "Could not read the status of this stack:",
   "setup.note": "You can change this later in the system page.",
   "what.connect": "Connect your computer",
