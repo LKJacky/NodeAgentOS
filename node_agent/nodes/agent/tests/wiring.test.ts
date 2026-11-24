@@ -3,7 +3,8 @@
 // then on - the runtime tests for the same thing are in `settings.test.ts`.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Cache, DEFAULT_CACHE_SIZE, type CacheHistory } from '../src/cache.ts';
+import { memoryScope } from './memory-scope.ts';
+import { Cache, DEFAULT_CACHE_SIZE } from '../src/cache.ts';
 import {
   CachedModel,
   COMPRESSION_THRESHOLD,
@@ -28,27 +29,7 @@ class QuietProvider implements Provider {
 }
 
 /** A history that keeps its units in a map, which is all a cache needs. */
-function memoryHistory(): CacheHistory {
-  const units = new Map<string, { meta: unknown; revision: number }>();
-  let revision = 0;
-  return {
-    async load(unitId) {
-      const unit = units.get(unitId);
-      return unit === undefined ? null : { meta: unit.meta, revision: unit.revision };
-    },
-    async save(unitId, meta) {
-      revision += 1;
-      units.set(unitId, { meta, revision });
-      return revision;
-    },
-    async remove(unitId) {
-      units.delete(unitId);
-    },
-    async units() {
-      return [...units.entries()].map(([unitId, unit]) => ({ unitId, revision: unit.revision }));
-    },
-  };
-}
+const memoryHistory = memoryScope;
 
 test('a model keeps the compression numbers it was built with, and takes new ones', () => {
   const model = new CachedModel(new QuietProvider());

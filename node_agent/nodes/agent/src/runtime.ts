@@ -17,7 +17,16 @@
 // identity - so it may call whatever the parent may call.
 import type { BindingScope } from '@node-agent/sdk';
 import type { JsonObject } from '@node-agent/provider/core';
-import { Cache, historyOverBus, type CacheHistory } from './cache.js';
+import { Cache } from './cache.js';
+import {
+  activeProviderStorage,
+  listUnits,
+  settingsStorage,
+  storageAvailable,
+  storedUnit,
+  subagentsStorage,
+  type StoredAgent,
+} from './storage.js';
 import { agentLog } from './log.js';
 import { agentNameOf } from './names.js';
 import { AgentBusEnv, CANCELLED } from './env.js';
@@ -56,10 +65,8 @@ import {
 } from './stream.js';
 import {
   DEFAULT_SETTINGS,
-  SETTINGS_UNIT,
   effectiveSettings,
   envNumber,
-  isSettingsConflict,
   mergePatches,
   parseSettingsPatch,
   readStoredSettings,
@@ -161,9 +168,6 @@ export type AgentRow = {
   /** The drawing it was created with, when it was given one. */
   icon?: string;
 };
-
-/** One sub-agent as the `subagents` history unit stores it. */
-type StoredAgent = { name: string; icon?: string; provider?: string };
 
 /** Read either the current `{agents:[{...}]}` shape or the old `{names:[...]}` one. */
 function storedAgentOf(value: unknown): StoredAgent | null {
@@ -391,8 +395,8 @@ export class AgentRuntime {
         allowSearchCache: this.settings.allowSearchCache,
       },
     );
-    const history = await this.#historyIfPresent();
-    this.cache.useHistory(history);
+    const persistent = await storageAvailable(this.bus());
+    this.cache.useScope(persistent ? this.bus() : null, this.unitPrefix);
     await this.cache.restore();
     await this.#loadSettings();
     // The numbers a component reads once are handed to it here, so a stored value is in force on the
@@ -403,21 +407,9 @@ export class AgentRuntime {
     await this.#restoreAgents();
     agentLog('info', 'agent.ready', {
       agent: this.name,
-      history: history !== null,
+      history: persistent,
       ms: Date.now() - started,
     });
-  }
-
-  /** The history node's surface, or null when this bus has none: a transcript kept in memory only is
-   *  what a stack without history gets, rather than an agent that does not start. */
-  async #historyIfPresent(): Promise<CacheHistory | null> {
-    try {
-      const nodes = await this.bus().listNodes();
-      if (!nodes.some((node) => node.name === 'history')) return null;
-    } catch {
-      return null;
-    }
-    return this.#history();
   }
 
   /** Build the model on the first turn: the provider it will use, and the transcript it continues. */
@@ -434,7 +426,7 @@ export class AgentRuntime {
   }
 
   async #loadModel(): Promise<CachedModel> {
-    const history = this.cache.enabled ? await this.#historyIfPresent() : null;
+    const persistent = this.cache.enabled;
     const provider = await this.#resolveProvider();
     const options: ModelOptions = {
       // The compression pair the agent runs on: read from its settings when the model is built, and
@@ -451,10 +443,9 @@ export class AgentRuntime {
       onCommit: this.options.onCommit ?? ((messages) => this.#announce(messages)),
       onDelta: (delta) => this.#announceDelta(delta),
     };
-    let model: CachedModel =
-      history === null
-        ? new CachedModel(provider, options)
-        : new StatedModel(provider, history, options);
+    let model: CachedModel = persistent
+      ? new StatedModel(provider, this.bus(), this.unitPrefix, options)
+      : new CachedModel(provider, options);
     if (model instanceof StatedModel) {
       try {
         await model.load();
@@ -593,10 +584,6 @@ export class AgentRuntime {
   /** History files units under the calling node, and the whole family shares one calling node: the
    *  prefix (`''` for the main agent, `sub.<name>.` for a sub-agent) is what keeps one agent's
    *  transcript, cache and provider row apart from the others'. */
-  #history(): CacheHistory {
-    return historyOverBus(this.bus(), this.unitPrefix);
-  }
-
   /** Start an agent under this runtime's identity. A sub-agent is a runtime of this same class,
    *  held here: it publishes on its own topic, files its units under its own prefix, and is not a
    *  node - so nothing about its permissions is separate from its parent's.
@@ -776,11 +763,9 @@ export class AgentRuntime {
    *  the family means. */
   async destroySelf(): Promise<string[]> {
     const left: string[] = [];
-    const history = this.#history();
     const listed = async (): Promise<{ unitId: string; revision?: number }[]> => {
       try {
-        const units = await history.units();
-        return units.filter((unit) => unit.unitId.startsWith(this.unitPrefix));
+        return await listUnits(this.bus(), this.unitPrefix);
       } catch (error) {
         left.push(`*: ${error instanceof Error ? error.message : String(error)}`);
         return [];
@@ -788,10 +773,10 @@ export class AgentRuntime {
     };
     for (const unit of await listed()) {
       try {
-        await this.bus().call('history', 'delete', {
-          unitId: unit.unitId,
-          ...(unit.revision !== undefined ? { expectedRevision: unit.revision } : {}),
-        });
+        const localId = unit.unitId.slice(this.unitPrefix.length);
+        const stored = storedUnit(this.bus(), this.unitPrefix, localId);
+        await stored.load();
+        if (stored.revision > 0) await stored.delete();
       } catch (error) {
         left.push(`${unit.unitId}: ${error instanceof Error ? error.message : String(error)}`);
       }
@@ -812,10 +797,17 @@ export class AgentRuntime {
       });
       // `names` stays for a reader written before `agents` existed; the new shape is what keeps
       // the drawing and the provider choice across a restart.
-      await this.#history().save('subagents', {
-        names: agents.map((agent) => agent.name),
-        agents,
-      });
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const unit = subagentsStorage(this.bus(), this.unitPrefix);
+        await unit.load();
+        unit.meta = { names: agents.map((agent) => agent.name), agents };
+        try {
+          await unit.save();
+          return;
+        } catch (error) {
+          if (attempt === 2) throw error;
+        }
+      }
     } catch {
       // A note about children may not fail the turn.
     }
@@ -825,11 +817,13 @@ export class AgentRuntime {
     if (this.#restored || !this.allowSpawn()) return;
     this.#restored = true;
     try {
-      const unit = await this.#history().load('subagents');
-      const meta = unit?.meta as { names?: unknown; agents?: unknown } | undefined;
-      const listed = Array.isArray(meta?.agents)
+      const unit = subagentsStorage(this.bus(), this.unitPrefix);
+      await unit.load();
+      if (unit.revision === 0) return;
+      const meta = unit.meta as { names?: unknown; agents?: unknown };
+      const listed = Array.isArray(meta.agents)
         ? meta.agents
-        : Array.isArray(meta?.names)
+        : Array.isArray(meta.names)
           ? meta.names
           : [];
       for (const row of listed) {
@@ -920,9 +914,9 @@ export class AgentRuntime {
   async #loadActiveProvider(): Promise<string | null> {
     if (!this.cache.enabled) return null;
     try {
-      const unit = await this.#history().load('active_provider');
-      const meta = unit?.meta as { name?: unknown } | undefined;
-      return typeof meta?.name === 'string' ? meta.name : null;
+      const unit = activeProviderStorage(this.bus(), this.unitPrefix);
+      await unit.load();
+      return unit.revision > 0 && typeof unit.meta.name === 'string' ? unit.meta.name : null;
     } catch {
       return null;
     }
@@ -931,13 +925,18 @@ export class AgentRuntime {
   async #persistActiveProvider(name: string): Promise<void> {
     if (!this.cache.enabled) return;
     try {
-      const history = this.#history();
-      const revision = await history.save(
-        'active_provider',
-        { name },
-        this.#providerRevision ?? undefined,
-      );
-      if (revision !== null) this.#providerRevision = revision;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const unit = activeProviderStorage(this.bus(), this.unitPrefix);
+        await unit.load();
+        unit.meta = { name };
+        try {
+          await unit.save();
+          this.#providerRevision = unit.revision;
+          return;
+        } catch (error) {
+          if (attempt === 2) throw error;
+        }
+      }
     } catch (error) {
       console.warn(`agent: could not store the active provider: ${String(error)}`);
     }
@@ -1046,9 +1045,12 @@ export class AgentRuntime {
   async #loadSettings(): Promise<void> {
     if (!this.cache.enabled) return;
     try {
-      const unit = await this.#history().load(SETTINGS_UNIT);
-      this.#stored = readStoredSettings(unit?.meta);
-      if (typeof unit?.revision === 'number') this.#settingsRevision = unit.revision;
+      const unit = settingsStorage(this.bus(), this.unitPrefix);
+      await unit.load();
+      if (unit.revision > 0) {
+        this.#stored = readStoredSettings(unit.meta);
+        this.#settingsRevision = unit.revision;
+      }
     } catch {
       // A history node that cannot answer leaves the defaults in force.
     }
@@ -1129,27 +1131,35 @@ export class AgentRuntime {
       await this.#applyRuntimeSettings();
       return;
     }
-    const history = this.#history();
     for (let attempt = 1; attempt <= SETTINGS_SAVE_ATTEMPTS; attempt += 1) {
       const merged = replace ? values : mergePatches(this.#stored, values);
-      try {
-        const revision = await history.save(
-          SETTINGS_UNIT,
-          settingsUnit(merged),
-          this.#settingsRevision,
-        );
-        this.#stored = merged;
-        if (revision !== null) this.#settingsRevision = revision;
-        // The cache and the model are already built: hand them the numbers this save put in force.
-        await this.#applyRuntimeSettings();
-        return;
-      } catch (error) {
-        if (!isSettingsConflict(error) || attempt === SETTINGS_SAVE_ATTEMPTS) throw error;
+      const unit = settingsStorage(this.bus(), this.unitPrefix);
+      await unit.load();
+      const expected = this.#settingsRevision ?? 0;
+      if (unit.revision !== expected) {
+        if (attempt === SETTINGS_SAVE_ATTEMPTS) {
+          throw new Error('the settings changed concurrently');
+        }
         // Someone else wrote first: their unit is the new base, and this patch goes over it.
-        const unit = await history.load(SETTINGS_UNIT);
-        this.#stored = readStoredSettings(unit?.meta);
-        this.#settingsRevision = typeof unit?.revision === 'number' ? unit.revision : undefined;
+        this.#stored = readStoredSettings(unit.meta);
+        this.#settingsRevision = unit.revision > 0 ? unit.revision : undefined;
+        continue;
       }
+      try {
+        unit.meta = settingsUnit(merged);
+        await unit.save();
+      } catch (error) {
+        if (attempt === SETTINGS_SAVE_ATTEMPTS) throw error;
+        await unit.load();
+        this.#stored = readStoredSettings(unit.meta);
+        this.#settingsRevision = unit.revision > 0 ? unit.revision : undefined;
+        continue;
+      }
+      this.#stored = merged;
+      this.#settingsRevision = unit.revision;
+      // The cache and the model are already built: hand them the numbers this save put in force.
+      await this.#applyRuntimeSettings();
+      return;
     }
   }
 

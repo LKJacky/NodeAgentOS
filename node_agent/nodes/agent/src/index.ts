@@ -16,14 +16,7 @@ export {
   type HistoryWindow,
   type RuntimeOptions,
 } from './runtime.js';
-export {
-  Cache,
-  CACHE_UNIT,
-  DEFAULT_CACHE_SIZE,
-  historyOverBus,
-  type CacheHistory,
-  type CacheMatch,
-} from './cache.js';
+export { Cache, CACHE_UNIT, DEFAULT_CACHE_SIZE, type CacheMatch } from './cache.js';
 export {
   CachedModel,
   COMPRESSION_NOTICE,
@@ -55,6 +48,30 @@ export {
   type SettingsPatch,
 } from './settings.js';
 export { ASK_USER_TOOL, SYSTEM, TOOLS } from './tools.js';
+export {
+  ActiveProviderUnit,
+  CacheCounterUnit,
+  CacheEntryUnit,
+  ConversationMessageUnit,
+  ConversationStateUnit,
+  SettingsUnit,
+  SubagentsUnit,
+  activeProviderStorage,
+  cacheCounter,
+  cacheEntry,
+  conversationMessage,
+  conversationState,
+  listUnits,
+  settingsStorage,
+  storageAvailable,
+  storedUnit,
+  subagentsStorage,
+  type StoredAgent,
+  type StoredConversation,
+  type StoredProvider,
+  type StoredSettings,
+  type StoredSubagents,
+} from './storage.js';
 export { requireBindings, type BindingScope, type NodeBindings } from '@node-agent/sdk';
 
 export type {

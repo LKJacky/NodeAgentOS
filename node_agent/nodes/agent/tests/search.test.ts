@@ -4,23 +4,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-import { Cache, type CacheHistory } from '../src/cache.ts';
+import { memoryScope } from './memory-scope.ts';
+import { Cache } from '../src/cache.ts';
 
-function memoryHistory(): CacheHistory {
-  const units = new Map<string, unknown>();
-  return {
-    async load(unitId) {
-      return units.has(unitId) ? { meta: units.get(unitId), revision: 1 } : null;
-    },
-    async save(unitId, meta) {
-      units.set(unitId, meta);
-      return 1;
-    },
-    async remove(unitId) {
-      units.delete(unitId);
-    },
-  } as CacheHistory;
-}
+const memoryHistory = memoryScope;
 
 test('a catastrophic pattern is answered at once, not left to run', async () => {
   const cache = new Cache(2, memoryHistory());

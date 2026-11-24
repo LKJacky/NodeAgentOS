@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { charCount, headOf, tailOf, wellFormed } from '../src/helpers.ts';
-import { Cache, type CacheHistory } from '../src/cache.ts';
+import { memoryScope } from './memory-scope.ts';
+import { Cache } from '../src/cache.ts';
 
 const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 
@@ -13,21 +14,7 @@ const whole = (text: string): boolean => !LONE.test(text);
 
 const EMOJI = '\u{1F600}'; // two code units: D83D DE00
 
-function memoryHistory(): CacheHistory {
-  const units = new Map<string, unknown>();
-  return {
-    async load(unitId) {
-      return units.has(unitId) ? { meta: units.get(unitId), revision: 1 } : null;
-    },
-    async save(unitId, meta) {
-      units.set(unitId, meta);
-      return 1;
-    },
-    async remove(unitId) {
-      units.delete(unitId);
-    },
-  } as CacheHistory;
-}
+const memoryHistory = memoryScope;
 
 test('a head cut never ends between the two halves of a pair', () => {
   const text = EMOJI.repeat(6);

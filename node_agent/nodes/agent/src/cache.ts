@@ -8,7 +8,6 @@
 // numbers them is a unit of its own (`cache`, meta `{"total": n}`), so a read is a history read and
 // a restart continues from the same units. `maxSize` is the number of entries kept: adding one past
 // it deletes the oldest unit from history.
-import type { BindingScope } from '@node-agent/sdk';
 
 export const CACHE_UNIT = 'cache';
 
@@ -28,62 +27,12 @@ import { Worker } from 'node:worker_threads';
 
 import { RE2JS } from 're2js';
 
+import type { BindingScope } from '@node-agent/sdk';
+import { cacheCounter, cacheEntry } from './storage.js';
 import { isHigh, isLow } from './helpers.js';
 
 /** Where this process' `re2js` is, so the worker -- source, not a file -- loads the same copy. */
 const RE2JS_PATH = createRequire(import.meta.url).resolve('re2js');
-
-export interface CacheHistory {
-  load(unitId: string): Promise<{ meta?: unknown; revision?: number } | null>;
-  save(unitId: string, meta: unknown, expectedRevision?: number): Promise<number | null>;
-  remove(unitId: string): Promise<void>;
-  /** Every unit history holds for this caller, with the revision a delete can name. */
-  units(): Promise<{ unitId: string; revision?: number }[]>;
-}
-
-/**
- * The history node, addressed the way the Python twin addresses it.
- *
- * History files a unit under the *calling node*, and every agent of one identity shares that caller:
- * the main agent and each of its sub-agents. `prefix` is what keeps their units apart — `''` for the
- * main agent, `sub.<name>.` for a sub-agent — so one identity holds one transcript per agent instead
- * of one shared transcript, and a sub-agent's `conversation.0` is not the main agent's.
- */
-export function historyOverBus(bus: BindingScope, prefix = ''): CacheHistory {
-  const at = (unitId: string): string => `${prefix}${unitId}`;
-  return {
-    async load(unitId) {
-      const reply = await bus.call<{ unit: { meta?: unknown; revision?: number } | null }>(
-        'history',
-        'load',
-        { unitId: at(unitId) },
-      );
-      return reply.unit ?? null;
-    },
-    async save(unitId, meta, expectedRevision) {
-      const reply = await bus.call<{ unit: { revision?: number } | null }>('history', 'save', {
-        unitId: at(unitId),
-        meta,
-        ...(expectedRevision !== undefined ? { expectedRevision } : {}),
-      });
-      return reply.unit?.revision ?? null;
-    },
-    async remove(unitId) {
-      await bus.call('history', 'delete', { unitId: at(unitId) });
-    },
-    async units() {
-      const reply = await bus.call<{ units?: unknown }>('history', 'list', {});
-      const units = reply?.units;
-      if (!Array.isArray(units)) return [];
-      return units.filter(
-        (unit): unit is { unitId: string; revision?: number } =>
-          typeof unit === 'object' &&
-          unit !== null &&
-          typeof (unit as { unitId?: unknown }).unitId === 'string',
-      );
-    },
-  };
-}
 
 /** One slice of a cache entry: the text, how long the whole entry is, and the window this read
  *  covers. A model reading a long text a page at a time needs the first two to know where it is. */
@@ -198,21 +147,22 @@ export class Cache {
   /** How many entries are kept. Not readonly: a saved `cacheSize` is put in force on a cache that was
    *  already built (`setMaxSize`). */
   #maxSize: number;
-  #history: CacheHistory | null;
+  #scope: BindingScope | null;
+  #prefix: string;
   /** How many texts have ever been added: the number `add` returned for the last one. */
   #total = 0;
-  /** The revision of the counter unit, so a write can name what it replaces. */
-  #totalRevision: number | undefined;
   readonly #log: (line: string) => void;
 
   constructor(
     maxSize: number,
-    history: CacheHistory | null,
+    scope: BindingScope | null = null,
+    prefix = '',
     log: (line: string) => void = (line) => console.error(line),
   ) {
     if (maxSize < 1) throw new Error('cache size must be at least 1');
     this.#maxSize = maxSize;
-    this.#history = history;
+    this.#scope = scope;
+    this.#prefix = prefix;
     this.#log = log;
   }
 
@@ -234,18 +184,19 @@ export class Cache {
     for (const id of held.slice(0, Math.max(0, drop))) await this.delete(id);
   }
 
-  /** Forget the history node (or attach one) without losing the counter. */
-  useHistory(history: CacheHistory | null): void {
-    this.#history = history;
+  /** Attach the bus this cache stores on, or detach it, without losing the counter. */
+  useScope(scope: BindingScope | null, prefix = ''): void {
+    this.#scope = scope;
+    this.#prefix = prefix;
   }
 
   get enabled(): boolean {
-    return this.#history !== null;
+    return this.#scope !== null;
   }
 
   /** The ids history holds now, oldest first (the newest is last). */
   async ids(): Promise<number[]> {
-    if (this.#history === null) return [];
+    if (this.#scope === null) return [];
     const numbers: number[] = [];
     for (let id = 1; id <= this.#total; id += 1) {
       if ((await this.#loadEntry(id)) !== null) numbers.push(id);
@@ -256,14 +207,13 @@ export class Cache {
   /** Read the counter back from history, so a restart does not reuse an id. A missing counter falls
    *  back to the highest `cache.<n>` unit, and an unreadable history is a fresh cache. */
   async restore(): Promise<void> {
-    if (this.#history === null) return;
+    if (this.#scope === null) return;
     try {
-      const unit = await this.#history.load(CACHE_UNIT);
-      const meta = unit?.meta as { total?: unknown } | undefined;
-      if (typeof meta?.total === 'number' && Number.isSafeInteger(meta.total)) {
-        this.#total = Math.max(this.#total, meta.total);
+      const unit = cacheCounter(this.#scope, this.#prefix);
+      await unit.load();
+      if (typeof unit.meta.total === 'number' && Number.isSafeInteger(unit.meta.total)) {
+        this.#total = Math.max(this.#total, unit.meta.total);
       }
-      if (typeof unit?.revision === 'number') this.#totalRevision = unit.revision;
     } catch {
       // No counter is a fresh cache.
     }
@@ -322,18 +272,22 @@ export class Cache {
   }
 
   async delete(id: number): Promise<void> {
-    if (this.#history === null) return;
+    if (this.#scope === null) return;
     try {
-      await this.#history.remove(`${CACHE_UNIT}.${id}`);
+      const unit = cacheEntry(this.#scope, this.#prefix, id);
+      await unit.load();
+      if (unit.revision > 0) await unit.delete();
     } catch (error) {
       this.#log(`cannot delete cache entry ${id}: ${String(error)}`);
     }
   }
 
   async #saveEntry(id: number, text: string): Promise<void> {
-    if (this.#history === null) return;
+    if (this.#scope === null) return;
     try {
-      await this.#history.save(`${CACHE_UNIT}.${id}`, { text, length: text.length });
+      const unit = cacheEntry(this.#scope, this.#prefix, id);
+      unit.meta = { text, length: text.length };
+      await unit.save();
     } catch (error) {
       // A cache write may not fail a turn.
       this.#log(`cannot write cache entry ${id}: ${String(error)}`);
@@ -341,14 +295,19 @@ export class Cache {
   }
 
   async #saveTotal(): Promise<void> {
-    if (this.#history === null) return;
+    if (this.#scope === null) return;
     try {
-      const revision = await this.#history.save(
-        CACHE_UNIT,
-        { total: this.#total },
-        this.#totalRevision,
-      );
-      if (revision !== null) this.#totalRevision = revision;
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        const unit = cacheCounter(this.#scope, this.#prefix);
+        await unit.load();
+        unit.meta = { total: this.#total };
+        try {
+          await unit.save();
+          return;
+        } catch (error) {
+          if (attempt === 2) throw error;
+        }
+      }
     } catch (error) {
       // A lost counter is one line, not a failed turn.
       this.#log(`cannot write the cache counter: ${String(error)}`);
@@ -356,11 +315,11 @@ export class Cache {
   }
 
   async #loadEntry(id: number): Promise<string | null> {
-    if (this.#history === null) return null;
+    if (this.#scope === null) return null;
     try {
-      const unit = await this.#history.load(`${CACHE_UNIT}.${id}`);
-      const meta = unit?.meta as { text?: unknown } | undefined;
-      return typeof meta?.text === 'string' ? meta.text : null;
+      const unit = cacheEntry(this.#scope, this.#prefix, id);
+      await unit.load();
+      return unit.revision > 0 && typeof unit.meta.text === 'string' ? unit.meta.text : null;
     } catch {
       return null;
     }

@@ -2,35 +2,12 @@
 // the two tools the model reads it back with.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Cache, type CacheHistory } from '../src/cache.ts';
+import { memoryScope } from './memory-scope.ts';
+import { Cache } from '../src/cache.ts';
 import { ScriptedProvider } from './scripted_model.ts';
 import { FakeNet, startAgent } from './harness.ts';
 
-function memoryHistory(): CacheHistory & {
-  units: Map<string, { meta: unknown; revision: number }>;
-} {
-  const units = new Map<string, { meta: unknown; revision: number }>();
-  let revision = 0;
-  return {
-    units,
-    async load(unitId) {
-      const unit = units.get(unitId);
-      return unit === undefined ? null : { meta: unit.meta, revision: unit.revision };
-    },
-    async save(unitId, meta, expectedRevision) {
-      const current = units.get(unitId);
-      if (expectedRevision !== undefined && (current?.revision ?? null) !== expectedRevision) {
-        throw new Error('revision conflict');
-      }
-      revision += 1;
-      units.set(unitId, { meta, revision });
-      return revision;
-    },
-    async remove(unitId) {
-      units.delete(unitId);
-    },
-  };
-}
+const memoryHistory = memoryScope;
 
 test('an entry is written, read in slices, searched, and numbered across restarts', async () => {
   const history = memoryHistory();

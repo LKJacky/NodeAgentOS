@@ -50,7 +50,10 @@ export class FakeNet {
         const at = key(call.tenantId, args.unitId);
         const current = this.units.get(at);
         const expected = args.expectedRevision;
-        if (typeof expected === 'number' && (current?.revision ?? null) !== expected) {
+        if (
+          typeof expected === 'number' &&
+          (expected === 0 ? current !== undefined : current?.revision !== expected)
+        ) {
           throw new Error(`revision conflict on ${at}`);
         }
         this.#revision += 1;

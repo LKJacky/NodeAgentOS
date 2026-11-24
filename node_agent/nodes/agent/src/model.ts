@@ -4,7 +4,7 @@
 // active context again from scratch; a turn writes its new lines, then advances the count unit
 // atomically with an expected revision.
 import type { BindingScope } from '@node-agent/sdk';
-import type { CacheHistory } from './cache.js';
+import { conversationMessage, conversationState } from './storage.js';
 import {
   charCount,
   emptyUsage,
@@ -574,13 +574,15 @@ function isCount(value: unknown): value is number {
 }
 
 export class StatedModel extends CachedModel {
-  readonly #history: CacheHistory;
+  readonly #scope: BindingScope;
+  readonly #prefix: string;
   #revision: number | null = null;
   #nextIndex = 0;
 
-  constructor(provider: Provider, history: CacheHistory, options: ModelOptions = {}) {
+  constructor(provider: Provider, scope: BindingScope, prefix = '', options: ModelOptions = {}) {
     super(provider, options);
-    this.#history = history;
+    this.#scope = scope;
+    this.#prefix = prefix;
   }
 
   static messageUnit(index: number): string {
@@ -591,19 +593,18 @@ export class StatedModel extends CachedModel {
     return this.#revision;
   }
 
-  /** Read the transcript back: the count first, then the lines it names. Throws when history is not
-   *  there, which is the caller's signal to carry on without persistence. */
+  /** Read the transcript back: the count first, then the lines it names. */
   async load(): Promise<void> {
-    let unit = await this.#history.load(CONVERSATION_KEY);
-    if (unit === null) {
-      await this.#history.save(CONVERSATION_KEY, { messages: 0, usage: this.usage });
-      unit = await this.#history.load(CONVERSATION_KEY);
+    const stateUnit = conversationState(this.#scope, this.#prefix);
+    await stateUnit.load();
+    if (stateUnit.revision === 0) {
+      stateUnit.meta = {
+        messages: 0,
+        usage: this.usage as unknown as Record<string, unknown>,
+      };
+      await stateUnit.save();
     }
-    const state = (unit?.meta ?? {}) as {
-      messages?: unknown;
-      forgotten?: unknown;
-      usage?: unknown;
-    };
+    const state = stateUnit.meta;
     const total = isCount(state.messages) ? state.messages : 0;
     // A forgotten count past the end of the transcript (a half-written state) must not become the
     // place new lines start: clamp it to what history actually holds.
@@ -611,15 +612,16 @@ export class StatedModel extends CachedModel {
 
     const lines: Message[] = [];
     for (let index = forgotten; index < total; index += 1) {
-      const line = await this.#history.load(StatedModel.messageUnit(index));
-      if (line === null) throw new Error(`history is missing message ${index} of ${total}`);
-      lines.push(line.meta as Message);
+      const unit = conversationMessage(this.#scope, this.#prefix, index);
+      await unit.load();
+      if (unit.revision === 0) throw new Error(`history is missing message ${index} of ${total}`);
+      lines.push(unit.meta);
     }
     this.messages = new WindowMessages(lines, forgotten);
     if (typeof state.usage === 'object' && state.usage !== null) {
       Object.assign(this.usage, state.usage as Partial<UsageSummary>);
     }
-    this.#revision = typeof unit?.revision === 'number' ? unit.revision : null;
+    this.#revision = stateUnit.revision;
     this.#nextIndex = this.messages.total;
     await this.appendUnclosedToolResults('unexpected exit');
   }
@@ -636,14 +638,22 @@ export class StatedModel extends CachedModel {
     for (let index = this.#nextIndex; index < this.messages.total; index += 1) {
       const line = this.messages.absolute(index);
       if (line === undefined) continue;
-      await this.#history.save(StatedModel.messageUnit(index), line);
+      const unit = conversationMessage(this.#scope, this.#prefix, index);
+      unit.meta = line;
+      await unit.save();
     }
-    const revision = await this.#history.save(
-      CONVERSATION_KEY,
-      { messages: this.messages.total, usage: this.usage, forgotten: this.messages.forgotten },
-      this.#revision,
-    );
-    if (revision !== null) this.#revision = revision;
+    const stateUnit = conversationState(this.#scope, this.#prefix);
+    await stateUnit.load();
+    if (stateUnit.revision !== this.#revision) {
+      throw new Error('the conversation changed concurrently');
+    }
+    stateUnit.meta = {
+      messages: this.messages.total,
+      usage: this.usage as unknown as Record<string, unknown>,
+      forgotten: this.messages.forgotten,
+    };
+    await stateUnit.save();
+    this.#revision = stateUnit.revision;
     this.#nextIndex = this.messages.total;
   }
 
@@ -651,15 +661,18 @@ export class StatedModel extends CachedModel {
   async wipeHistory(): Promise<string[]> {
     const left: string[] = [];
     for (let index = 0; index < this.messages.total; index += 1) {
-      const unit = StatedModel.messageUnit(index);
       try {
-        await this.#history.remove(unit);
+        const unit = conversationMessage(this.#scope, this.#prefix, index);
+        await unit.load();
+        if (unit.revision > 0) await unit.delete();
       } catch {
-        left.push(unit);
+        left.push(StatedModel.messageUnit(index));
       }
     }
     try {
-      await this.#history.remove(CONVERSATION_KEY);
+      const unit = conversationState(this.#scope, this.#prefix);
+      await unit.load();
+      if (unit.revision > 0) await unit.delete();
     } catch {
       left.push(CONVERSATION_KEY);
     }

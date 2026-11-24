@@ -2,34 +2,11 @@
 // with the answers the old `RegExp` gave -- positions, windows, the last empty match -- unchanged.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Cache, type CacheHistory, type CacheMatch } from '../src/cache.ts';
+import { memoryScope } from './memory-scope.ts';
+import { Cache, type CacheMatch } from '../src/cache.ts';
 
 /** A history that keeps units in memory: enough for a cache to hold what it is told to hold. */
-function memoryHistory(): CacheHistory {
-  const units = new Map<string, { meta: unknown; revision: number }>();
-  let revision = 0;
-  return {
-    async load(unitId) {
-      const unit = units.get(unitId);
-      return unit === undefined ? null : { meta: unit.meta, revision: unit.revision };
-    },
-    async save(unitId, meta, expectedRevision) {
-      const current = units.get(unitId);
-      if (expectedRevision !== undefined && (current?.revision ?? null) !== expectedRevision) {
-        throw new Error('revision conflict');
-      }
-      revision += 1;
-      units.set(unitId, { meta, revision });
-      return revision;
-    },
-    async remove(unitId) {
-      units.delete(unitId);
-    },
-    async units() {
-      return [...units.entries()].map(([unitId, unit]) => ({ unitId, revision: unit.revision }));
-    },
-  };
-}
+const memoryHistory = memoryScope;
 
 const HIGH = (u: number): boolean => u >= 0xd800 && u <= 0xdbff;
 const LOW = (u: number): boolean => u >= 0xdc00 && u <= 0xdfff;
@@ -145,7 +122,10 @@ test('RE2-only syntax works: inline flags and multiline', async () => {
     (await cache.search(id, 'A.pha', 0)).map((match) => match.position),
     [0],
   );
-  assert.deepEqual((await cache.search(id, 'pha.al', 0)).map((match) => match.position), []);
+  assert.deepEqual(
+    (await cache.search(id, 'pha.al', 0)).map((match) => match.position),
+    [],
+  );
 });
 
 test('a catastrophic pattern is linear in the text, and the worker budget is still there', async () => {
@@ -166,4 +146,3 @@ test('a catastrophic pattern is linear in the text, and the worker budget is sti
     /took longer than 0\.001s on cache entry \d+/,
   );
 });
-
