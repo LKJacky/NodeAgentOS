@@ -32,6 +32,9 @@ export interface NodeManifest {
   readonly labels?: NodeLabels;
 }
 
+/** How the bus files a node: shared across the service, or one tenant's private node. */
+export type NodeScope = 'shared' | 'private';
+
 /** One registered node, as the bus knows it. */
 export interface NodeEntry {
   readonly name: string;
@@ -44,7 +47,7 @@ export interface NodeEntry {
   /** The manifest icon: inline SVG source or a data URL. */
   readonly icon: string;
   /** Whether this node is shared across the service tenant or owned by this user space. */
-  readonly scope: 'shared' | 'private';
+  readonly scope: NodeScope;
   /** The manifest's labels, carried through so a directory can show them. */
   readonly labels?: NodeLabels;
 }

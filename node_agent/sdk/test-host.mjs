@@ -47,7 +47,10 @@ const bus = {
     assert.equal(token, 'token');
   },
   async close() {},
-  async register(manifest) { calls.push(['register', manifest.name]); },
+  async register(manifest) {
+    calls.push(['register', manifest.name]);
+    return 'shared';
+  },
   async unregister(name) { calls.push(['unregister', name]); },
   onCall(handler) { inbound = handler; },
   onEvent(handler) { eventHandler = handler; },
@@ -102,6 +105,7 @@ const host = new NodeHost({
 });
 await host.start('ws://bus', 'token');
 assert.deepEqual(calls, [['register', 'echo']]);
+assert.equal(host.scope, 'shared');
 
 process.env.NODE_AGENT_HOME = '/tmp/node-agent-sdk-home-test';
 

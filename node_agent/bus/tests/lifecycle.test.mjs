@@ -92,6 +92,7 @@ async function joinShared(t, bus, name, caps, token = TOKEN) {
   );
   const answer = await next(ws);
   assert.equal(answer.payload.ok, true, `register ${name}: ${answer.payload.error}`);
+  assert.equal(answer.payload.value.scope, 'shared');
   return ws;
 }
 
@@ -113,6 +114,7 @@ async function joinPrivate(t, bus, owner, name, caps) {
   const answer = await next(ws);
   assert.equal(answer.payload.ok, true, `register ${name}: ${answer.payload.error}`);
   assert.equal(answer.tenantId, owner);
+  assert.equal(answer.payload.value.scope, 'private');
   return ws;
 }
 

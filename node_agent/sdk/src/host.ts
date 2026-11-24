@@ -5,6 +5,7 @@ import {
   type EventEnvelope,
   type NodeEntry,
   type NodeManifest,
+  type NodeScope,
   type Outcome,
   type OutboundCallEnvelope,
   type OutboundEventEnvelope,
@@ -68,7 +69,7 @@ export interface BusSession {
   connect(url: string, token: string): Promise<void>;
   close(): Promise<void>;
 
-  register(manifest: NodeManifest): Promise<void>;
+  register(manifest: NodeManifest): Promise<NodeScope | null | void>;
   unregister(name: string): Promise<void>;
 
   /** Put a freshly registered node into one user's directory (used by createSubNode). */
@@ -135,6 +136,7 @@ export class NodeHost {
   readonly #scopes = new Map<string, BindingScope>();
   readonly #inflight = new Set<AbortController>();
   #started = false;
+  #nodeScope: NodeScope | null = null;
   #stopped = false;
   #url = '';
   #token = '';
@@ -162,8 +164,14 @@ export class NodeHost {
     this.#bus.onEvent?.((event) => {
       this.#events = this.#events.then(() => this.#handleEvent(event));
     });
-    await this.#bus.register(this.manifest);
+    const scope = await this.#bus.register(this.manifest);
+    this.#nodeScope = scope === 'shared' || scope === 'private' ? scope : null;
     this.#started = true;
+  }
+
+  /** How the bus filed this node: `shared` (cloud) or `private` (local). */
+  get scope(): NodeScope | null {
+    return this.#nodeScope;
   }
 
   async stop(): Promise<void> {
@@ -184,6 +192,7 @@ export class NodeHost {
       await this.#bus.unregister(this.manifest.name);
     }
     await this.#bus.close();
+    this.#nodeScope = null;
     this.#started = false;
   }
 

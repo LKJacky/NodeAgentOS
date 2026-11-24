@@ -34,7 +34,12 @@ class FakeSocket extends EventTarget {
     this.sent.push({ text: String(text), frame });
     if (frame.op === 'part') return;
     if (['register', 'subscribe', 'unsubscribe', 'call'].includes(frame.type)) {
-      const value = frame.type === 'call' ? { reconnected: true } : undefined;
+      const value =
+        frame.type === 'call'
+          ? { reconnected: true }
+          : frame.type === 'register'
+            ? { scope: 'shared' }
+            : undefined;
       this.answer(frame.id, { ok: true, value });
     }
   }
@@ -85,6 +90,7 @@ const session = new WebSocketBusSession({
 });
 await session.connect('ws://fake/bus', 'secret');
 await session.register(manifest);
+assert.equal(session.scope, 'shared');
 await session.subscribe('news', 't1', 'sdk-websocket-test');
 const first = FakeSocket.instances[0];
 const registration = first.sent.find(({ frame }) => frame.type === 'register').frame;

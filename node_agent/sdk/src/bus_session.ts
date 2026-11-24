@@ -5,6 +5,7 @@ import type {
   EventEnvelope,
   NodeEntry,
   NodeManifest,
+  NodeScope,
   Outcome,
   OutboundCallEnvelope,
   OutboundConnectEnvelope,
@@ -36,6 +37,12 @@ interface Pending {
   readonly timer: ReturnType<typeof setTimeout>;
 }
 
+function scopeOf(value: unknown): NodeScope | null {
+  if (typeof value !== 'object' || value === null) return null;
+  const scope = (value as { scope?: unknown }).scope;
+  return scope === 'shared' || scope === 'private' ? scope : null;
+}
+
 export class WebSocketBusSession implements BusSession {
   readonly #Socket: typeof WebSocket;
   readonly #timeout: number;
@@ -49,6 +56,7 @@ export class WebSocketBusSession implements BusSession {
   #token: string | null = null;
   #url = '';
   #manifest: NodeManifest | null = null;
+  #scope: NodeScope | null = null;
   #wasConnected = false;
   #closing = false;
   #reconnectTimer: ReturnType<typeof setTimeout> | null = null;
@@ -63,10 +71,16 @@ export class WebSocketBusSession implements BusSession {
     this.#Socket = options.WebSocket ?? WebSocket;
     const configured = Number(process.env.NODE_AGENT_BUS_TIMEOUT ?? 60_000);
     this.#timeout =
-      options.registerTimeoutMs ?? (Number.isFinite(configured) && configured > 0 ? configured : 60_000);
+      options.registerTimeoutMs ??
+      (Number.isFinite(configured) && configured > 0 ? configured : 60_000);
     this.#autoReconnect = options.autoReconnect ?? true;
     this.#reconnectDelay = Math.max(1, options.reconnectDelayMs ?? 1_000);
     this.#reconnectMaxDelay = Math.max(this.#reconnectDelay, options.reconnectMaxDelayMs ?? 30_000);
+  }
+
+  /** How the bus filed this node on the last successful registration. */
+  get scope(): NodeScope | null {
+    return this.#scope;
   }
 
   async connect(url: string, token: string): Promise<void> {
@@ -137,6 +151,7 @@ export class WebSocketBusSession implements BusSession {
     this.#ws = null;
     ws?.close();
     this.#token = null;
+    this.#scope = null;
     this.#subscriptions.clear();
   }
 
@@ -180,12 +195,12 @@ export class WebSocketBusSession implements BusSession {
     }
   }
 
-  async register(manifest: NodeManifest): Promise<void> {
+  async register(manifest: NodeManifest): Promise<NodeScope | null> {
     this.#manifest = manifest;
-    await this.#registerNow(manifest);
+    return await this.#registerNow(manifest);
   }
 
-  async #registerNow(manifest: NodeManifest): Promise<void> {
+  async #registerNow(manifest: NodeManifest): Promise<NodeScope | null> {
     const result = await this.#request({
       id: randomUUID(),
       type: 'register',
@@ -195,6 +210,9 @@ export class WebSocketBusSession implements BusSession {
       payload: { manifest, chunks: true },
     });
     if (!result.payload.ok) throw new Error(result.payload.error);
+    const scope = scopeOf(result.payload.value);
+    this.#scope = scope;
+    return scope;
   }
 
   /** Mint a private registration credential for one tenant, or reuse this private one. */

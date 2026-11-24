@@ -84,6 +84,7 @@ export async function joinShared(t, bus, name, caps, token = TOKEN) {
   );
   const answer = await next(ws);
   assert.equal(answer.payload.ok, true, `register ${name}: ${answer.payload.error}`);
+  assert.equal(answer.payload.value.scope, 'shared');
   return ws;
 }
 

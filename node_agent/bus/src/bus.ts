@@ -1003,13 +1003,14 @@ class Connection {
     if (policyError !== null) return this.refuse(frame, policyError);
 
     const name = manifest.name;
+    const scope: NodeEntry['scope'] = tenantId === undefined ? 'shared' : 'private';
     this.link.chunks = frame.payload.chunks === true;
     const registry =
       tenantId === undefined ? this.bus.envelopeNodes : this.bus.privateMap(tenantId, true)!;
     const previous = this.node;
     if (previous !== null && previous.manifest.name === name) {
       previous.manifest = manifest;
-      this.result(frame, { ok: true });
+      this.result(frame, { ok: true, value: { scope } });
       return;
     }
     // A name is either shared or private, never both: the two tables have different visibility
@@ -1033,7 +1034,7 @@ class Connection {
       connection: this.id,
       node: name,
       tenant: tenantId,
-      scope: tenantId === undefined ? 'shared' : 'private',
+      scope,
     });
 
     if (tenantId !== undefined) {
@@ -1046,7 +1047,7 @@ class Connection {
         console.error(`[bus] a private node joined without a user space: ${said(error)}`);
       }
     }
-    this.result(frame, { ok: true });
+    this.result(frame, { ok: true, value: { scope } });
   }
 
   private onUnregister(frame: UnregisterEnvelope): void {

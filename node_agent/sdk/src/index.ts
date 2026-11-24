@@ -21,6 +21,7 @@ export type {
   ListNodesPayload,
   NodeEntry,
   NodeManifest,
+  NodeScope,
   OutboundCallEnvelope,
   OutboundConnectEnvelope,
   OutboundCreateUserEnvelope,
