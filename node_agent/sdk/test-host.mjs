@@ -1,5 +1,9 @@
 import assert from 'node:assert/strict';
-import { Node, NodeHost } from './dist/index.js';
+import { Node, NodeHost, Unit } from './dist/index.js';
+
+class Settings extends Unit {
+  meta = { theme: 'light' };
+}
 
 let nextNode = 0;
 const disposed = [];
@@ -24,6 +28,7 @@ class EchoNode extends Node {
     },
     slow: () => new Promise(() => {}),
     dotted: () => this.ctx.call('shell', 'files.read', {}),
+    unit: async () => this.ctx.unit(Settings, 'settings') instanceof Settings,
     home: async () => ({ root: this.ctx.nodeAgentHome, home: this.ctx.home }),
     caps: async () => ({
       exposed: typeof this.ctx.listCapabilities,
@@ -51,11 +56,21 @@ const bus = {
     calls.push(['register', manifest.name]);
     return 'shared';
   },
-  async unregister(name) { calls.push(['unregister', name]); },
-  onCall(handler) { inbound = handler; },
-  onEvent(handler) { eventHandler = handler; },
-  async subscribe(topic) { calls.push(['subscribe', topic]); },
-  async listNodes() { return []; },
+  async unregister(name) {
+    calls.push(['unregister', name]);
+  },
+  onCall(handler) {
+    inbound = handler;
+  },
+  onEvent(handler) {
+    eventHandler = handler;
+  },
+  async subscribe(topic) {
+    calls.push(['subscribe', topic]);
+  },
+  async listNodes() {
+    return [];
+  },
   async listCapabilities(node) {
     calls.push(['listCapabilities', node]);
     return [{ cap: 'status', parameters: { type: 'object' } }];
@@ -90,6 +105,7 @@ const manifest = {
     fail: { type: 'object' },
     slow: { type: 'object' },
     dotted: { type: 'object' },
+    unit: { type: 'object' },
     caps: { type: 'object' },
     home: { type: 'object' },
   },
@@ -130,11 +146,10 @@ assert.equal(result.ok, true);
 assert.equal(result.value.saved.saved, 1);
 assert.equal(result.value.tenant, 'tenant-a');
 assert.deepEqual(disposed, [1]);
-assert.deepEqual(calls.find((c) => c[0] === 'call'), [
-  'call',
-  'history',
-  { cap: 'save', args: { text: 'hi' } },
-]);
+assert.deepEqual(
+  calls.find((c) => c[0] === 'call'),
+  ['call', 'history', { cap: 'save', args: { text: 'hi' } }],
+);
 assert.equal(published.length, 1);
 
 const failed = await host.invoke({ ...call, payload: { cap: 'fail', args: {} } });
@@ -149,6 +164,10 @@ assert.match(unknown.error, /unknown capability/);
 const dotted = await host.invoke({ ...call, payload: { cap: 'dotted', args: {} } });
 assert.equal(dotted.ok, true);
 assert.deepEqual(calls.at(-1), ['call', 'shell', { cap: 'files.read', args: {} }]);
+
+const made = await host.invoke({ ...call, payload: { cap: 'unit', args: {} } });
+assert.equal(made.ok, true);
+assert.equal(made.value, true);
 
 // NodeContext exposes the bus directory's capability list when the session can answer it.
 const caps = await host.invoke({ ...call, payload: { cap: 'caps', args: {} } });
@@ -170,7 +189,6 @@ await inbound(call);
 assert.equal(sent.length, 1);
 assert.equal(sent[0].payload.ok, true);
 
-
 // An event gets a fresh Node and context, unlike a call that may have outlived its deadline.
 await eventHandler({
   id: 'event-1',
@@ -182,7 +200,13 @@ await eventHandler({
 });
 await new Promise((resolve) => setTimeout(resolve, 0));
 assert.deepEqual(events, [
-  { topic: 'agent', value: { role: 'assistant' }, from: 'agent', tenant: 'tenant-a', caller: 'agent' },
+  {
+    topic: 'agent',
+    value: { role: 'assistant' },
+    from: 'agent',
+    tenant: 'tenant-a',
+    caller: 'agent',
+  },
 ]);
 assert.equal(published.at(-1)?.payload?.topic, 'echo.event');
 

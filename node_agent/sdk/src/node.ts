@@ -1,5 +1,6 @@
 import type { CapabilityEntry, NodeEntry, ToolArgs } from './envelope.js';
 import type { NodeDefinition } from './host.js';
+import type { UnitClass } from './storage.js';
 
 /** What `createSubNode` takes: a bus name, and either a package to load it from or an explicit
  *  definition. The tenant defaults to the creating scope's. */
@@ -44,6 +45,8 @@ export interface BindingScope {
   readonly nodeAgentHome: string;
   /** This node's private directory: `<nodeAgentHome>/<nodeId>`. */
   readonly home: string;
+  /** Make a unit bound to this scope. */
+  unit<T>(Ctor: UnitClass<T>, unitId: string): T;
   /** Call a capability with no invocation deadline: the object's work has a lifetime of its own. */
   call<T = unknown>(node: string, cap: string, args: ToolArgs): Promise<T>;
   publish(topic: string, value: unknown): void;
@@ -80,6 +83,9 @@ export interface NodeContext extends Partial<NodeBindings> {
   /** This node's private directory: `<nodeAgentHome>/<nodeId>`. Every durable file this node owns
    *  belongs under here. */
   readonly home: string;
+
+  /** Make a unit bound to this context. */
+  unit<T>(Ctor: UnitClass<T>, unitId: string): T;
 
   /** Epoch milliseconds. Handlers should stop once this has passed. */
   readonly deadline: number;

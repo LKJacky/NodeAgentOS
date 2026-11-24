@@ -94,6 +94,14 @@ export {
 
 export { nodeAgentDir, nodeAgentHome } from './home.js';
 
+export {
+  Unit,
+  UnitConflictError,
+  type HistoryUnit,
+  type UnitClass,
+  type UnitContext,
+} from './storage.js';
+
 // One sentence, written by whoever uses it: the SDK owns the language, never the words. The browser
 // side of the same class is `src/i18n-client.js`, which the webui serves as /sdk/i18n-client.js.
 export {

@@ -4,9 +4,13 @@
 // case here proves the same four things from the outside: which object came back, how many times the
 // factory ran, what was called on it (nothing), and what survived a host stop.
 import assert from 'node:assert/strict';
-import { Node, NodeHost, requireBindings } from './dist/index.js';
+import { Node, NodeHost, Unit, requireBindings } from './dist/index.js';
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+class Settings extends Unit {
+  meta = { theme: 'light' };
+}
 
 /** One Node class for every case; what it counts lives in the test, not in the node. */
 let serial = 0;
@@ -56,6 +60,8 @@ class KeepNode extends Node {
       return 'unreachable';
     },
     drop: async (args) => this.ctx.unbind(args.key),
+    unit: async () =>
+      this.ctx.bind('unit', (scope) => scope.unit(Settings, 'bound')) instanceof Settings,
     // What a node that keeps something actually writes: one helper call, then the surface.
     surface: async () => {
       const { bind, unbind } = requireBindings(this.ctx);
@@ -97,7 +103,10 @@ const manifest = (bindings) => ({
   packageId: 'pkg_keep',
   name: 'keep',
   caps: Object.fromEntries(
-    ['touch', 'race', 'boom', 'drop', 'noop', 'reenter', 'surface'].map((cap) => [cap, { type: 'object' }]),
+    ['touch', 'race', 'boom', 'drop', 'noop', 'reenter', 'surface', 'unit'].map((cap) => [
+      cap,
+      { type: 'object' },
+    ]),
   ),
   desc: 'bind test node',
   version: '1.0.0',
@@ -106,7 +115,7 @@ const manifest = (bindings) => ({
   ...(bindings === undefined ? {} : { bindings }),
 });
 
-const DECLARED = ['counter', 'other', 'race', 'boom', 'noop', 'reenter'];
+const DECLARED = ['counter', 'other', 'race', 'boom', 'noop', 'reenter', 'unit'];
 
 function bus() {
   return {
@@ -189,7 +198,11 @@ async function call(host, cap, args = {}, tenantId = 'tenant-a') {
 
   // unbind: the object is gone, and the next bind makes a new one.
   assert.equal(await call(host, 'drop', { key: 'counter' }), true);
-  assert.equal(await call(host, 'drop', { key: 'counter' }), false, 'there was nothing left to drop');
+  assert.equal(
+    await call(host, 'drop', { key: 'counter' }),
+    false,
+    'there was nothing left to drop',
+  );
   const remade = await call(host, 'touch', { key: 'counter' });
   assert.equal(remade.hits, 1);
   assert.notEqual(remade.ref, first.ref);
@@ -223,6 +236,8 @@ async function call(host, cap, args = {}, tenantId = 'tenant-a') {
   // requireBindings hands a host context its surface, without the handler testing the members.
   const surface = await call(host, 'surface');
   assert.deepEqual(surface, { bound: true, dropped: true, again: false });
+
+  assert.equal(await call(host, 'unit'), true);
 
   await host.stop();
 }
@@ -303,7 +318,6 @@ async function call(host, cap, args = {}, tenantId = 'tenant-a') {
   assert.equal(factories, 2);
   await next.stop();
 }
-
 
 {
   // The factory gets a scope, not the invocation's context: identity plus the host's bus, still

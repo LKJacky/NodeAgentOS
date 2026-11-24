@@ -339,6 +339,7 @@ export class NodeHost {
       nodeId: this.manifest.name,
       nodeAgentHome: nodeAgentHome(),
       home: nodeAgentDir(this.manifest.name),
+      unit: (Ctor, unitId) => new Ctor(scope, unitId),
       call: async <T>(node: string, cap: string, args: ToolArgs): Promise<T> => {
         if (this.#stopped) throw new Error('host is stopped');
         // A bound object has no invocation to borrow a deadline from: its work may outlive the
@@ -486,6 +487,7 @@ export class NodeHost {
       home: nodeAgentDir(this.manifest.name),
       tenantId,
       from,
+      unit: (Ctor, unitId) => new Ctor(scope, unitId),
       deadline,
       signal,
       bind: <T extends object>(key: string, create: (scope: BindingScope) => T): T =>
