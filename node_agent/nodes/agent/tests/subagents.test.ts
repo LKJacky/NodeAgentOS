@@ -798,9 +798,18 @@ test('a sub-agent is handed the provider its parent is on, and keeps it when the
       'alice',
     )) as ProviderListing;
     assert.equal(chosen.active, 'provider.mini');
-    assert.equal(helper.providerName, 'provider.mini', 'the sub-agent holds its own row');
-    assert.equal(agent.runtime.providerName, 'provider.deep', 'the main agent keeps its own');
-    assert.equal(sibling.providerName, null, 'and a sibling is not affected');
+    const helperRow = (await agent.call('provider', {
+      action: 'list',
+      agent: 'helper',
+    })) as ProviderListing;
+    const mainRow = (await agent.call('provider', { action: 'list' })) as ProviderListing;
+    const siblingRow = (await agent.call('provider', {
+      action: 'list',
+      agent: 'sibling',
+    })) as ProviderListing;
+    assert.equal(helperRow.active, 'provider.mini', 'the sub-agent holds its own row');
+    assert.equal(mainRow.active, 'provider.deep', 'the main agent keeps its own');
+    assert.equal(siblingRow.active, 'provider.fast', 'and a sibling is not affected');
 
     // Stored where a restart looks for it: the sub-agent own unit, and the parent note on children.
     assert.deepEqual(

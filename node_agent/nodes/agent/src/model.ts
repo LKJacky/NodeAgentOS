@@ -3,7 +3,7 @@
 // per named model). A compression or a provider switch drops the stateful handle and sends the
 // active context again from scratch; a turn writes its new lines, then advances the count unit
 // atomically with an expected revision.
-import type { BindingScope } from '@node-agent/sdk';
+import type { BindingScope, UnitContext } from '@node-agent/sdk';
 import { conversationMessage, conversationState } from './storage.js';
 import {
   charCount,
@@ -790,9 +790,9 @@ export class StreamHub {
 
 /** The provider nodes this agent may dial, and the rows each one carries. */
 export class ProviderNodes {
-  readonly #bus: () => BindingScope;
+  readonly #bus: () => UnitContext;
 
-  constructor(bus: () => BindingScope) {
+  constructor(bus: () => UnitContext) {
     this.#bus = bus;
   }
 
@@ -801,8 +801,10 @@ export class ProviderNodes {
   async onBindingScope(): Promise<string[]> {
     let names: Set<string>;
     try {
+      const listNodes = this.#bus().listNodes;
+      if (listNodes === undefined) return [SHARED_PROVIDER_NODE];
       const nodes = await Promise.race([
-        this.#bus().listNodes(),
+        listNodes.call(this.#bus()),
         new Promise<never>((_resolve, reject) => {
           const timer = setTimeout(
             () => reject(new Error('no directory in time')),

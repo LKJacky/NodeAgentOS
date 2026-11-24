@@ -16,6 +16,7 @@ import {
 import { CAPABILITY_NAMES, PACKAGE_ICON } from './manifest.js';
 import { AgentFamily } from './family.js';
 import { readHistory, readSubagentNames } from './history.js';
+import { providerState } from './provider.js';
 import type { AgentRuntime, RuntimeOptions } from './runtime.js';
 import type { Message } from './types.js';
 
@@ -130,17 +131,7 @@ export class AgentNode extends Node {
       chat_no_wait: (args: ToolArgs) => this.#chatNoWait(args),
       history: async (args: ToolArgs) => {
         const target = targetOf(args);
-        if (target === '' || target === this.ctx.nodeId) {
-          return await readHistory(this.ctx, '', args.from, args.count);
-        }
-        const names = await readSubagentNames(this.ctx);
-        if (!names.includes(target)) {
-          throw new Error(
-            `no agent named "${target}" here (agents: ${[this.ctx.nodeId, ...names].join(', ')})`,
-          );
-        }
-        // The units are the transcript: no runtime, no family, just history.
-        return await readHistory(this.ctx, `sub.${target}.`, args.from, args.count);
+        return await readHistory(this.ctx, await this.#prefixOf(target), args.from, args.count);
       },
       status: async (args: ToolArgs) => (await this.#target(args)).status(),
       // The answer being written right now, as it stands, or `{stream: null}` between rounds. This is
@@ -150,7 +141,8 @@ export class AgentNode extends Node {
       // far, and no token ever goes through it.
       stream: async (args: ToolArgs) => ({ stream: (await this.#target(args)).streamState() }),
       stop: async (args: ToolArgs) => this.#stop(args),
-      provider: async (args: ToolArgs) => (await this.#target(args)).handleProvider(args),
+      provider: async (args: ToolArgs) =>
+        await providerState(this.ctx, await this.#prefixOf(targetOf(args)), args.action, args.name),
       // What this agent runs on: the five numbers and the two switches its page may change. The settings of one agent
       // are its own - a sub-agent starts on its parent's and then keeps its own copy - so this is
       // answered by the agent the call names, like every other per-agent read.
@@ -184,6 +176,18 @@ export class AgentNode extends Node {
   /** The main agent's runtime for this invocation. */
   get runtime(): AgentRuntime {
     return this.family.main;
+  }
+
+  /** The unit prefix one named agent reads and writes, without starting it. */
+  async #prefixOf(target: string): Promise<string> {
+    if (target === '' || target === this.ctx.nodeId) return '';
+    const names = await readSubagentNames(this.ctx);
+    if (!names.includes(target)) {
+      throw new Error(
+        `no agent named "${target}" here (agents: ${[this.ctx.nodeId, ...names].join(', ')})`,
+      );
+    }
+    return `sub.${target}.`;
   }
 
   /** The family for this invocation, ready. */

@@ -17,7 +17,7 @@ const providerOf = (agent: TestAgent) =>
   );
 
 const providerNode = () =>
-  new FakeNet().node('provider', 'the shared providers', {
+  new FakeNet().withHistory().node('provider', 'the shared providers', {
     providers: () => ({ providers: [{ name: 'fast' }, { name: 'deep' }], persistent: true }),
     chat: (args) => ({
       message: { content: `answer from ${String(args.name)}` },
@@ -45,7 +45,8 @@ test('the provider rows are named after the node that holds them', async () => {
       active: string;
     };
     assert.equal(selected.active, 'provider.deep');
-    assert.equal(agent.runtime.providerName, 'provider.deep');
+    const again = (await agent.call('provider', { action: 'list' })) as { active: string };
+    assert.equal(again.active, 'provider.deep');
     await assert.rejects(
       () => agent.call('provider', { action: 'select', name: 'provider.nope' }),
       /no provider "provider.nope"/,
