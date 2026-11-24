@@ -74,9 +74,6 @@ import {
 } from './settings.js';
 import type { Message, Provider, ToolCall, ToolSpec, UsageSummary } from './types.js';
 
-/** How many messages one `history` answer may carry. */
-export const HISTORY_MAX = 200;
-
 /** The default question timeout, in seconds: what `ask_user` waits when the asker names no deadline.
  *  The deployment's number, not a setting: an agent that needs another one passes `timeout_seconds`
  *  on the call itself. */
@@ -176,9 +173,6 @@ function storedAgentOf(value: unknown): StoredAgent | null {
     ...(typeof saved.provider === 'string' ? { provider: saved.provider } : {}),
   };
 }
-
-/** What `agent.history` answers: a window of the transcript and where it sits in it. */
-export type HistoryWindow = { from: number; total: number; messages: Message[] };
 
 function messageOf(value: unknown): Message {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -1321,20 +1315,6 @@ export class AgentRuntime {
     return this.#step.tool !== null ? 'tool' : 'generating';
   }
 
-  /** A window of the transcript: `{from, count}` reads `count` messages starting at `from`, and
-   *  without `from` the newest `count`. */
-  async history(args: Record<string, unknown>): Promise<HistoryWindow> {
-    const messages = (await this.#ensureModel()).messages;
-    const total = messages.total;
-    const oldest = messages.forgotten;
-    const count = historyCount(args.count);
-    const from =
-      args.from === undefined
-        ? Math.max(oldest, total - count)
-        : Math.max(oldest, historyFrom(args.from, total));
-    return { from, total, messages: messages.absoluteSlice(from, Math.min(from + count, total)) };
-  }
-
   /** Cut the turn that is running short, and answer its callers before returning. */
   async stop(): Promise<string> {
     agentLog('info', 'agent.stop', { agent: this.name });
@@ -1547,20 +1527,4 @@ export class AgentRuntime {
   static now(): string {
     return utcNow();
   }
-}
-
-/** `count`, defaulted and bounded: one answer never carries more than HISTORY_MAX messages. */
-export function historyCount(value: unknown): number {
-  if (value === undefined || value === null) return HISTORY_MAX;
-  const count = Number(value);
-  if (!Number.isFinite(count)) return HISTORY_MAX;
-  return Math.max(0, Math.min(Math.trunc(count), HISTORY_MAX));
-}
-
-/** A message index inside a transcript of `total` messages, clamped to it: an index past the end
- *  reads as the end, which is how a caller learns the transcript is shorter than it thought. */
-export function historyFrom(value: unknown, total: number): number {
-  const index = Number(value);
-  if (!Number.isFinite(index)) return 0;
-  return Math.max(0, Math.min(Math.trunc(index), total));
 }

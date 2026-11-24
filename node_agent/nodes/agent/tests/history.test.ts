@@ -2,7 +2,7 @@
 // line, one count that moves atomically).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { HISTORY_MAX, historyCount, historyFrom, type HistoryWindow } from '../src/runtime.ts';
+import { HISTORY_MAX, historyCount, historyFrom, type HistoryWindow } from '../src/history.ts';
 import { ScriptedProvider } from './scripted_model.ts';
 import type { Message } from '../src/types.ts';
 import { FakeNet, startAgent } from './harness.ts';

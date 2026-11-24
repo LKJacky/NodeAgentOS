@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
-import type { HistoryWindow } from '../src/runtime.ts';
+import type { HistoryWindow } from '../src/history.ts';
 import type { ChatReply, ChatRequest, Provider, StreamEvent, ToolCall } from '../src/types.ts';
 import { FakeNet, startAgent, type TestAgent } from './harness.ts';
 
@@ -243,6 +243,13 @@ test('a restarted parent restores each sub-agent icon and provider', async () =>
       () => second.family.agent('helper'),
       /not running yet/,
       'a stored child is not started with the parent',
+    );
+    const past = (await second.call('history', { agent: 'helper' })) as { total: number };
+    assert.equal(past.total, 0, 'its transcript is read straight from history');
+    assert.throws(
+      () => second.family.agent('helper'),
+      /not running yet/,
+      'reading history did not start the child',
     );
     const rows = ((await second.call('agents', {})) as { agents: { name: string }[] }).agents;
     assert.ok(

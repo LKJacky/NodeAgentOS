@@ -301,7 +301,7 @@ export async function startAgent(
   } = {},
 ): Promise<TestAgent> {
   const name = options.name ?? 'agent';
-  const net = options.net ?? new FakeNet();
+  const net = options.net ?? new FakeNet().withHistory();
   const session = new FakeSession(net);
   tenant += 1;
   const tenantId = options.tenantId ?? `t${tenant}`;

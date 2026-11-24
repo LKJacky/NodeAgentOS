@@ -11,18 +11,15 @@ export {
   runtimeFor,
 } from './agent.js';
 export { AgentFamily } from './family.js';
+export { HISTORY_MAX, historyCount, historyFrom, type HistoryWindow } from './history.js';
 export { default } from './agent.js';
 export type { AgentOptions } from './agent.js';
 export {
   AgentRuntime,
-  HISTORY_MAX,
   ASK_TIMEOUT_SECONDS,
   addMetaInfo,
-  historyCount,
-  historyFrom,
   type AgentStatus,
   type ChatMeta,
-  type HistoryWindow,
   type RuntimeOptions,
 } from './runtime.js';
 export { Cache, CACHE_UNIT, DEFAULT_CACHE_SIZE, type CacheMatch } from './cache.js';

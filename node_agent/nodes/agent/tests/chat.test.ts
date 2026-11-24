@@ -1,7 +1,8 @@
 // chat, the tool loop, the queue, the stop button and what `status` says while all of that runs.
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import type { AgentStatus, HistoryWindow } from '../src/runtime.ts';
+import type { AgentStatus } from '../src/runtime.ts';
+import type { HistoryWindow } from '../src/history.ts';
 import { ScriptedProvider } from './scripted_model.ts';
 import type {
   ChatReply,
@@ -219,7 +220,11 @@ test('chat_no_wait answers at once and the turn runs behind it', async () => {
   const agent = await startAgent({ provider });
   try {
     assert.equal(await agent.call('chat_no_wait', { msg: { content: 'go' } }), 'queued');
-    const status = (await agent.call('status', {})) as AgentStatus;
+    let status = (await agent.call('status', {})) as AgentStatus;
+    for (let wait = 0; wait < 20 && !['generating', 'tool'].includes(status.state); wait += 1) {
+      await sleep(5);
+      status = (await agent.call('status', {})) as AgentStatus;
+    }
     assert.ok(['generating', 'tool'].includes(status.state), `state was ${status.state}`);
     provider.release();
     await sleep(50);

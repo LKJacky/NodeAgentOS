@@ -15,6 +15,7 @@ import {
 } from '@node-agent/sdk';
 import { CAPABILITY_NAMES, PACKAGE_ICON } from './manifest.js';
 import { AgentFamily } from './family.js';
+import { readHistory, readSubagentNames } from './history.js';
 import type { AgentRuntime, RuntimeOptions } from './runtime.js';
 import type { Message } from './types.js';
 
@@ -127,7 +128,20 @@ export class AgentNode extends Node {
     this.handlers = {
       chat: (args: ToolArgs) => this.#chat(args),
       chat_no_wait: (args: ToolArgs) => this.#chatNoWait(args),
-      history: async (args: ToolArgs) => (await this.#target(args)).history(args),
+      history: async (args: ToolArgs) => {
+        const target = targetOf(args);
+        if (target === '' || target === this.ctx.nodeId) {
+          return await readHistory(this.ctx, '', args.from, args.count);
+        }
+        const names = await readSubagentNames(this.ctx);
+        if (!names.includes(target)) {
+          throw new Error(
+            `no agent named "${target}" here (agents: ${[this.ctx.nodeId, ...names].join(', ')})`,
+          );
+        }
+        // The units are the transcript: no runtime, no family, just history.
+        return await readHistory(this.ctx, `sub.${target}.`, args.from, args.count);
+      },
       status: async (args: ToolArgs) => (await this.#target(args)).status(),
       // The answer being written right now, as it stands, or `{stream: null}` between rounds. This is
       // the node's own read for its page - `expose: false`, like `ui` - so it is not offered to
