@@ -18,8 +18,22 @@ import { AgentFamily } from './family.js';
 import { readHistory, readSubagentNames } from './history.js';
 import { providerState } from './provider.js';
 import { emptyUsage } from './helpers.js';
-import type { AgentRuntime, AgentStatus, RuntimeOptions } from './runtime.js';
-import { ConversationStateUnit } from './storage.js';
+import type { AgentRow, AgentRuntime, AgentStatus, RuntimeOptions } from './runtime.js';
+import {
+  DEFAULT_SETTINGS,
+  LIVE_SETTINGS,
+  RESTART_REQUIRED_SETTINGS,
+  SETTINGS_NAMES,
+  SETTINGS_UNIT,
+  effectiveSettings,
+  mergePatches,
+  parseSettingsPatch,
+  readStoredSettings,
+  settingsUnit,
+  type AgentSettings,
+  type SettingsPatch,
+} from './settings.js';
+import { ConversationStateUnit, SettingsUnit, SubagentsUnit, type StoredAgent } from './storage.js';
 import type { Message } from './types.js';
 
 /** The one capability name the browser front end agrees on: the page. (Which column that page lands in
@@ -139,6 +153,147 @@ async function readStatus(ctx: NodeContext, prefix: string): Promise<AgentStatus
   };
 }
 
+async function storedAgents(ctx: NodeContext): Promise<StoredAgent[]> {
+  const unit = new SubagentsUnit(ctx, 'subagents');
+  await unit.load();
+  const meta = unit.meta;
+  const listed = Array.isArray(meta.agents) ? meta.agents : [];
+  const names = Array.isArray(meta.names) ? meta.names : [];
+  const out: StoredAgent[] = [];
+  const seen = new Set<string>();
+  for (const row of listed) {
+    if (typeof row !== 'object' || row === null) continue;
+    const saved = row as StoredAgent;
+    if (typeof saved.name !== 'string' || saved.name === '' || seen.has(saved.name)) continue;
+    seen.add(saved.name);
+    out.push(saved);
+  }
+  for (const name of names) {
+    if (typeof name !== 'string' || name === '' || seen.has(name)) continue;
+    seen.add(name);
+    out.push({ name });
+  }
+  return out;
+}
+
+async function readAgents(
+  ctx: NodeContext,
+  running: (name: string) => AgentRuntime | undefined,
+): Promise<AgentRow[]> {
+  const settingsUnit = new SettingsUnit(ctx, SETTINGS_UNIT);
+  await settingsUnit.load();
+  const settings = effectiveSettings(DEFAULT_SETTINGS, readStoredSettings(settingsUnit.meta));
+  const saved = settings.allowSpawn ? await storedAgents(ctx) : [];
+  const mainName = ctx.nodeId;
+  const rows: AgentRow[] = [
+    {
+      name: mainName,
+      topic: mainName,
+      parent: null,
+      state: running('')?.phase() ?? 'idle',
+      children: saved.length,
+    },
+  ];
+  for (const agent of saved) {
+    rows.push({
+      name: agent.name,
+      topic: `${mainName}.${agent.name}`,
+      parent: mainName,
+      state: running(agent.name)?.phase() ?? 'idle',
+      children: 0,
+      ...(agent.icon !== undefined ? { icon: agent.icon } : {}),
+    });
+  }
+  return rows;
+}
+
+async function defaultsFor(ctx: NodeContext, prefix: string): Promise<AgentSettings> {
+  if (prefix === '') return DEFAULT_SETTINGS;
+  const parentUnit = new SettingsUnit(ctx, SETTINGS_UNIT);
+  await parentUnit.load();
+  const inherited = effectiveSettings(DEFAULT_SETTINGS, readStoredSettings(parentUnit.meta));
+  return { ...inherited, allowSpawn: false, allowAskUser: false };
+}
+
+async function settingsAnswer(ctx: NodeContext, prefix: string): Promise<Record<string, unknown>> {
+  const defaults = await defaultsFor(ctx, prefix);
+  const unit = new SettingsUnit(ctx, `${prefix}${SETTINGS_UNIT}`);
+  await unit.load();
+  const stored = readStoredSettings(unit.meta);
+  let active = '';
+  try {
+    active = (await providerState(ctx, prefix, 'list', undefined)).active;
+  } catch {
+    // A bus without a provider node still has settings.
+  }
+  return {
+    agent: {
+      name: prefix === '' ? ctx.nodeId : prefix.slice(4, -1),
+      parent: prefix === '' ? null : ctx.nodeId,
+    },
+    settings: effectiveSettings(defaults, stored),
+    defaults,
+    provider: { active },
+    live: [...LIVE_SETTINGS],
+    restartRequired: [...RESTART_REQUIRED_SETTINGS],
+    persistent: true,
+  };
+}
+
+async function writeSettings(
+  ctx: NodeContext,
+  prefix: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  const action = String(args.action ?? 'get');
+  if (action !== 'update') {
+    throw new Error(`unknown settings action "${action}": use get or update`);
+  }
+  const given: Record<string, unknown> = { ...args };
+  delete given.action;
+  delete given.agent;
+  let values: SettingsPatch = {};
+  const reset = args.reset === true;
+  if (!reset) {
+    const parsed = parseSettingsPatch(given, true);
+    if (parsed.problems.length > 0) {
+      throw new Error(`cannot save settings: ${parsed.problems.join('; ')}`);
+    }
+    values = parsed.values;
+    if (prefix !== '') {
+      if (values.allowSpawn === true) {
+        throw new Error(
+          'cannot save settings: allowSpawn cannot be turned on: this agent was started unable to start sub-agents',
+        );
+      }
+      if (values.allowAskUser === true) {
+        throw new Error(
+          'cannot save settings: allowAskUser cannot be turned on: this agent was started with nobody to ask',
+        );
+      }
+    }
+    if (Object.keys(values).length === 0) {
+      throw new Error(
+        'cannot save settings: no setting was given (send one of ' +
+          `${SETTINGS_NAMES.join(', ')}, or reset: true)`,
+      );
+    }
+  }
+  const unit = new SettingsUnit(ctx, `${prefix}${SETTINGS_UNIT}`);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await unit.load();
+    const current = readStoredSettings(unit.meta);
+    unit.meta = settingsUnit(reset ? {} : mergePatches(current, values));
+    try {
+      await unit.save();
+      break;
+    } catch (error) {
+      if (attempt === 2) throw error;
+    }
+  }
+  return await settingsAnswer(ctx, prefix);
+}
+
 export class AgentNode extends Node {
   readonly handlers: NodeHandlers;
   readonly #options: AgentOptions;
@@ -174,11 +329,26 @@ export class AgentNode extends Node {
       // What this agent runs on: the five numbers and the two switches its page may change. The settings of one agent
       // are its own - a sub-agent starts on its parent's and then keeps its own copy - so this is
       // answered by the agent the call names, like every other per-agent read.
-      settings: async (args: ToolArgs) => (await this.#target(args)).handleSettings(args),
+      settings: async (args: ToolArgs) => {
+        const target = targetOf(args);
+        const prefix = await this.#prefixOf(target);
+        const action = String(args.action ?? 'get');
+        if (action !== 'get' && action !== 'update') {
+          throw new Error(`unknown settings action "${action}": use get or update`);
+        }
+        const running = this.family.started(target);
+        if (action === 'update' && running !== undefined) {
+          return await running.handleSettings(args);
+        }
+        if (action === 'update') return await writeSettings(this.ctx, prefix, args);
+        return await settingsAnswer(this.ctx, prefix);
+      },
       answer: async (args: ToolArgs) => (await this.#target(args)).answer(args),
       // The agents this node runs, as `{agents: [...]}`: the main agent first, then the sub-agents
       // it started, each with the topic and state a page follows it by.
-      agents: async () => ({ agents: (await this.#readyFamily()).rows() }),
+      agents: async () => ({
+        agents: await readAgents(this.ctx, (name) => this.family.started(name)),
+      }),
       // Destroying a sub-agent is a capability, not only a tool the model can call: the page's tab
       // menu reaches it directly, so what a delete does is decided in one place (`AgentRuntime`)
       // rather than by whoever asks. The answer is the runtime's own sentence about what went.

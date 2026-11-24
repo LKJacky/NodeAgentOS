@@ -260,6 +260,15 @@ test('a restarted parent restores each sub-agent icon and provider', async () =>
       rows.some((row) => row.name === 'helper'),
       'the stored child is listed without being started',
     );
+    const read = (await second.call('settings', { agent: 'helper' })) as {
+      settings: { allowSpawn: boolean };
+    };
+    assert.equal(read.settings.allowSpawn, false, 'its settings are read from storage too');
+    assert.throws(
+      () => second.family.agent('helper'),
+      /not running yet/,
+      'reading settings and the roster did not start it',
+    );
     const helper = await second.family.ensureAgent('helper');
     assert.equal(helper.options.icon, ICON, 'the drawing survives the restart');
     assert.equal(
