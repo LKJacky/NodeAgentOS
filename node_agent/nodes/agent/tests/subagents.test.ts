@@ -208,17 +208,17 @@ test('create_agent can choose a provider; leaving it out inherits the parent', a
   try {
     await agent.call('chat', { msg: { content: 'start two agents' } }, 'alice');
     assert.equal(
-      agent.runtime.agent('own').options.providerName,
+      agent.family.agent('own').options.providerName,
       'default',
       'the provider named at creation is kept',
     );
     assert.equal(
-      agent.runtime.agent('own').options.icon,
+      agent.family.agent('own').options.icon,
       ICON,
       'the drawing named at creation is kept',
     );
     assert.equal(
-      agent.runtime.agent('heir').options.providerName,
+      agent.family.agent('heir').options.providerName,
       undefined,
       'without one, the child follows its parent',
     );
@@ -232,14 +232,14 @@ test('a restarted parent restores each sub-agent icon and provider', async () =>
   const tenantId = 'restore';
   const first = await startAgent({ net, tenantId, provider: new Script({ text: 'main' }) });
   try {
-    await first.runtime.spawnAgent('helper', ICON, 'default');
+    await first.family.spawnAgent('helper', ICON, 'default');
   } finally {
     await first.stop();
   }
 
   const second = await startAgent({ net, tenantId, provider: new Script({ text: 'main' }) });
   try {
-    const helper = second.runtime.agent('helper');
+    const helper = second.family.agent('helper');
     assert.equal(helper.options.icon, ICON, 'the drawing survives the restart');
     assert.equal(
       helper.options.providerName,
@@ -257,7 +257,7 @@ test('a restarted parent still restores the old names-only list', async () => {
   net.putUnit('subagents', { names: ['legacy'] }, tenantId);
   const agent = await startAgent({ net, tenantId, provider: new Script({ text: 'main' }) });
   try {
-    const legacy = agent.runtime.agent('legacy');
+    const legacy = agent.family.agent('legacy');
     assert.equal(legacy.options.icon, undefined);
     assert.equal(legacy.options.providerName, undefined);
   } finally {
@@ -289,7 +289,7 @@ test('creating a sub-agent registers no node and shares the parent identity', as
     assert.ok(!(await busNames(agent)).includes('helper'));
 
     // And the sub-agent is a runtime on the parent scope, not a node of its own.
-    const child = agent.runtime.agent('helper');
+    const child = agent.family.agent('helper');
     assert.equal(child.scope, agent.runtime.scope, 'one bus connection for the family');
     assert.equal(child.identity.busName, 'agent', 'the same identity the parent answers to');
     assert.equal(child.identity.topic, 'agent.helper', 'its own topic, for its own page feed');
@@ -358,14 +358,14 @@ test('list_nodes comes from the bus: no page-only nodes, and this agent last', a
     .node('panel', 'a page and nothing else', { ui: async () => '<svg/>' });
   const agent = await startAgent({ net, provider: new Script({ text: 'hi' }), tenantId: TENANT });
   try {
-    await agent.runtime.spawnAgent('helper', ICON);
+    await agent.family.spawnAgent('helper', ICON);
     assert.equal(
       await agent.runtime.env!.listNodes(),
       ['- echo', '- agent'].join('\n'),
       'the bus first, and this agent itself last',
     );
     assert.equal(
-      await agent.runtime.agent('helper').env!.listNodes(),
+      await agent.family.agent('helper').env!.listNodes(),
       ['- echo', '- agent'].join('\n'),
       'a sub-agent answers on the family node too: one tenant, one identity',
     );
@@ -377,7 +377,7 @@ test('list_nodes comes from the bus: no page-only nodes, and this agent last', a
 test('`agent` names a child of the node it is sent to, never the agent that node is', async () => {
   const agent = await start(new Script({ text: 'the child says hi' }));
   try {
-    await agent.runtime.spawnAgent('helper', ICON);
+    await agent.family.spawnAgent('helper', ICON);
     const env = agent.runtime.env!;
     // The family node hands the turn to the child its `agent` argument names.
     const handed = await env.runOnNode({
@@ -398,7 +398,7 @@ test('`agent` names a child of the node it is sent to, never the agent that node
       /not in the usable list/,
     );
     // Inside the child, the family node is its own too: naming itself again is refused.
-    const child = agent.runtime.agent('helper').env!;
+    const child = agent.family.agent('helper').env!;
     assert.match(
       String(
         await child.runOnNode({
@@ -576,7 +576,7 @@ test('a sub-agent cannot create a sub-agent', async () => {
   const agent = await start(script);
   try {
     await agent.call('chat', { msg: { content: 'start a helper' } }, 'alice');
-    const child = agent.runtime.agent('helper');
+    const child = agent.family.agent('helper');
     assert.equal(child.allowSpawn(), false);
     const offered = (child.env?.tools ?? []).map((tool) => tool.function.name);
     assert.ok(!offered.includes('create_agent'), 'the tool is not even offered');
@@ -619,7 +619,7 @@ test('a sub-agent cannot create a sub-agent', async () => {
       ['agents', 'chat', 'chat_no_wait', 'status'],
       'the main agent reaches itself with what the bus exposes to it',
     );
-    await assert.rejects(child.spawnAgent('grandchild'), /may not create sub-agents/);
+    assert.equal(child.allowSpawn(), false, 'a sub-agent may not create one of its own');
     // The refusal is text the model reads, not a failed turn.
     const answer = await child.env?.execute({
       id: 'call_create_agent',
@@ -649,18 +649,18 @@ test('create_agent needs a drawing: the icon is part of creating one', async () 
       /icon must be one <svg>/,
     );
     assert.match(
-      await agent.runtime.spawnAgent('noicon'),
+      await agent.family.spawnAgent('noicon'),
       /an icon is required/,
       'and the node refuses one asked for without a drawing',
     );
     assert.deepEqual(
-      agent.runtime.agentRows().map((row) => row.name),
+      agent.family.rows().map((row) => row.name),
       ['agent'],
       'nothing started',
     );
 
     assert.match(await env.createAgent({ name: 'drawn', icon: ICON }), /created agent "drawn"/);
-    assert.equal(agent.runtime.agent('drawn').options.icon, ICON);
+    assert.equal(agent.family.agent('drawn').options.icon, ICON);
   } finally {
     await agent.stop();
   }
@@ -669,16 +669,16 @@ test('create_agent needs a drawing: the icon is part of creating one', async () 
 test('a reserved or malformed name is refused, but a bus node short name is allowed', async () => {
   const agent = await start(new Script({ text: 'hi' }));
   try {
-    assert.match(await agent.runtime.spawnAgent('agent'), /"agent" is reserved/);
-    assert.match(await agent.runtime.spawnAgent('history'), /"history" is reserved/);
+    assert.match(await agent.family.spawnAgent('agent'), /"agent" is reserved/);
+    assert.match(await agent.family.spawnAgent('history'), /"history" is reserved/);
     assert.match(
-      await agent.runtime.spawnAgent('two words'),
+      await agent.family.spawnAgent('two words'),
       /letters, digits, "-" and "_"/,
       'a name is a bus-name segment: the topic it publishes on depends on it',
     );
     // A bus node may keep the short name: the sub-agent is addressed as `agent.echo`, so the two
     // calls never share an address.
-    assert.match(await agent.runtime.spawnAgent('echo', ICON), /created agent "echo"/);
+    assert.match(await agent.family.spawnAgent('echo', ICON), /created agent "echo"/);
   } finally {
     await agent.stop();
   }
@@ -747,8 +747,8 @@ test('a sub-agent is handed the provider its parent is on, and keeps it when the
   const { net, agent } = await startWithProviders(script, TENANT);
   try {
     await agent.call('chat', { msg: { content: 'start two helpers' } }, 'alice');
-    const helper = agent.runtime.agent('helper');
-    const sibling = agent.runtime.agent('sibling');
+    const helper = agent.family.agent('helper');
+    const sibling = agent.family.agent('sibling');
     // The parent had settled on nothing, so its value was the first row: that is what it hands over.
     assert.equal(
       helper.options.providerName,
@@ -832,7 +832,7 @@ test('a sub-agent that chose a provider comes back on it, beside a main agent th
     const listed = (await second.call('provider', { action: 'list' })) as ProviderListing;
     assert.equal(listed.active, 'provider.deep', 'the main agent kept its own row');
     assert.equal(
-      second.runtime.agent('helper').options.providerName,
+      second.family.agent('helper').options.providerName,
       'provider.fast',
       'the sub-agent was restored with the row it chose',
     );
@@ -959,10 +959,14 @@ test('a sub-agent reads the stream of the provider it was handed', async () => {
   try {
     // The bus hands every event of this node to the main runtime, as `AgentNode.onEvent` does.
     deliver = (value) => agent.runtime.handleEvent(`provider.stream.${id}`, value);
-    await agent.runtime.spawnAgent('kid', ICON);
-    const kid = agent.runtime.agent('kid');
+    await agent.family.spawnAgent('kid', ICON);
+    const kid = agent.family.agent('kid');
     assert.ok(kid !== null, 'the sub-agent exists');
-    assert.equal(kid.options.providerName, 'local-provider.fast', 'it copied the row its parent was on');
+    assert.equal(
+      kid.options.providerName,
+      'local-provider.fast',
+      'it copied the row its parent was on',
+    );
     const said = await kid.chat({ content: 'hi' });
     assert.equal(
       said.at(-1)?.content,

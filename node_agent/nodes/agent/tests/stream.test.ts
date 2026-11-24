@@ -66,7 +66,9 @@ function streamEvents(net: FakeNet, topic = 'agent'): StreamEventOut[] {
     .filter((event) => event.topic === topic)
     .map((event) => event.value as StreamEventOut)
     .filter((value) =>
-      ['stream_start', 'stream_delta', 'stream_end'].includes((value as { type?: string }).type ?? ''),
+      ['stream_start', 'stream_delta', 'stream_end'].includes(
+        (value as { type?: string }).type ?? '',
+      ),
     );
 }
 
@@ -127,7 +129,16 @@ test('consecutive chunks publish only what arrived, never the line so far', asyn
     const biggest = Math.max(...deltas.map((event) => String(event.content ?? '').length));
     assert.equal(biggest, 'world'.length, 'a delta is one chunk long, not one answer long');
     // A delta carries the delta and nothing else: no role, no usage, no `at`.
-    const allowed = ['agent', 'content', 'id', 'messageId', 'reasoning_content', 'seq', 'tool_calls', 'type'];
+    const allowed = [
+      'agent',
+      'content',
+      'id',
+      'messageId',
+      'reasoning_content',
+      'seq',
+      'tool_calls',
+      'type',
+    ];
     for (const delta of deltas) {
       for (const key of Object.keys(delta)) {
         assert.ok(allowed.includes(key), `a delta carries no ${key}`);
@@ -161,7 +172,9 @@ test('the round still commits the whole line, after its deltas', async () => {
 
     const kinds = agent.net.events
       .filter((event) => event.topic === 'agent')
-      .map((event) => (Array.isArray(event.value) ? 'commit' : (event.value as { type?: string }).type));
+      .map((event) =>
+        Array.isArray(event.value) ? 'commit' : (event.value as { type?: string }).type,
+      );
     const firstCommit = kinds.indexOf('commit');
     const end = kinds.indexOf('stream_end');
     assert.ok(firstCommit >= 0 && end > firstCommit, 'the commit goes out before the end');
@@ -190,8 +203,22 @@ test('two subscribers accumulate the same answer out of the same deltas', () => 
       seq: 1,
       reasoning_content: 'hmm',
     },
-    { type: 'stream_delta', id: 'agent#1', agent: 'agent', messageId: 'm1', seq: 2, content: 'one ' },
-    { type: 'stream_delta', id: 'agent#1', agent: 'agent', messageId: 'm1', seq: 3, content: 'two' },
+    {
+      type: 'stream_delta',
+      id: 'agent#1',
+      agent: 'agent',
+      messageId: 'm1',
+      seq: 2,
+      content: 'one ',
+    },
+    {
+      type: 'stream_delta',
+      id: 'agent#1',
+      agent: 'agent',
+      messageId: 'm1',
+      seq: 3,
+      content: 'two',
+    },
     {
       type: 'stream_delta',
       id: 'agent#1',
@@ -340,7 +367,7 @@ test('a sub-agent streams on its own topic, under its own name', async () => {
   ]);
   const agent = await startAgent({ net: new FakeNet(), provider });
   try {
-    await agent.runtime.spawnAgent('helper', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+    await agent.family.spawnAgent('helper', '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
     await agent.call('chat', {
       agent: 'helper',
       msg: { role: 'user', content: 'go' },

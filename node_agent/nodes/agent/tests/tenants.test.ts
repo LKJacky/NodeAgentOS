@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import type { NodeContext } from '@node-agent/sdk';
-import { AgentNode, RUNTIME_BINDING, runtimeFor } from '../src/agent.ts';
-import { AgentRuntime } from '../src/runtime.ts';
+import { AgentNode, RUNTIME_BINDING, familyFor, runtimeFor } from '../src/agent.ts';
+import { AgentFamily } from '../src/family.ts';
 import { ScriptedProvider } from './scripted_model.ts';
 import type { ChatReply, Message, Provider, StreamEvent } from '../src/types.ts';
 import { FakeNet, startAgent } from './harness.ts';
@@ -69,11 +69,11 @@ function scopeOf(tenantId: string): BindingScope {
 
 function hostContexts(): {
   context: (tenantId: string, from?: string) => NodeContext;
-  opened: AgentRuntime[];
+  opened: AgentFamily[];
   closeAll: () => Promise<void>;
 } {
   const tables = new Map<string, Map<string, object>>();
-  const opened: AgentRuntime[] = [];
+  const opened: AgentFamily[] = [];
   const context = (tenantId: string, from = 'caller'): NodeContext => ({
     tenantId,
     from,
@@ -96,7 +96,7 @@ function hostContexts(): {
       if (found !== undefined) return found;
       const made = create(scopeOf(tenantId));
       table.set(key, made);
-      opened.push(made as AgentRuntime);
+      opened.push(made as AgentFamily);
       return made;
     },
     unbind(key: string): boolean {
@@ -116,17 +116,17 @@ function hostContexts(): {
 test('bind gives one runtime per tenant, and unbind makes the next call build a new one', async () => {
   const host = hostContexts();
   const t1 = host.context('t1');
-  const first = runtimeFor(t1, { provider: new ProseProvider('one') });
-  const again = runtimeFor(host.context('t1'));
+  const first = familyFor(t1, { provider: new ProseProvider('one') });
+  const again = familyFor(host.context('t1'));
   assert.equal(again, first, 'the same tenant keeps the same runtime');
 
-  const other = runtimeFor(host.context('t2'), { provider: new ProseProvider('two') });
+  const other = familyFor(host.context('t2'), { provider: new ProseProvider('two') });
   assert.notEqual(other, first, 'another tenant gets its own runtime');
 
   // `agent.stop` closes the object and then drops it; the next call builds a fresh runtime.
   await first.close();
   assert.equal(t1.unbind?.(RUNTIME_BINDING), true);
-  const rebuilt = runtimeFor(t1, { provider: new ProseProvider('one') });
+  const rebuilt = familyFor(t1, { provider: new ProseProvider('one') });
   assert.notEqual(rebuilt, first, 'an unbound runtime is not handed out again');
   assert.equal(await t1.unbind?.(RUNTIME_BINDING), true);
   await host.closeAll();
@@ -134,7 +134,7 @@ test('bind gives one runtime per tenant, and unbind makes the next call build a 
 
 test('a runtime takes its name from the scope, and an empty one is refused', () => {
   const empty = { ...scopeOf('t1'), nodeId: '' };
-  assert.throws(() => new AgentRuntime({ scope: empty }), /has no identity/);
+  assert.throws(() => new AgentFamily({ scope: empty }), /has no identity/);
 });
 
 test('two tenants on one host keep transcripts, tools, cache, queue and streams apart', async () => {

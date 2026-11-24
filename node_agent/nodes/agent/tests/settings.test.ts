@@ -326,7 +326,7 @@ test('one agent\u2019s settings are its own, and a sub-agent copies its parent\u
   try {
     await settingsOf(agent, { action: 'update', maxAgents: 5, compressionTokens: 2_048 });
     const icon = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
-    await agent.runtime.spawnAgent('kid', icon);
+    await agent.family.spawnAgent('kid', icon);
     const inherited = (await agent.call('settings', { agent: 'kid' })) as SettingsAnswer;
     assert.equal(
       inherited.settings.maxAgents,
@@ -364,8 +364,8 @@ test('a sub-agent that inherited a number follows the parent when the parent sav
   const agent = await startAgent({ net, tenantId: 'family-live' });
   try {
     const icon = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
-    await agent.runtime.spawnAgent('kid', icon);
-    const kid = agent.runtime.agent('kid');
+    await agent.family.spawnAgent('kid', icon);
+    const kid = agent.family.agent('kid');
     assert.equal(kid.cache.maxSize, DEFAULT_SETTINGS.cacheSize, 'the child started on the default');
 
     await settingsOf(agent, { action: 'update', cacheSize: 3, compressionThreshold: 4_096 });
@@ -489,8 +489,8 @@ test('a sub-agent never spawns one of its own and never asks, whatever its setti
   const agent = await startAgent({ net, tenantId: 'floor' });
   try {
     const icon = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
-    await agent.runtime.spawnAgent('kid', icon);
-    const kid = agent.runtime.agent('kid');
+    await agent.family.spawnAgent('kid', icon);
+    const kid = agent.family.agent('kid');
     // The parent is on, and its own switches are on: the child's page still shows both off, because
     // that is what the child may do - a switch that is on and does nothing is a lie.
     const parent = await settingsOf(agent, {

@@ -1,6 +1,6 @@
-// agent: the node that holds the model. It is the thin bus face of AgentRuntime: the SDK builds one
-// Node per invocation, and everything that must survive between calls (transcript, queue, turn,
-// usage) lives in the object `ctx.bind` keeps for that tenant.
+// agent: the node that holds the model. It is the thin bus face of AgentFamily: the SDK builds one
+// Node per invocation, and everything that must survive between calls (the main runtime, its
+// sub-agents, transcript, queue, turn, usage) lives in the object `ctx.bind` keeps for that tenant.
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import {
@@ -14,7 +14,8 @@ import {
   type ToolArgs,
 } from '@node-agent/sdk';
 import { CAPABILITY_NAMES, PACKAGE_ICON } from './manifest.js';
-import { AgentRuntime, type RuntimeOptions } from './runtime.js';
+import { AgentFamily } from './family.js';
+import type { AgentRuntime, RuntimeOptions } from './runtime.js';
 import type { Message } from './types.js';
 
 /** The one capability name the browser front end agrees on: the page. (Which column that page lands in
@@ -94,11 +95,16 @@ export type AgentOptions = RuntimeOptions;
  * kept: the transport is either the tenant's pinned session or the context bus that every handler
  * re-binds before it works.
  */
-export function runtimeFor(ctx: NodeContext, options: AgentOptions = {}): AgentRuntime {
+export function familyFor(ctx: NodeContext, options: AgentOptions = {}): AgentFamily {
   const bindings = requireBindings(ctx);
   // The factory gets the host's scope, never this invocation's context: the object it makes may
   // outlive the call (`chat_no_wait`) and still has to reach the bus when it does.
-  return bindings.bind(RUNTIME_BINDING, (scope) => new AgentRuntime({ scope, options }));
+  return bindings.bind(RUNTIME_BINDING, (scope) => new AgentFamily({ scope, options }));
+}
+
+/** The main agent's runtime for this context. */
+export function runtimeFor(ctx: NodeContext, options: AgentOptions = {}): AgentRuntime {
+  return familyFor(ctx, options).main;
 }
 
 /** The one agent argument every capability takes: a sub-agent's name, or nothing for this node's
@@ -138,16 +144,16 @@ export class AgentNode extends Node {
       answer: async (args: ToolArgs) => (await this.#target(args)).answer(args),
       // The agents this node runs, as `{agents: [...]}`: the main agent first, then the sub-agents
       // it started, each with the topic and state a page follows it by.
-      agents: async () => ({ agents: (await this.#ready()).familyRows() }),
+      agents: async () => ({ agents: (await this.#readyFamily()).rows() }),
       // Destroying a sub-agent is a capability, not only a tool the model can call: the page's tab
       // menu reaches it directly, so what a delete does is decided in one place (`AgentRuntime`)
       // rather than by whoever asks. The answer is the runtime's own sentence about what went.
       destroy_agent: async (args: ToolArgs) => {
         const name = typeof args.name === 'string' ? args.name.trim() : '';
         if (name === '') throw new Error('destroy_agent needs a "name"');
-        const runtime = await this.#ready();
-        if (name === runtime.name) throw new Error('the main agent cannot be destroyed');
-        return await runtime.destroyAgent(name);
+        const family = await this.#readyFamily();
+        if (name === family.main.name) throw new Error('the main agent cannot be destroyed');
+        return await family.destroyAgent(name);
       },
       [PANEL]: async (args: ToolArgs) => page((await this.#ready()).identity.topic, args),
     };
@@ -156,22 +162,32 @@ export class AgentNode extends Node {
   /** The runtime of the invocation that is running now. Looked up through the current context every
    *  time, so a stateful host handing this instance a newer context is followed rather than
    *  ignored. */
+  /** The family this tenant keeps: the main agent and every runtime it started. */
+  get family(): AgentFamily {
+    return familyFor(this.ctx, this.#options);
+  }
+
+  /** The main agent's runtime for this invocation. */
   get runtime(): AgentRuntime {
-    return runtimeFor(this.ctx, this.#options);
+    return this.family.main;
+  }
+
+  /** The family for this invocation, ready. */
+  async #readyFamily(): Promise<AgentFamily> {
+    const family = this.family;
+    await family.ready();
+    return family;
   }
 
   /** The runtime for this invocation, ready. */
   async #ready(): Promise<AgentRuntime> {
-    const runtime = this.runtime;
-    await runtime.ready();
-    return runtime;
+    return (await this.#readyFamily()).main;
   }
 
-  /** The agent one call is for: this node's own, or the sub-agent its `agent` names. A sub-agent is
-   *  a runtime of the same kind, held by this one - `agent` is how the page and a test reach it. */
+  /** The agent one call is for: this node's own, or the sub-agent its `agent` names. */
   async #target(args: ToolArgs): Promise<AgentRuntime> {
-    const root = await this.#ready();
-    return root.agent(targetOf(args));
+    const family = await this.#readyFamily();
+    return family.agent(targetOf(args));
   }
 
   async #chat(args: ToolArgs): Promise<Message[]> {
@@ -198,8 +214,8 @@ export class AgentNode extends Node {
    *  not something a Stop has an opinion about. A sub-agent's stop answers for that agent in the same
    *  way; a name that is not in this family is refused by `agent()`. */
   async #stop(args: ToolArgs): Promise<string> {
-    const runtime = await this.#ready();
-    return await runtime.agent(targetOf(args)).stop();
+    const family = await this.#readyFamily();
+    return await family.agent(targetOf(args)).stop();
   }
 
   /** Provider stream chunks, delivered to this tenant's runtime hub by request id. */

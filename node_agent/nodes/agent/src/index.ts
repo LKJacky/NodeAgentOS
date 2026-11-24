@@ -1,7 +1,16 @@
 // node-agent-agent: the only node that holds a model — AgentNode, the runtime behind it, and the two
 // ways a model gets plugged in: a `provider` row dialled in this process (the provider package's own
 // core), a `local-provider` row read over the bus, and the provider an embedder hands over.
-export { AgentNode, CAPABILITIES, RUNTIME_BINDING, page, readAsset, runtimeFor } from './agent.js';
+export {
+  AgentNode,
+  CAPABILITIES,
+  RUNTIME_BINDING,
+  familyFor,
+  page,
+  readAsset,
+  runtimeFor,
+} from './agent.js';
+export { AgentFamily } from './family.js';
 export { default } from './agent.js';
 export type { AgentOptions } from './agent.js';
 export {

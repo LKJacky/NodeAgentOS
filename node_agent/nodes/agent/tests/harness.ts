@@ -16,6 +16,7 @@ import {
 } from '@node-agent/sdk';
 import { AgentNode, CAPABILITIES, RUNTIME_BINDING } from '../src/agent.ts';
 import { CAPS } from '../src/manifest.ts';
+import type { AgentFamily } from '../src/family.ts';
 import type { AgentRuntime, RuntimeOptions } from '../src/runtime.ts';
 import type { Provider } from '../src/types.ts';
 
@@ -251,11 +252,15 @@ export type TestAgent = {
   host: NodeHost;
   /** The runtime the host bound for one tenant. */
   runtimeOf: (tenantId: string) => AgentRuntime;
+  /** The family the host bound for one tenant. */
+  familyOf: (tenantId: string) => AgentFamily;
   /** The invocation context one tenant's last call saw, for tests that poison it afterwards. */
   contextOf: (tenantId: string) => NodeContext;
 
   /** The runtime the host bound for this tenant, once a handler ran. */
   runtime: AgentRuntime;
+  /** The family the host bound for this tenant, once a handler ran. */
+  family: AgentFamily;
   call: (cap: string, args: ToolArgs, from?: string, as?: string) => Promise<unknown>;
   stop: () => Promise<void>;
 };
@@ -304,6 +309,7 @@ export async function startAgent(
   const providers: Record<string, Provider> = { ...options.providers };
   if (options.provider !== undefined) providers[tenantId] = options.provider;
   const seen = new Map<string, AgentRuntime>();
+  const families = new Map<string, AgentFamily>();
   const contexts = new Map<string, NodeContext>();
   class TestAgentNode extends AgentNode {
     constructor(ctx: NodeContext) {
@@ -312,6 +318,7 @@ export async function startAgent(
       // `this.runtime` is `ctx.bind`'s object; keeping it here is the test's handle, not the
       // node's state (the node builds one per invocation and keeps nothing).
       seen.set(ctx.tenantId, this.runtime);
+      families.set(ctx.tenantId, this.family);
       contexts.set(ctx.tenantId, ctx);
     }
   }
@@ -370,6 +377,11 @@ export async function startAgent(
       if (runtime === undefined) throw new Error(`no runtime is bound for tenant ${id}`);
       return runtime;
     },
+    familyOf: (id: string): AgentFamily => {
+      const family = families.get(id);
+      if (family === undefined) throw new Error(`no family is bound for tenant ${id}`);
+      return family;
+    },
     contextOf: (id: string): NodeContext => {
       const ctx = contexts.get(id);
       if (ctx === undefined) throw new Error(`tenant ${id} has not made a call`);
@@ -377,6 +389,9 @@ export async function startAgent(
     },
     get runtime(): AgentRuntime {
       return this.runtimeOf(tenantId);
+    },
+    get family(): AgentFamily {
+      return this.familyOf(tenantId);
     },
     call,
     stop: async () => {

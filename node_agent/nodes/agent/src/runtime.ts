@@ -1,7 +1,8 @@
-// The agent itself — transcript, queue, turns, stop — kept apart from the node that serves it.
+// One agent: its transcript, queue, turns and stop. A family of agents is one runtime each, held
+// together by `AgentFamily`; this object never knows a sibling.
 //
 // The SDK builds one Node per invocation, so nothing here may live in the Node: this runtime is one
-// per bus name, made on the first call and shared by every invocation that follows. It owns the one
+// per agent, made on the first call and shared by every invocation that follows. It owns the one
 // model, the one queue and the one turn, which is what makes `stop` from one call stop the turn
 // another call opened.
 //
@@ -9,12 +10,6 @@
 // tools it asked for, and go round again until the model answers in prose and nothing is left in the
 // `interpret` lane. `chat` is "queue a message with a promise and await it"; `priority` is the
 // queue's order: `interpret` (in at the end of the round that is running) or `queue` (the default).
-//
-// Sub-agents are runtimes of this same class, held by their parent in this process, not nodes on the
-// bus: one tenant registers one identity, and a node the bus does not know has no permission on it,
-// which is why a sub-agent used to be refused capabilities its own parent could call. A sub-agent
-// keeps its own transcript, queue, round budget and stop, and reaches the bus through its parent's
-// identity - so it may call whatever the parent may call.
 import type { BindingScope } from '@node-agent/sdk';
 import type { JsonObject } from '@node-agent/provider/core';
 import { Cache } from './cache.js';
@@ -212,9 +207,21 @@ export function addMetaInfo(source: string, content: string): string {
   return `FROM: ${source}, TIME: ${stamp()}\n\n${content}`;
 }
 
+/** The family a runtime belongs to: the shared hub and the operations that span agents. A
+ *  runtime never reaches into a sibling; it asks the family. */
+export interface RuntimeGroup {
+  readonly hub: StreamHub;
+  spawnAgent(name: string, icon?: string, provider?: string): Promise<string>;
+  destroyAgent(name: string): Promise<string>;
+  agentsChanged(): Promise<void>;
+  settingsChanged(source: AgentRuntime): Promise<void>;
+}
+
 /** What one runtime is made of. The host's `ctx.bind` owns the instance; this type says only what
  *  it needs to exist. */
 export type RuntimeInit = {
+  /** The family this runtime belongs to. */
+  readonly group: RuntimeGroup;
   readonly options?: RuntimeOptions;
   /** The host-lifetime bus of this tenant: identity, call, publish, directory, fetch. Never an
    *  invocation's context - a background turn outlives the call that opened it. */
@@ -228,8 +235,7 @@ export type RuntimeInit = {
   /** What every history unit of this agent starts with: `''` for the main agent, `sub.<name>.` for a
    *  sub-agent. One bus identity holds one transcript per agent, kept apart by this. */
   readonly unitPrefix?: string;
-  /** The runtime that started this one. A sub-agent inherits its identity, its provider and its
-   *  cache from it, and may not start one of its own. */
+  /** The runtime that started this one, or none for the main agent. */
   readonly parent?: AgentRuntime;
 };
 
@@ -245,20 +251,6 @@ export type ChatMeta = {
  *  agent's transcript is published, which is what keeps a main agent and its sub-agents apart on
  *  one identity. History is the server's: it names its own user and tenant, and a calling node
  *  sends neither. */
-/** Why an icon cannot be a tab drawing, or null when it can: one `<svg>...</svg>`, no script. */
-function iconProblem(icon: unknown): string | null {
-  if (typeof icon !== 'string') return 'icon must be a string of SVG source';
-  if (new TextEncoder().encode(icon).length > 8192) return 'icon is longer than 8192 bytes';
-  const drawing = icon.trim();
-  if (!drawing.startsWith('<svg') || !drawing.endsWith('</svg>')) {
-    return 'icon must be one <svg>…</svg> element, and nothing else';
-  }
-  if (/<script|on\w+\s*=|javascript:/i.test(drawing)) {
-    return 'icon carries <script>, an on…= handler or javascript:';
-  }
-  return null;
-}
-
 type RuntimeIdentity = {
   /** The bus name the whole family answers to: one tenant, one registration. */
   readonly busName: string;
@@ -271,19 +263,6 @@ function identityOf(scope: BindingScope, topic?: string): RuntimeIdentity {
   return { busName: scope.nodeId, topic: topic ?? scope.nodeId };
 }
 
-/** A sub-agent's name: what the page shows, what `run_on_node`'s `node` names and what its history
- *  units are filed under, so it holds the bus-name alphabet and nothing else. */
-const AGENT_NAME = /^[A-Za-z0-9_-]{1,64}$/;
-
-function agentNameProblem(name: string, busName: string): string | null {
-  if (name === '') return 'a name is required';
-  if (!AGENT_NAME.test(name)) {
-    return 'a name may hold letters, digits, "-" and "_", at most 64 of them';
-  }
-  if (name === busName || name === 'agent' || name === 'history') return `"${name}" is reserved`;
-  return null;
-}
-
 export class AgentRuntime {
   /** The tenant's bus, and the only place this object reads who it is: identity, calls, publish,
    *  directory, fetch. Never an invocation's context. */
@@ -292,6 +271,8 @@ export class AgentRuntime {
   readonly identity: RuntimeIdentity;
   /** The name one `agent` argument uses for this runtime: the bus name, or a sub-agent's own. */
   readonly name: string;
+  /** The family this runtime belongs to. */
+  readonly group: RuntimeGroup;
   /** The runtime that started this one, or null for the main agent. */
   readonly parent: AgentRuntime | null;
   /** What this agent's history units start with: `''`, or `sub.<name>.` for a sub-agent. */
@@ -323,8 +304,6 @@ export class AgentRuntime {
   #duringStop = false;
   #closed = false;
   #provider: Provider | null = null;
-  readonly #children = new Map<string, AgentRuntime>();
-  #restored = false;
   #providerName: string | null = null;
   #providerRevision: number | null = null;
   /** This agent's own settings, as its page last saved them: only the fields somebody chose, so a
@@ -343,8 +322,9 @@ export class AgentRuntime {
     this.scope = scope;
     this.identity = identityOf(scope, init.topic);
     this.name = init.name ?? this.identity.busName;
+    this.group = init.group;
     this.parent = init.parent ?? null;
-    this.hub = this.parent?.hub ?? new StreamHub();
+    this.hub = init.group.hub;
     this.unitPrefix = init.unitPrefix ?? '';
     this.options = init.options ?? {};
     const fromEnv = Number(process.env.NODE_AGENT_CACHE_SIZE ?? '');
@@ -384,8 +364,8 @@ export class AgentRuntime {
         cache: this.cache,
         defaultReadLength: () => this.#maxInput(),
         ask: (callId, args) => this.ask(callId, args),
-        spawnAgent: (name, icon, provider) => this.spawnAgent(name, icon, provider),
-        destroyAgent: (name) => this.destroyAgent(name),
+        spawnAgent: (name, icon, provider) => this.group.spawnAgent(name, icon, provider),
+        destroyAgent: (name) => this.group.destroyAgent(name),
       },
       {
         // What the settings allow is applied again by `#applyRuntimeSettings` once they are read: a
@@ -401,10 +381,9 @@ export class AgentRuntime {
     await this.#loadSettings();
     // The numbers a component reads once are handed to it here, so a stored value is in force on the
     // first turn this process runs and not only on the one after a restart.
-    await this.#applyRuntimeSettings();
+    await this.applyRuntimeSettings();
     // The children a previous run saved are always started again: `restoreAgents` was removed, so the
     // behaviour that used to be the setting's default is the only one left.
-    await this.#restoreAgents();
     agentLog('info', 'agent.ready', {
       agent: this.name,
       history: persistent,
@@ -591,15 +570,9 @@ export class AgentRuntime {
    *  `icon` is required - its tab has to be told apart from the others - and `provider` is not. Only
    *  a restore passes less: a `subagents` unit written before icons were required keeps no drawing,
    *  and the page falls back to its own. */
-  async spawnAgent(name: string, icon?: string, provider?: string): Promise<string> {
-    return await this.#spawnAgent(name, icon, provider, true);
-  }
-
-  /** The row a new sub-agent starts on: the one it was named with, else the row its parent is on
-   *  right now - copied once, at creation, so a later switch by the parent does not reach it. Empty
-   *  when neither names a row (no provider node on the bus yet): the child then settles on the first
-   *  row itself, exactly as the main agent would. */
-  async #providerForChild(provider: string | undefined): Promise<string> {
+  /** The provider row a child would start on: the one it names, else this agent's current row,
+   *  else the first row the provider node offers. */
+  async providerRowFor(provider: string | undefined): Promise<string> {
     const named = typeof provider === 'string' ? provider.trim() : '';
     if (named !== '') return named;
     const own = await this.#ownProviderName();
@@ -615,73 +588,6 @@ export class AgentRuntime {
     return chosen;
   }
 
-  async #spawnAgent(
-    name: string,
-    icon: string | undefined,
-    provider: string | undefined,
-    persist: boolean,
-  ): Promise<string> {
-    if (!this.allowSpawn()) throw new Error('this agent may not create sub-agents');
-    const wanted = name.trim();
-    const problem = agentNameProblem(wanted, this.identity.busName);
-    if (problem !== null) return `cannot create "${wanted}": ${problem}`;
-    // An agent asked for by a model comes with its drawing: a tab with no icon is a tab the reader
-    // cannot tell from the others. A restore is the one caller that may pass nothing, because the
-    // unit it reads may have been written before this was required.
-    if (persist && (icon === undefined || icon.trim() === '')) {
-      return (
-        `cannot create "${wanted}": an icon is required - the tab drawing as one <svg>...</svg> ` +
-        'of SVG source'
-      );
-    }
-    if (this.#children.has(wanted)) return `an agent named "${wanted}" already runs here`;
-    const max = this.settings.maxAgents;
-    if (this.#children.size >= max) {
-      return `cannot create "${wanted}": too many agents are running`;
-    }
-    if (icon !== undefined) {
-      const bad = iconProblem(icon);
-      if (bad !== null) return `cannot create "${wanted}": ${bad}`;
-    }
-    // A sub-agent manages its provider exactly like the main agent does: it is given a row when it
-    // is created - its own if one was named, the parent's current row otherwise - and after that the
-    // choice is its own. Nothing follows the parent's later switches.
-    const selectedProvider = await this.#providerForChild(provider);
-    const child = new AgentRuntime({
-      scope: this.scope,
-      parent: this,
-      name: wanted,
-      topic: `${this.identity.topic}.${wanted}`,
-      unitPrefix: `sub.${wanted}.`,
-      options: {
-        historyRequired: this.options.historyRequired,
-        compressionThreshold: this.options.compressionThreshold,
-        compressionTokens: this.options.compressionTokens,
-        cacheSize: this.cache.maxSize,
-        allowAskUser: false,
-        allowSpawn: false,
-        ...(icon !== undefined ? { icon: icon.trim() } : {}),
-        ...(selectedProvider !== '' ? { providerName: selectedProvider } : {}),
-        // An embedder that handed this runtime a provider object hands it to the children too: a
-        // bus row is what a deployment uses, and this is the in-process stand-in for one.
-        ...(selectedProvider === '' && this.options.provider !== undefined
-          ? { provider: this.options.provider }
-          : {}),
-      },
-    });
-    await child.ready();
-    this.#children.set(wanted, child);
-    agentLog('info', 'agent.spawned', { parent: this.name, agent: wanted });
-    if (persist) await this.#saveAgents();
-    return (
-      `created agent "${wanted}". Hand it a turn with run_on_node ` +
-      `{node: "${this.identity.busName}", tool_name: "chat", ` +
-      `tool_args: {agent: "${wanted}", msg: {role: "user", content: "..."}}}; ` +
-      'it shares this bus identity with you and keeps its own transcript, round budget and stop, ' +
-      'so ask it for a short report back. It cannot create agents of its own.'
-    );
-  }
-
   /** Whether this agent may start a sub-agent at all. Two things decide it: what it was started
    *  with (a sub-agent itself never may), and its own `allowSpawn` setting - which `settings` has
    *  already kept inside that floor. */
@@ -693,69 +599,6 @@ export class AgentRuntime {
    *  started with (a sub-agent may not, and its page has nobody to ask). */
   get allowAskUser(): boolean {
     return this.settings.allowAskUser;
-  }
-
-  /** The agents this agent runs: itself first, then the sub-agents it started. A sub-agent never
-   *  appears here as a node, because it is not one. */
-  agentRows(): AgentRow[] {
-    const own: AgentRow = {
-      name: this.name,
-      topic: this.identity.topic,
-      parent: this.parent?.name ?? null,
-      state: this.phase(),
-      children: this.#children.size,
-      ...(this.options.icon !== undefined ? { icon: this.options.icon } : {}),
-    };
-    const rows: AgentRow[] = [own];
-    for (const [name, child] of this.#children) {
-      rows.push({
-        name,
-        topic: child.identity.topic,
-        parent: this.name,
-        state: child.phase(),
-        children: 0,
-        ...(child.options.icon !== undefined ? { icon: child.options.icon } : {}),
-      });
-    }
-    return rows;
-  }
-
-  /** Every agent of this family, asked from wherever the caller stands: the root's own row first,
-   *  then the sub-agents it started. A sub-agent holds no reference to its siblings, so the walk
-   *  goes up: the family is what the root runs, not what one branch can see. */
-  familyRows(): AgentRow[] {
-    let root: AgentRuntime = this;
-    while (root.parent !== null) root = root.parent;
-    return root.agentRows();
-  }
-
-  /** The runtime one `agent` argument names: this one, a sub-agent of this one, or a refusal that
-   *  says which names there are. */
-  agent(name: unknown): AgentRuntime {
-    const wanted = typeof name === 'string' ? agentNameOf(name.trim()) : '';
-    if (wanted === '' || wanted === this.name) return this;
-    const child = this.#children.get(wanted);
-    if (child !== undefined) return child;
-    const known = [this.name, ...this.#children.keys()].join(', ');
-    throw new Error(`no agent named "${wanted}" here (agents: ${known})`);
-  }
-
-  /** Stop a sub-agent and delete the units it wrote: only this identity can list them, which is why
-   *  the delete happens here and not in the sub-agent's own process-shaped copy. */
-  async destroyAgent(name: string): Promise<string> {
-    agentLog('info', 'agent.destroy', { parent: this.name, agent: name });
-    const child = this.#children.get(name);
-    if (child === undefined) {
-      return `no agent named "${name}" was created here (running: ${[...this.#children.keys()].join(', ') || 'none'})`;
-    }
-    await child.close();
-    const left = await child.destroySelf();
-    this.#children.delete(name);
-    await this.#saveAgents();
-    if (left.length > 0) {
-      return `destroyed agent "${name}" (${left.length} of its persisted units could not be deleted: ${left.join('; ')})`;
-    }
-    return `destroyed agent "${name}" (its transcript is deleted)`;
   }
 
   /** Delete every unit this agent filed under its own prefix, and answer what would not go. The main
@@ -783,62 +626,6 @@ export class AgentRuntime {
     }
     for (const unit of await listed()) left.push(`${unit.unitId}: still there after delete`);
     return left;
-  }
-
-  async #saveAgents(): Promise<void> {
-    try {
-      const agents: StoredAgent[] = [...this.#children.entries()].map(([name, child]) => {
-        const provider = child.providerName ?? child.options.providerName;
-        return {
-          name,
-          ...(child.options.icon !== undefined ? { icon: child.options.icon } : {}),
-          ...(provider !== undefined ? { provider } : {}),
-        };
-      });
-      // `names` stays for a reader written before `agents` existed; the new shape is what keeps
-      // the drawing and the provider choice across a restart.
-      for (let attempt = 0; attempt < 3; attempt += 1) {
-        const unit = subagentsStorage(this.bus(), this.unitPrefix);
-        await unit.load();
-        unit.meta = { names: agents.map((agent) => agent.name), agents };
-        try {
-          await unit.save();
-          return;
-        } catch (error) {
-          if (attempt === 2) throw error;
-        }
-      }
-    } catch {
-      // A note about children may not fail the turn.
-    }
-  }
-
-  async #restoreAgents(): Promise<void> {
-    if (this.#restored || !this.allowSpawn()) return;
-    this.#restored = true;
-    try {
-      const unit = subagentsStorage(this.bus(), this.unitPrefix);
-      await unit.load();
-      if (unit.revision === 0) return;
-      const meta = unit.meta as { names?: unknown; agents?: unknown };
-      const listed = Array.isArray(meta.agents)
-        ? meta.agents
-        : Array.isArray(meta.names)
-          ? meta.names
-          : [];
-      for (const row of listed) {
-        const saved = storedAgentOf(row);
-        if (saved === null) continue;
-        try {
-          const answer = await this.#spawnAgent(saved.name, saved.icon, saved.provider, false);
-          if (answer.startsWith('cannot create')) throw new Error(answer);
-        } catch {
-          // One unavailable child must not prevent the remaining children from being restored.
-        }
-      }
-    } catch {
-      // Names that cannot be read are names that are not there.
-    }
   }
 
   #makeNodeProvider(name: string | null): NodeProvider {
@@ -1017,7 +804,7 @@ export class AgentRuntime {
   /** Put the numbers a component reads for itself in force: the cache's cap and a model's compression
    *  pair. Both are built once, so a save would otherwise sit in storage with nothing reading it;
    *  this is what makes "a saved setting is in force from the next turn on" true for them too. */
-  async #applyRuntimeSettings(): Promise<void> {
+  async applyRuntimeSettings(propagate = true): Promise<void> {
     const settings = this.settings;
     if (this.cache.maxSize !== settings.cacheSize) await this.cache.setMaxSize(settings.cacheSize);
     if (this.model !== null) {
@@ -1035,9 +822,9 @@ export class AgentRuntime {
       allowSpawn: this.allowSpawn(),
       allowSearchCache: settings.allowSearchCache,
     });
-    // A child inherits what it did not set, so a save made here reaches the children's own cache and
-    // model too: the numbers a sub-agent runs on are the parent's new ones from the next round on.
-    for (const child of this.#children.values()) await child.#applyRuntimeSettings();
+    // A child inherits what it did not set, so a save made here reaches the children's own cache
+    // and model too: the numbers a sub-agent runs on are the parent's new ones from the next round.
+    if (propagate) await this.group.settingsChanged(this);
   }
 
   /** Read this agent's own unit once, when the runtime starts. A unit that cannot be read is a unit
@@ -1128,7 +915,7 @@ export class AgentRuntime {
   async #saveSettings(values: SettingsPatch, replace = false): Promise<void> {
     if (!this.cache.enabled) {
       this.#stored = replace ? values : mergePatches(this.#stored, values);
-      await this.#applyRuntimeSettings();
+      await this.applyRuntimeSettings();
       return;
     }
     for (let attempt = 1; attempt <= SETTINGS_SAVE_ATTEMPTS; attempt += 1) {
@@ -1158,7 +945,7 @@ export class AgentRuntime {
       this.#stored = merged;
       this.#settingsRevision = unit.revision;
       // The cache and the model are already built: hand them the numbers this save put in force.
-      await this.#applyRuntimeSettings();
+      await this.applyRuntimeSettings();
       return;
     }
   }
@@ -1564,8 +1351,6 @@ export class AgentRuntime {
     this.#closed = true;
     // A page still drawing a tail has to be told the turn it was watching is over.
     this.#endStream(true);
-    for (const child of this.#children.values()) await child.close();
-    this.#children.clear();
     this.#step?.controller.abort(new Error('agent is closed'));
     const wake = this.#wake;
     this.#wake = null;
@@ -1750,7 +1535,7 @@ export class AgentRuntime {
     this.#provider = provider;
     this.model?.setProvider(provider);
     await this.#persistActiveProvider(row);
-    if (this.parent !== null) await this.parent.#saveAgents();
+    if (this.parent !== null) await this.group.agentsChanged();
     return {
       providers: rows.map((name) => ({ name, active: name === row })),
       active: row,
