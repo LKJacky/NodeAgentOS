@@ -45,6 +45,7 @@ export class AgentFamily {
   /** Sub-agents known from the stored list but not started yet. */
   readonly #stored = new Map<string, StoredAgent>();
   #starting: Promise<void> | null = null;
+  #ready = false;
   #restored = false;
 
   constructor(init: { scope: BindingScope; options?: RuntimeOptions }) {
@@ -68,6 +69,15 @@ export class AgentFamily {
   async #start(): Promise<void> {
     await this.main.ready();
     await this.#restoreAgents();
+    this.#ready = true;
+  }
+
+  /** The runtime one `agent` argument names, only once the family has started. */
+  started(name: unknown): AgentRuntime | undefined {
+    if (!this.#ready) return undefined;
+    const wanted = typeof name === 'string' ? agentNameOf(name.trim()) : '';
+    if (wanted === '' || wanted === this.main.name) return this.main;
+    return this.#runtimes.get(wanted);
   }
 
   /** The runtime one `agent` argument names, if it is already running. */

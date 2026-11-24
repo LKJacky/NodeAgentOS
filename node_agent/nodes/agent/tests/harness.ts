@@ -365,8 +365,12 @@ export async function startAgent(
     return outcome.value;
   };
 
-  // Materialise this tenant's runtime once: `status` reads no model and adds no usage.
-  if (options.materialize !== false) await call('status', {});
+  // Materialise this tenant's runtime once: `status` reads no model and adds no usage, then the
+  // family is made ready the way the first real work would make it.
+  if (options.materialize !== false) {
+    await call('status', {});
+    await families.get(tenantId)?.ready();
+  }
 
   return {
     net,

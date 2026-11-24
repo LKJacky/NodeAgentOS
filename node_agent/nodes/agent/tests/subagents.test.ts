@@ -246,6 +246,8 @@ test('a restarted parent restores each sub-agent icon and provider', async () =>
     );
     const past = (await second.call('history', { agent: 'helper' })) as { total: number };
     assert.equal(past.total, 0, 'its transcript is read straight from history');
+    const asleep = (await second.call('status', { agent: 'helper' })) as { state: string };
+    assert.equal(asleep.state, 'idle', 'a stored child reports idle from storage');
     assert.throws(
       () => second.family.agent('helper'),
       /not running yet/,

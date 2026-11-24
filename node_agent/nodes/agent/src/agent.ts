@@ -17,7 +17,9 @@ import { CAPABILITY_NAMES, PACKAGE_ICON } from './manifest.js';
 import { AgentFamily } from './family.js';
 import { readHistory, readSubagentNames } from './history.js';
 import { providerState } from './provider.js';
-import type { AgentRuntime, RuntimeOptions } from './runtime.js';
+import { emptyUsage } from './helpers.js';
+import type { AgentRuntime, AgentStatus, RuntimeOptions } from './runtime.js';
+import { ConversationStateUnit } from './storage.js';
 import type { Message } from './types.js';
 
 /** The one capability name the browser front end agrees on: the page. (Which column that page lands in
@@ -116,6 +118,27 @@ function targetOf(args: ToolArgs): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+/** The state a page shows before its agent is running: persisted usage, idle everywhere else. */
+async function readStatus(ctx: NodeContext, prefix: string): Promise<AgentStatus> {
+  let usage: unknown = undefined;
+  try {
+    const stateUnit = new ConversationStateUnit(ctx, `${prefix}conversation`);
+    await stateUnit.load();
+    usage = stateUnit.meta.usage;
+  } catch {
+    // No history node is a deployment with nothing written down: idle, and zero counts.
+  }
+  return {
+    state: 'idle',
+    queued: [],
+    usage:
+      typeof usage === 'object' && usage !== null
+        ? { ...emptyUsage(), ...(usage as Record<string, number>) }
+        : emptyUsage(),
+    stream: null,
+  };
+}
+
 export class AgentNode extends Node {
   readonly handlers: NodeHandlers;
   readonly #options: AgentOptions;
@@ -133,7 +156,12 @@ export class AgentNode extends Node {
         const target = targetOf(args);
         return await readHistory(this.ctx, await this.#prefixOf(target), args.from, args.count);
       },
-      status: async (args: ToolArgs) => (await this.#target(args)).status(),
+      status: async (args: ToolArgs) => {
+        const target = targetOf(args);
+        const running = this.family.started(target);
+        if (running !== undefined) return running.status();
+        return await readStatus(this.ctx, await this.#prefixOf(target));
+      },
       // The answer being written right now, as it stands, or `{stream: null}` between rounds. This is
       // the node's own read for its page - `expose: false`, like `ui` - so it is not offered to
       // sibling nodes or to the model as a tool. A page asks for it once when it has a gap in the
