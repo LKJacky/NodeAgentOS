@@ -154,6 +154,7 @@ export class AgentFamily {
         compressionThreshold: this.options.compressionThreshold,
         compressionTokens: this.options.compressionTokens,
         cacheSize: this.main.cache.maxSize,
+        idleDestroyMs: this.options.idleDestroyMs,
         allowAskUser: false,
         allowSpawn: false,
         ...(saved.icon !== undefined ? { icon: saved.icon } : {}),
@@ -244,6 +245,16 @@ export class AgentFamily {
       return `destroyed agent "${name}" (${left.length} of its persisted units could not be deleted: ${left.join('; ')})`;
     }
     return `destroyed agent "${name}" (its transcript is deleted)`;
+  }
+
+  /** Close an idle sub-agent runtime; its transcript and its name stay in history. */
+  async retireAgent(name: string): Promise<void> {
+    const runtime = this.#runtimes.get(name);
+    if (runtime === undefined || runtime === this.main) return;
+    await runtime.close();
+    await this.#saveAgents();
+    this.#runtimes.delete(name);
+    agentLog('info', 'agent.retired', { parent: this.main.name, agent: name });
   }
 
   async agentsChanged(): Promise<void> {

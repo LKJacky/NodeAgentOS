@@ -102,6 +102,9 @@ type PendingAsk = {
   timer?: NodeJS.Timeout;
 };
 
+/** How long a sub-agent runtime may sit idle after a turn before it is closed and dropped. */
+export const DEFAULT_IDLE_DESTROY_MS = 30_000;
+
 export type RuntimeOptions = {
   readonly historyRequired?: boolean;
   /** Whether this runtime may ask the reader at all: what an embedder passes is the floor, and the
@@ -128,6 +131,9 @@ export type RuntimeOptions = {
   readonly providerName?: string;
   /** A tab drawing for this agent's own panel (validated `<svg>...</svg>`). */
   readonly icon?: string;
+  /** How long a sub-agent runtime may sit idle after a turn before it is closed and dropped.
+   *  Defaults to `DEFAULT_IDLE_DESTROY_MS`. */
+  readonly idleDestroyMs?: number;
   /** Called with every line committed to the transcript, for the page. */
   readonly onCommit?: ModelOptions['onCommit'];
   /** Called with every stream event published on this agent's topic, for an embedder that draws its
@@ -207,6 +213,8 @@ export interface RuntimeGroup {
   readonly hub: StreamHub;
   spawnAgent(name: string, icon?: string, provider?: string): Promise<string>;
   destroyAgent(name: string): Promise<string>;
+  /** Close an idle runtime without deleting its transcript. */
+  retireAgent(name: string): Promise<void>;
   agentsChanged(): Promise<void>;
   settingsChanged(source: AgentRuntime): Promise<void>;
 }
@@ -289,6 +297,7 @@ export class AgentRuntime {
   #wake: (() => void) | null = null;
   #idleWaiters: (() => void)[] = [];
   #pumping = false;
+  #idleTimer: ReturnType<typeof setTimeout> | null = null;
   #seq = 0;
   /** The answer this runtime is writing right now, or null between rounds. One per runtime: a
    *  sub-agent's page sees only its own topic, so two answers never meet in one assembly. */
@@ -1019,6 +1028,7 @@ export class AgentRuntime {
       resolve: settle.resolve,
       reject: settle.reject,
     };
+    this.#touch();
     this.#queue.push(round);
     this.#sortQueue();
     const wake = this.#wake;
@@ -1088,6 +1098,7 @@ export class AgentRuntime {
           turnEnded = true;
           this.#finish(null);
           this.#markIdle();
+          this.#armIdleExit();
           continue;
         }
 
@@ -1110,11 +1121,46 @@ export class AgentRuntime {
           if (error !== null) await this.#recordFailure(error);
           this.#finish(error);
           this.#markIdle();
+          this.#armIdleExit();
         }
       }
     } finally {
       this.#pumping = false;
       this.#markIdle();
+    }
+  }
+
+  /** Cancel a pending idle retirement: a new line is about to join the queue. */
+  #touch(): void {
+    if (this.#idleTimer !== null) {
+      clearTimeout(this.#idleTimer);
+      this.#idleTimer = null;
+    }
+  }
+
+  /** After a turn, a sub-agent with nothing queued may close itself when it has been idle long enough. */
+  #armIdleExit(): void {
+    this.#touch();
+    if (this.parent === null || this.#closed || this.#step !== null || this.#queue.length > 0)
+      return;
+    const after = this.options.idleDestroyMs ?? DEFAULT_IDLE_DESTROY_MS;
+    if (after <= 0) return;
+    this.#idleTimer = setTimeout(() => {
+      this.#idleTimer = null;
+      void this.#retireIfIdle();
+    }, after);
+    this.#idleTimer.unref?.();
+  }
+
+  async #retireIfIdle(): Promise<void> {
+    if (this.#closed || this.#step !== null || this.#queue.length > 0) return;
+    try {
+      await this.group.retireAgent(this.name);
+    } catch (error) {
+      agentLog('warn', 'agent.retire.failed', {
+        agent: this.name,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
   }
 
@@ -1329,6 +1375,7 @@ export class AgentRuntime {
   /** Stop and close: nothing queued runs, and every caller is answered. */
   async close(): Promise<void> {
     this.#closed = true;
+    this.#touch();
     // A page still drawing a tail has to be told the turn it was watching is over.
     this.#endStream(true);
     this.#step?.controller.abort(new Error('agent is closed'));

@@ -8,8 +8,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { setTimeout as sleep } from 'node:timers/promises';
 import type { HistoryWindow } from '../src/history.ts';
 import type { ChatReply, ChatRequest, Provider, StreamEvent, ToolCall } from '../src/types.ts';
+import type { RuntimeOptions } from '../src/runtime.ts';
 import { FakeNet, startAgent, type TestAgent } from './harness.ts';
 
 /** The drawing every `create_agent` in these tests hands over: it is a required part of creating
@@ -716,6 +718,7 @@ type ProviderListing = {
 async function startWithProviders(
   script: Script,
   tenantId: string,
+  runtime?: RuntimeOptions,
 ): Promise<{ net: FakeNet; agent: TestAgent }> {
   // A turn that runs through a bus row after a switch streams like any other: the id comes back
   // first and the answer arrives on its own topic. The holder is filled once the agent exists,
@@ -752,7 +755,7 @@ async function startWithProviders(
     },
     cancel_stream: () => ({ canceled: true }),
   });
-  const agent = await startAgent({ net, provider: script, tenantId });
+  const agent = await startAgent({ net, provider: script, tenantId, runtime });
   stream.publish = (value) => agent.runtime.handleEvent(`provider.stream.${stream.id}`, value);
   return { net, agent };
 }
@@ -1130,6 +1133,38 @@ test('a Stop cuts the turn and leaves the queued line to run', async () => {
     );
   } finally {
     provider.release();
+    await agent.stop();
+  }
+});
+
+test('an idle sub-agent runtime retires, but its name and transcript stay', async () => {
+  const script = new Script(
+    { call: call('create_agent', { name: 'helper', icon: ICON }) },
+    { text: 'ready' },
+    { text: 'child answer' },
+  );
+  const agent = await startAgent({
+    net: new FakeNet().withHistory(),
+    provider: script,
+    tenantId: 'idle-retire',
+    runtime: { idleDestroyMs: 20 },
+  });
+  try {
+    await agent.call('chat', { msg: { content: 'start a helper' } });
+    await agent.call('chat', { agent: 'helper', msg: { content: 'answer once' } });
+    assert.ok(agent.family.agent('helper'), 'the child starts for the turn');
+    await sleep(100);
+    assert.throws(
+      () => agent.family.agent('helper'),
+      /not running yet/,
+      'an idle child runtime closes itself',
+    );
+    const rows = (await agent.call('agents', {})) as { agents: { name: string }[] };
+    assert.ok(
+      rows.agents.some((row) => row.name === 'helper'),
+      'its name is still listed',
+    );
+  } finally {
     await agent.stop();
   }
 });
