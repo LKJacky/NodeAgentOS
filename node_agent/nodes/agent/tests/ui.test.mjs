@@ -914,18 +914,18 @@ test('switching agent moves history, status, the feed and what Send posts to', a
     ],
   });
   await settle();
-  // Each agent was read once, when its page was made - before anyone chose between them.
+  // A tab the list named is not a page: nothing of the sub-agent has been read yet.
   assert.ok(
-    page.calls.some(({ tool, args }) => tool === 'agent.history' && args.agent === 'helper'),
-    'the sub-agent page was read when it was made',
+    !page.calls.some(({ tool, args }) => tool === 'agent.history' && args.agent === 'helper'),
+    'the sub-agent is not read before its tab is opened',
   );
   const reads = page.calls.length;
 
   page.agents.children[1].dispatchEvent({ type: 'click' });
   await settle();
 
-  // Looking at another agent asks the node nothing: the page it needs is already there.
-  assert.equal(page.calls.length, reads, 'the switch itself reads nothing');
+  // Opening a tab is its first read: transcript, state and provider rows are asked for then.
+  assert.ok(page.calls.length > reads, 'the first switch reads the sub-agent');
   assert.ok(
     page.calls.some(({ tool, args }) => tool === 'agent.history' && args.agent === 'helper'),
     'the transcript is read for the sub-agent',
@@ -983,7 +983,7 @@ test('main and sub-agent windows open at their end without travelling down to it
   );
 
   const preloadedLog = pageBoxes(page).logOf(1);
-  assert.ok(preloadedLog.children.length > 0);
+  assert.equal(preloadedLog.children.length, 0, 'a tab holds no transcript before it is opened');
   assert.equal(preloadedLog.scrollHeight, 0, 'hidden pages have no layout');
   page.agents.children[1].dispatchEvent({ type: 'click' });
   await settle(150);
@@ -1345,7 +1345,10 @@ test('moving between two agents reads neither transcript again', async () => {
   });
   await settle(150);
   const reads = () => page.calls.filter(({ tool }) => tool === 'agent.history').length;
-  assert.equal(reads(), 2, 'one window per agent, read when its page was made');
+  assert.equal(reads(), 1, 'only the main page was read at load');
+  page.agents.children[1].dispatchEvent({ type: 'click' });
+  await settle(80);
+  assert.equal(reads(), 2, 'opening the sub-agent reads its window once');
   const before = reads();
 
   for (let turn = 0; turn < 3; turn += 1) {

@@ -2140,9 +2140,9 @@
         return page;
       }
 
-      /** The page of one agent, made on first sight. From then on it is read once - its window, its
-       *  state and its provider rows - and the shared stream keeps it current, shown or not. */
-      function ensurePage(name, topic) {
+      /** The page of one agent, made on first sight. It is only a tab until its tab is first opened;
+       *  `switchTo` does the first read. From then on the shared stream keeps it current. */
+      function ensurePage(name, topic, loadNow = false) {
         const known = pages.get(name);
         if (known !== undefined) {
           if (typeof topic === 'string' && topic !== '' && topic !== known.topic) {
@@ -2159,8 +2159,12 @@
         // A page nobody looks at is a page that keeps nothing after a while: the sweep is what lets it
         // go, and a page is the first reason to have one.
         armSweep();
-        void loadProviders(page);
-        void load(page);
+        // A page named by the agent list is only a tab for now. Its transcript, state and
+        // provider rows are read when its tab is first opened.
+        if (loadNow) {
+          void loadProviders(page);
+          void load(page);
+        }
         return page;
       }
 
@@ -2507,9 +2511,15 @@
           landAtBottom = firstLook || atEnd(page);
           renderTranscript();
         });
-        // A page that let its window go while nobody was looking at it has nothing to draw: it is read
-        // again, at its newest line, exactly as a page opened for the first time is.
-        if (page.released) {
+        // The first look is the first read: the page held no transcript, state or provider rows
+        // while it was only a tab. That is also what starts a stored sub-agent, so a list of ten
+        // does not start ten runtimes.
+        if (firstLook) {
+          void loadProviders(page);
+          void load(page);
+        } else if (page.released) {
+          // A page that let its window go while nobody was looking at it has nothing to draw: it is
+          // read again, at its newest line.
           page.released = false;
           void load(page);
         }
@@ -4660,10 +4670,9 @@
       window.addEventListener('resize', regrowBoxes);
       window.addEventListener('orientationchange', regrowBoxes);
       if (window.visualViewport) window.visualViewport.addEventListener('resize', regrowBoxes);
-      // The main agent's page is the first one - built, read and shown before anything else, so the
-      // page the reader lands on is a page like any other. Every other agent gets one the moment the
-      // list names it (`ensurePage` in `refreshAgents`), whether or not anyone looks at it.
-      const opening = ensurePage(MAIN, MAIN);
+      // The main agent's page is the first one - built, read and shown before anything else. Every
+      // other agent gets an empty tab when the list names it, and its first read when it is opened.
+      const opening = ensurePage(MAIN, MAIN, true);
       current = opening;
       opening.seen = true;
       opening.box.hidden = false;
