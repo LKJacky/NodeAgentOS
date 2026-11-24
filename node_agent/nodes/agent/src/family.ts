@@ -42,6 +42,8 @@ export class AgentFamily {
   readonly hub = new StreamHub();
   readonly main: AgentRuntime;
   readonly #runtimes = new Map<string, AgentRuntime>();
+  /** Sub-agents known from the stored list but not started yet. */
+  readonly #stored = new Map<string, StoredAgent>();
   #starting: Promise<void> | null = null;
   #restored = false;
 
@@ -60,6 +62,7 @@ export class AgentFamily {
   async close(): Promise<void> {
     for (const runtime of this.#runtimes.values()) await runtime.close();
     this.#runtimes.clear();
+    this.#stored.clear();
   }
 
   async #start(): Promise<void> {
@@ -67,13 +70,26 @@ export class AgentFamily {
     await this.#restoreAgents();
   }
 
-  /** The runtime one `agent` argument names: the main agent, a sub-agent, or a refusal. */
+  /** The runtime one `agent` argument names, if it is already running. */
   agent(name: unknown): AgentRuntime {
     const wanted = typeof name === 'string' ? agentNameOf(name.trim()) : '';
     if (wanted === '' || wanted === this.main.name) return this.main;
     const runtime = this.#runtimes.get(wanted);
     if (runtime !== undefined) return runtime;
-    const known = [...this.#runtimes.keys()].join(', ');
+    const known = [this.main.name, ...this.#allNames()].join(', ');
+    if (this.#stored.has(wanted)) throw new Error(`agent "${wanted}" is not running yet`);
+    throw new Error(`no agent named "${wanted}" here (agents: ${known})`);
+  }
+
+  /** The runtime one `agent` argument names, starting a stored sub-agent on first use. */
+  async ensureAgent(name: unknown): Promise<AgentRuntime> {
+    const wanted = typeof name === 'string' ? agentNameOf(name.trim()) : '';
+    if (wanted === '' || wanted === this.main.name) return this.main;
+    const running = this.#runtimes.get(wanted);
+    if (running !== undefined) return running;
+    const saved = this.#stored.get(wanted);
+    if (saved !== undefined) return await this.#startStored(saved);
+    const known = [this.main.name, ...this.#allNames()].join(', ');
     throw new Error(`no agent named "${wanted}" here (agents: ${known})`);
   }
 
@@ -88,18 +104,67 @@ export class AgentFamily {
       ...(this.main.options.icon !== undefined ? { icon: this.main.options.icon } : {}),
     };
     const rows: AgentRow[] = [own];
-    for (const [name, runtime] of this.#runtimes) {
-      if (runtime === this.main) continue;
+    const names = new Set([...this.#stored.keys(), ...this.#runtimes.keys()]);
+    names.delete(this.main.name);
+    for (const name of names) {
+      const runtime = this.#runtimes.get(name);
+      const saved = this.#stored.get(name);
       rows.push({
         name,
-        topic: runtime.identity.topic,
+        topic: runtime?.identity.topic ?? `${this.main.identity.topic}.${name}`,
         parent: this.main.name,
-        state: runtime.phase(),
+        state: runtime?.phase() ?? 'idle',
         children: 0,
-        ...(runtime.options.icon !== undefined ? { icon: runtime.options.icon } : {}),
+        ...(runtime?.options.icon !== undefined
+          ? { icon: runtime.options.icon }
+          : saved?.icon !== undefined
+            ? { icon: saved.icon }
+            : {}),
       });
     }
     return rows;
+  }
+
+  #allNames(): Set<string> {
+    const names = new Set([...this.#stored.keys(), ...this.#runtimes.keys()]);
+    names.delete(this.main.name);
+    return names;
+  }
+
+  #makeRuntime(saved: StoredAgent, selectedProvider: string): AgentRuntime {
+    return new AgentRuntime({
+      scope: this.scope,
+      group: this,
+      parent: this.main,
+      name: saved.name,
+      topic: `${this.main.identity.topic}.${saved.name}`,
+      unitPrefix: `sub.${saved.name}.`,
+      options: {
+        historyRequired: this.options.historyRequired,
+        compressionThreshold: this.options.compressionThreshold,
+        compressionTokens: this.options.compressionTokens,
+        cacheSize: this.main.cache.maxSize,
+        allowAskUser: false,
+        allowSpawn: false,
+        ...(saved.icon !== undefined ? { icon: saved.icon } : {}),
+        ...(selectedProvider !== '' ? { providerName: selectedProvider } : {}),
+        ...(selectedProvider === '' && this.options.provider !== undefined
+          ? { provider: this.options.provider }
+          : {}),
+      },
+    });
+  }
+
+  async #startStored(saved: StoredAgent): Promise<AgentRuntime> {
+    const selectedProvider = await this.main.providerRowFor(saved.provider);
+    const runtime = this.#makeRuntime(saved, selectedProvider);
+    await runtime.ready();
+    this.#runtimes.set(saved.name, runtime);
+    if (selectedProvider !== '') {
+      this.#stored.set(saved.name, { ...saved, provider: selectedProvider });
+    }
+    agentLog('info', 'agent.spawned', { parent: this.main.name, agent: saved.name });
+    return runtime;
   }
 
   async spawnAgent(name: string, icon?: string, provider?: string): Promise<string> {
@@ -122,8 +187,8 @@ export class AgentFamily {
         'of SVG source'
       );
     }
-    if (this.#runtimes.has(wanted)) return `an agent named "${wanted}" already runs here`;
-    if (this.#runtimes.size - 1 >= this.main.settings.maxAgents) {
+    if (this.#allNames().has(wanted)) return `an agent named "${wanted}" already runs here`;
+    if (this.#allNames().size >= this.main.settings.maxAgents) {
       return `cannot create "${wanted}": too many agents are running`;
     }
     if (icon !== undefined) {
@@ -131,28 +196,14 @@ export class AgentFamily {
       if (bad !== null) return `cannot create "${wanted}": ${bad}`;
     }
     const selectedProvider = await this.main.providerRowFor(provider);
-    const runtime = new AgentRuntime({
-      scope: this.scope,
-      group: this,
-      parent: this.main,
+    const saved: StoredAgent = {
       name: wanted,
-      topic: `${this.main.identity.topic}.${wanted}`,
-      unitPrefix: `sub.${wanted}.`,
-      options: {
-        historyRequired: this.options.historyRequired,
-        compressionThreshold: this.options.compressionThreshold,
-        compressionTokens: this.options.compressionTokens,
-        cacheSize: this.main.cache.maxSize,
-        allowAskUser: false,
-        allowSpawn: false,
-        ...(icon !== undefined ? { icon: icon.trim() } : {}),
-        ...(selectedProvider !== '' ? { providerName: selectedProvider } : {}),
-        ...(selectedProvider === '' && this.options.provider !== undefined
-          ? { provider: this.options.provider }
-          : {}),
-      },
-    });
+      ...(icon !== undefined ? { icon: icon.trim() } : {}),
+      ...(selectedProvider !== '' ? { provider: selectedProvider } : {}),
+    };
+    const runtime = this.#makeRuntime(saved, selectedProvider);
     await runtime.ready();
+    this.#stored.set(wanted, saved);
     this.#runtimes.set(wanted, runtime);
     agentLog('info', 'agent.spawned', { parent: this.main.name, agent: wanted });
     if (persist) await this.#saveAgents();
@@ -168,13 +219,16 @@ export class AgentFamily {
   /** Stop a sub-agent and delete the units it wrote. */
   async destroyAgent(name: string): Promise<string> {
     agentLog('info', 'agent.destroy', { parent: this.main.name, agent: name });
-    const runtime = this.#runtimes.get(name);
+    let runtime = this.#runtimes.get(name);
+    const saved = this.#stored.get(name);
+    if (runtime === undefined && saved !== undefined) runtime = await this.#startStored(saved);
     if (runtime === undefined || runtime === this.main) {
-      return `no agent named "${name}" was created here (running: ${[...this.#runtimes.keys()].filter((one) => one !== this.main.name).join(', ') || 'none'})`;
+      return `no agent named "${name}" was created here (running: ${[...this.#allNames()].join(', ') || 'none'})`;
     }
     await runtime.close();
     const left = await runtime.destroySelf();
     this.#runtimes.delete(name);
+    this.#stored.delete(name);
     await this.#saveAgents();
     if (left.length > 0) {
       return `destroyed agent "${name}" (${left.length} of its persisted units could not be deleted: ${left.join('; ')})`;
@@ -194,16 +248,18 @@ export class AgentFamily {
 
   async #saveAgents(): Promise<void> {
     try {
-      const agents: StoredAgent[] = [...this.#runtimes.entries()]
-        .filter(([, runtime]) => runtime !== this.main)
-        .map(([name, runtime]) => {
-          const provider = runtime.providerName ?? runtime.options.providerName;
-          return {
-            name,
-            ...(runtime.options.icon !== undefined ? { icon: runtime.options.icon } : {}),
-            ...(provider !== undefined ? { provider } : {}),
-          };
-        });
+      const agents: StoredAgent[] = [...this.#allNames()].map((name) => {
+        const runtime = this.#runtimes.get(name);
+        const saved = this.#stored.get(name);
+        const provider = runtime?.providerName ?? runtime?.options.providerName ?? saved?.provider;
+        const icon = runtime?.options.icon ?? saved?.icon;
+        return {
+          name,
+          ...(icon !== undefined ? { icon } : {}),
+          ...(provider !== undefined ? { provider } : {}),
+        };
+      });
+      for (const agent of agents) this.#stored.set(agent.name, agent);
       for (let attempt = 0; attempt < 3; attempt += 1) {
         const unit = subagentsStorage(this.scope, this.main.unitPrefix);
         await unit.load();
@@ -235,13 +291,7 @@ export class AgentFamily {
           : [];
       for (const row of listed) {
         const saved = storedAgentOf(row);
-        if (saved === null) continue;
-        try {
-          const answer = await this.#spawnAgent(saved.name, saved.icon, saved.provider, false);
-          if (answer.startsWith('cannot create')) throw new Error(answer);
-        } catch {
-          // One unavailable child must not prevent the remaining children from being restored.
-        }
+        if (saved !== null) this.#stored.set(saved.name, saved);
       }
     } catch {
       // Names that cannot be read are names that are not there.

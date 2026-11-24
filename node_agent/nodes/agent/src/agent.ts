@@ -187,7 +187,7 @@ export class AgentNode extends Node {
   /** The agent one call is for: this node's own, or the sub-agent its `agent` names. */
   async #target(args: ToolArgs): Promise<AgentRuntime> {
     const family = await this.#readyFamily();
-    return family.agent(targetOf(args));
+    return await family.ensureAgent(targetOf(args));
   }
 
   async #chat(args: ToolArgs): Promise<Message[]> {
@@ -215,7 +215,7 @@ export class AgentNode extends Node {
    *  way; a name that is not in this family is refused by `agent()`. */
   async #stop(args: ToolArgs): Promise<string> {
     const family = await this.#readyFamily();
-    return await family.agent(targetOf(args)).stop();
+    return await (await family.ensureAgent(targetOf(args))).stop();
   }
 
   /** Provider stream chunks, delivered to this tenant's runtime hub by request id. */

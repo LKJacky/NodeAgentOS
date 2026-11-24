@@ -239,7 +239,17 @@ test('a restarted parent restores each sub-agent icon and provider', async () =>
 
   const second = await startAgent({ net, tenantId, provider: new Script({ text: 'main' }) });
   try {
-    const helper = second.family.agent('helper');
+    assert.throws(
+      () => second.family.agent('helper'),
+      /not running yet/,
+      'a stored child is not started with the parent',
+    );
+    const rows = ((await second.call('agents', {})) as { agents: { name: string }[] }).agents;
+    assert.ok(
+      rows.some((row) => row.name === 'helper'),
+      'the stored child is listed without being started',
+    );
+    const helper = await second.family.ensureAgent('helper');
     assert.equal(helper.options.icon, ICON, 'the drawing survives the restart');
     assert.equal(
       helper.options.providerName,
@@ -257,7 +267,7 @@ test('a restarted parent still restores the old names-only list', async () => {
   net.putUnit('subagents', { names: ['legacy'] }, tenantId);
   const agent = await startAgent({ net, tenantId, provider: new Script({ text: 'main' }) });
   try {
-    const legacy = agent.family.agent('legacy');
+    const legacy = await agent.family.ensureAgent('legacy');
     assert.equal(legacy.options.icon, undefined);
     assert.equal(legacy.options.providerName, undefined);
   } finally {
@@ -832,7 +842,7 @@ test('a sub-agent that chose a provider comes back on it, beside a main agent th
     const listed = (await second.call('provider', { action: 'list' })) as ProviderListing;
     assert.equal(listed.active, 'provider.deep', 'the main agent kept its own row');
     assert.equal(
-      second.family.agent('helper').options.providerName,
+      (await second.family.ensureAgent('helper')).options.providerName,
       'provider.fast',
       'the sub-agent was restored with the row it chose',
     );
