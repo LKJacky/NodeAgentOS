@@ -906,6 +906,28 @@ test('a feed event refreshes the agent rows', async () => {
   );
 });
 
+test('a connection reads the opened page, not every tab in the row', async () => {
+  const page = await openPage({
+    agents: [
+      { name: 'agent', topic: 'agent', parent: null, state: 'idle', children: 2 },
+      { name: 'helper', topic: 'agent.helper', parent: 'agent', state: 'idle', children: 0 },
+      { name: 'other', topic: 'agent.other', parent: 'agent', state: 'idle', children: 0 },
+    ],
+  });
+  await settle();
+
+  page.feed.open();
+  await settle(120);
+
+  const reads = page.calls.filter(({ tool }) => tool === 'agent.history');
+  assert.deepEqual(
+    [...new Set(reads.map(({ args }) => args.agent ?? 'agent'))],
+    ['agent'],
+    'only the page the reader opened was read',
+  );
+  assert.equal(reads[0].args.count, 30, 'the first read is one page of the transcript');
+});
+
 test('switching agent moves history, status, the feed and what Send posts to', async () => {
   const page = await openPage({
     agents: [

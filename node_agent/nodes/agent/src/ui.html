@@ -2046,6 +2046,9 @@
         loadVersion: () => 0,
         landAtBottom: () => true,
         seen: () => false,
+        // This page has completed its first read. A page that is only a tab has not, and a reconnect
+        // must not turn the list of tabs into a list of `history` reads.
+        loaded: () => false,
         drawn: () => [],
         drawnStatus: () => null,
         drawnAsks: () => '',
@@ -2263,6 +2266,7 @@
         // Nothing is left to keep a place in: the next visit lands at the newest line, exactly as a
         // page opened for the first time does.
         page.seen = false;
+        page.loaded = false;
         page.landAtBottom = true;
         page.joined = null;
         page.resyncing = false;
@@ -4582,7 +4586,10 @@
         const version = ++page.loadVersion;
         const asked = page.historyFrom === null ? null : page.historyFrom + page.messages.length;
         const [reply, statusReply] = await Promise.all([
-          call(`${NODE}.history`, agentArgs(page, asked === null ? {} : { from: asked })),
+          call(
+            `${NODE}.history`,
+            agentArgs(page, asked === null ? { count: HISTORY_PAGE } : { from: asked }),
+          ),
           call(`${NODE}.status`, agentArgs(page, {})),
         ]);
         if (version !== page.loadVersion) return;
@@ -4624,6 +4631,7 @@
           // A reload can land while snapshots are still coming in, so it queues up with them.
           scheduleRender(page);
         });
+        page.loaded = true;
       }
       async function sendText() {
         const page = pages.get(currentAgent);
@@ -4763,7 +4771,11 @@
           feed.onopen = () => {
             if (feed !== familyFeed) return;
             void refreshAgents();
+            // Only a page someone has opened has a window to catch up. A page that is still only a
+            // tab has its first read when it is first opened; loading it here would read every
+            // sub-agent's transcript just because the page happened to connect.
             for (const page of pages.values()) {
+              if (!page.seen || !page.loaded) continue;
               withPage(page, () => {
                 // Reconnects preserve the reader's position. Only the visible page already at its
                 // end keeps following; unseen pages land at their end when first opened.
