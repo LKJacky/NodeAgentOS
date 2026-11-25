@@ -4,7 +4,7 @@
 // active context again from scratch; a turn writes its new lines, then advances the count unit
 // atomically with an expected revision.
 import type { BindingScope, UnitContext } from '@node-agent/sdk';
-import { conversationMessage, conversationState } from './storage.js';
+import { conversationCache, conversationMessage, conversationState } from './storage.js';
 import {
   charCount,
   emptyUsage,
@@ -218,6 +218,9 @@ export class CachedModel {
     this.#onCommit = options.onCommit;
     this.#onDelta = options.onDelta;
   }
+
+  /** A model that keeps nothing has nothing to flush on close. */
+  async close(): Promise<void> {}
 
   /** Put a new compression pair in force. The runtime calls this when a setting is saved, so a model
    *  built before the save compresses at the number the agent was told to use, from the next round
@@ -573,6 +576,10 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
+function sameMessage(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 export class StatedModel extends CachedModel {
   readonly #scope: BindingScope;
   readonly #prefix: string;
@@ -610,12 +617,39 @@ export class StatedModel extends CachedModel {
     // place new lines start: clamp it to what history actually holds.
     const forgotten = Math.max(0, Math.min(isCount(state.forgotten) ? state.forgotten : 0, total));
 
-    const lines: Message[] = [];
-    for (let index = forgotten; index < total; index += 1) {
-      const unit = conversationMessage(this.#scope, this.#prefix, index);
-      await unit.load();
-      if (unit.revision === 0) throw new Error(`history is missing message ${index} of ${total}`);
-      lines.push(unit.meta);
+    // One cache unit holds the whole active window. It is trusted only when it was written for this
+    // exact state count and its last line still matches the line the units hold; otherwise the
+    // authoritative message units are read as before.
+    let lines: Message[] | null = null;
+    const cacheUnit = conversationCache(this.#scope, this.#prefix);
+    await cacheUnit.load();
+    const cached = cacheUnit.revision > 0 ? cacheUnit.meta : null;
+    if (
+      cached !== null &&
+      isCount(cached.total) &&
+      cached.total === total &&
+      isCount(cached.forgotten) &&
+      cached.forgotten <= forgotten &&
+      Array.isArray(cached.messages) &&
+      cached.messages.length === total - cached.forgotten
+    ) {
+      const last = cached.messages.at(-1);
+      let current = true;
+      if (last !== undefined) {
+        const unit = conversationMessage(this.#scope, this.#prefix, total - 1);
+        await unit.load();
+        current = unit.revision > 0 && sameMessage(last, unit.meta);
+      }
+      if (current) lines = cached.messages.slice(forgotten - cached.forgotten);
+    }
+    if (lines === null) {
+      lines = [];
+      for (let index = forgotten; index < total; index += 1) {
+        const unit = conversationMessage(this.#scope, this.#prefix, index);
+        await unit.load();
+        if (unit.revision === 0) throw new Error(`history is missing message ${index} of ${total}`);
+        lines.push(unit.meta);
+      }
     }
     this.messages = new WindowMessages(lines, forgotten);
     if (typeof state.usage === 'object' && state.usage !== null) {
@@ -657,6 +691,18 @@ export class StatedModel extends CachedModel {
     this.#nextIndex = this.messages.total;
   }
 
+  /** Write the active window as one cache unit when the runtime closes. */
+  override async close(): Promise<void> {
+    if (this.#revision === null) return;
+    const unit = conversationCache(this.#scope, this.#prefix);
+    unit.meta = {
+      total: this.messages.total,
+      forgotten: this.messages.forgotten,
+      messages: this.messages.slice(0, this.messages.length),
+    };
+    await unit.save();
+  }
+
   /** Delete every unit this transcript owns; answers the names that would not go. */
   async wipeHistory(): Promise<string[]> {
     const left: string[] = [];
@@ -675,6 +721,13 @@ export class StatedModel extends CachedModel {
       if (unit.revision > 0) await unit.delete();
     } catch {
       left.push(CONVERSATION_KEY);
+    }
+    try {
+      const unit = conversationCache(this.#scope, this.#prefix);
+      await unit.load();
+      if (unit.revision > 0) await unit.delete();
+    } catch {
+      left.push('conversation.cache');
     }
     this.#revision = null;
     this.#nextIndex = 0;

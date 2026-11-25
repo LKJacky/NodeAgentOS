@@ -1404,6 +1404,16 @@ export class AgentRuntime {
       ask.settle(null);
     }
     this.#asks.clear();
+    if (this.model !== null) {
+      try {
+        await this.model.close();
+      } catch (error) {
+        agentLog('warn', 'model.cache.failed', {
+          agent: this.name,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
     this.#markIdle();
   }
 

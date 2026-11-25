@@ -66,6 +66,63 @@ test('a transcript is written one unit per line and read back after a restart', 
   }
 });
 
+test('the active window is cached on close and falls back when its tail is stale', async () => {
+  const net = new FakeNet().withHistory();
+  const tenant = 'window-cache';
+  const first = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
+  let originalFirst = '';
+  try {
+    await first.call('chat', { msg: { content: 'hello' } });
+    const window = (await first.call('history', {})) as HistoryWindow;
+    originalFirst = String(window.messages[0]?.content);
+  } finally {
+    await first.stop();
+  }
+
+  const cache = net.unit('conversation.cache', tenant) as {
+    total: number;
+    forgotten: number;
+    messages: Message[];
+  };
+  assert.ok(cache !== undefined, 'closing the model wrote the window cache');
+  assert.ok(cache.messages.length > 0);
+  cache.messages[0] = { ...cache.messages[0], content: 'read from the cache' };
+  net.putUnit('conversation.cache', cache, tenant);
+
+  const second = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
+  try {
+    assert.equal(
+      second.runtime.model?.messages.at(0)?.content,
+      'read from the cache',
+      'a cache whose last line matches the units is read as one unit',
+    );
+  } finally {
+    await second.stop();
+  }
+
+  const stale = net.unit('conversation.cache', tenant) as {
+    total: number;
+    forgotten: number;
+    messages: Message[];
+  };
+  stale.messages[stale.messages.length - 1] = {
+    ...stale.messages[stale.messages.length - 1],
+    content: 'not what the units hold',
+  };
+  net.putUnit('conversation.cache', stale, tenant);
+
+  const third = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
+  try {
+    assert.equal(
+      third.runtime.model?.messages.at(0)?.content,
+      originalFirst,
+      'a stale tail sends the load back to the message units',
+    );
+  } finally {
+    await third.stop();
+  }
+});
+
 test('a turn that ends with an unanswered tool call is closed on the next start', async () => {
   const net = new FakeNet().withHistory();
   const call = {

@@ -7,6 +7,7 @@ import type { Message } from './types.js';
 // Kept here, not imported, so storage has no back-edge into the modules that use it.
 const CACHE_UNIT = 'cache';
 const CONVERSATION_KEY = 'conversation';
+const CONVERSATION_CACHE_KEY = 'conversation.cache';
 const SETTINGS_UNIT = 'agent.settings';
 const SETTINGS_VERSION = 1;
 
@@ -16,6 +17,12 @@ export type StoredConversation = {
   messages: number;
   forgotten?: number;
   usage?: Record<string, unknown>;
+};
+export type StoredConversationCache = {
+  /** The state count this window was written for. */
+  total: number;
+  forgotten: number;
+  messages: Message[];
 };
 export type StoredSubagents = { names: string[]; agents: StoredAgent[] };
 export type StoredProvider = { name: string };
@@ -30,6 +37,9 @@ export class ConversationStateUnit extends Unit<StoredConversation> {
   meta: StoredConversation = { messages: 0 };
 }
 export class ConversationMessageUnit extends Unit<Message> {}
+export class ConversationCacheUnit extends Unit<StoredConversationCache> {
+  meta: StoredConversationCache = { total: 0, forgotten: 0, messages: [] };
+}
 export class SettingsUnit extends Unit<StoredSettings> {
   meta: StoredSettings = { version: SETTINGS_VERSION, values: {} };
 }
@@ -60,6 +70,9 @@ export function conversationMessage(
 ): ConversationMessageUnit {
   return scope.unit(ConversationMessageUnit, at(prefix, `${CONVERSATION_KEY}.${index}`));
 }
+export function conversationCache(scope: BindingScope, prefix = ''): ConversationCacheUnit {
+  return scope.unit(ConversationCacheUnit, at(prefix, CONVERSATION_CACHE_KEY));
+}
 export function settingsStorage(scope: BindingScope, prefix = ''): SettingsUnit {
   return scope.unit(SettingsUnit, at(prefix, SETTINGS_UNIT));
 }
@@ -77,6 +90,7 @@ export function storedUnit(scope: BindingScope, prefix: string, unitId: string):
     return scope.unit(CacheEntryUnit, at(prefix, unitId));
   }
   if (unitId === CONVERSATION_KEY) return conversationState(scope, prefix);
+  if (unitId === CONVERSATION_CACHE_KEY) return conversationCache(scope, prefix);
   if (unitId.startsWith(`${CONVERSATION_KEY}.`)) {
     return scope.unit(ConversationMessageUnit, at(prefix, unitId));
   }
