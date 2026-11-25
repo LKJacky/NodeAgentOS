@@ -322,10 +322,24 @@ export class AgentNode extends Node {
       // sibling nodes or to the model as a tool. A page asks for it once when it has a gap in the
       // deltas to fill (a lost frame, a reconnected stream): the one call that carries the line so
       // far, and no token ever goes through it.
-      stream: async (args: ToolArgs) => ({ stream: (await this.#target(args)).streamState() }),
+      stream: async (args: ToolArgs) => {
+        const target = targetOf(args);
+        const running = this.family.started(target);
+        if (running !== undefined) return { stream: running.streamState() };
+        await this.#prefixOf(target);
+        return { stream: null };
+      },
       stop: async (args: ToolArgs) => this.#stop(args),
-      provider: async (args: ToolArgs) =>
-        await providerState(this.ctx, await this.#prefixOf(targetOf(args)), args.action, args.name),
+      provider: async (args: ToolArgs) => {
+        const target = targetOf(args);
+        const action = String(args.action ?? 'list');
+        if (action === 'select') {
+          const running = this.family.started(target);
+          if (running !== undefined && running.phase() !== 'idle')
+            throw new Error('cannot switch providers while the agent is running');
+        }
+        return await providerState(this.ctx, await this.#prefixOf(target), args.action, args.name);
+      },
       // What this agent runs on: the five numbers and the two switches its page may change. The settings of one agent
       // are its own - a sub-agent starts on its parent's and then keeps its own copy - so this is
       // answered by the agent the call names, like every other per-agent read.
@@ -343,7 +357,13 @@ export class AgentNode extends Node {
         if (action === 'update') return await writeSettings(this.ctx, prefix, args);
         return await settingsAnswer(this.ctx, prefix);
       },
-      answer: async (args: ToolArgs) => (await this.#target(args)).answer(args),
+      answer: async (args: ToolArgs) => {
+        const target = targetOf(args);
+        const running = this.family.started(target);
+        if (running !== undefined) return await running.answer(args);
+        await this.#prefixOf(target);
+        throw new Error('no turn is waiting for an answer');
+      },
       // The agents this node runs, as `{agents: [...]}`: the main agent first, then the sub-agents
       // it started, each with the topic and state a page follows it by.
       agents: async () => ({
@@ -355,11 +375,11 @@ export class AgentNode extends Node {
       destroy_agent: async (args: ToolArgs) => {
         const name = typeof args.name === 'string' ? args.name.trim() : '';
         if (name === '') throw new Error('destroy_agent needs a "name"');
-        const family = await this.#readyFamily();
+        const family = this.family;
         if (name === family.main.name) throw new Error('the main agent cannot be destroyed');
         return await family.destroyAgent(name);
       },
-      [PANEL]: async (args: ToolArgs) => page((await this.#ready()).identity.topic, args),
+      [PANEL]: async (args: ToolArgs) => page(this.family.main.identity.topic, args),
     };
   }
 
@@ -395,11 +415,6 @@ export class AgentNode extends Node {
     return family;
   }
 
-  /** The runtime for this invocation, ready. */
-  async #ready(): Promise<AgentRuntime> {
-    return (await this.#readyFamily()).main;
-  }
-
   /** The agent one call is for: this node's own, or the sub-agent its `agent` names. */
   async #target(args: ToolArgs): Promise<AgentRuntime> {
     const family = await this.#readyFamily();
@@ -430,8 +445,13 @@ export class AgentNode extends Node {
    *  not something a Stop has an opinion about. A sub-agent's stop answers for that agent in the same
    *  way; a name that is not in this family is refused by `agent()`. */
   async #stop(args: ToolArgs): Promise<string> {
-    const family = await this.#readyFamily();
-    return await (await family.ensureAgent(targetOf(args))).stop();
+    const target = targetOf(args);
+    const running = this.family.started(target);
+    if (running === undefined) {
+      await this.#prefixOf(target);
+      return 'nothing to stop';
+    }
+    return await running.stop();
   }
 
   /** Provider stream chunks, delivered to this tenant's runtime hub by request id. */

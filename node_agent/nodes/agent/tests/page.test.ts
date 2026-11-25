@@ -119,6 +119,29 @@ test('the ui capability answers with the page', async () => {
   }
 });
 
+test('a page read and a stop do not start a runtime', async () => {
+  const agent = await startAgent({
+    net: new FakeNet().withHistory(),
+    provider: new ScriptedProvider(),
+    materialize: false,
+  });
+  try {
+    await agent.call('ui', {});
+    assert.equal(agent.runtime.env, null, 'ui reads the page without starting the runtime');
+    await agent.call('status', {});
+    assert.equal(agent.runtime.env, null, 'status reads storage without starting the runtime');
+    assert.deepEqual(await agent.call('stream', {}), { stream: null });
+    assert.equal(await agent.call('stop', {}), 'nothing to stop');
+    await assert.rejects(
+      () => agent.call('answer', { id: 'no_call', answer: 'yes' }),
+      /no turn is waiting for an answer/,
+    );
+    assert.equal(agent.runtime.env, null, 'none of the reads or the stop woke the runtime');
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('the page draws the question, the stop button and the provider switch', () => {
   for (const wanted of [
     'ask-choice',

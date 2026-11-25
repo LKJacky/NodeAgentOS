@@ -2547,9 +2547,15 @@
           showOlder(page.olderNote);
           providerSwitch.replaceChildren(...providerOptions(page.providers));
           providerSwitch.value = activeRow(page.activeProvider, page.providers);
-          providerSwitch.disabled = page.providers.length === 0;
+          const providerBusy =
+            typeof page.agentStatus?.state === 'string' && page.agentStatus.state !== 'idle';
+          providerSwitch.disabled = page.providers.length === 0 || providerBusy;
           providerSwitch.title =
-            page.providers.length === 0 ? t('usage.noProviders') : t('usage.activeProvider');
+            page.providers.length === 0
+              ? t('usage.noProviders')
+              : providerBusy
+                ? t('usage.providerRunning')
+                : t('usage.activeProvider');
         });
       }
 
@@ -4438,9 +4444,15 @@
       function showProviders(page) {
         providerSwitch.replaceChildren(...providerOptions(page.providers));
         providerSwitch.value = activeRow(page.activeProvider, page.providers);
-        providerSwitch.disabled = page.providers.length === 0;
+        const providerBusy =
+          typeof page.agentStatus?.state === 'string' && page.agentStatus.state !== 'idle';
+        providerSwitch.disabled = page.providers.length === 0 || providerBusy;
         providerSwitch.title =
-          page.providers.length === 0 ? t('usage.noProviders') : t('usage.activeProvider');
+          page.providers.length === 0
+            ? t('usage.noProviders')
+            : providerBusy
+              ? t('usage.providerRunning')
+              : t('usage.activeProvider');
       }
 
       /** The agent's own answer says which row it uses; the rows themselves come from the provider

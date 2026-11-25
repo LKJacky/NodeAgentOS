@@ -26,6 +26,7 @@ import { agentLog } from './log.js';
 import { agentNameOf } from './names.js';
 import { AgentBusEnv, CANCELLED } from './env.js';
 import { DirectProvider, missingConfig, type CoreBuilder } from './direct.js';
+import { providerState } from './provider.js';
 import {
   emptyUsage,
   charCount,
@@ -103,7 +104,7 @@ type PendingAsk = {
 };
 
 /** How long a sub-agent runtime may sit idle after a turn before it is closed and dropped. */
-export const DEFAULT_IDLE_DESTROY_MS = 30_000;
+export const DEFAULT_IDLE_DESTROY_MS = 1_000;
 
 export type RuntimeOptions = {
   readonly historyRequired?: boolean;
@@ -348,8 +349,12 @@ export class AgentRuntime {
     return this.#providerName;
   }
 
-  /** Bind the bus this runtime talks through and initialize its cache and environment. The model is
-   *  deliberately lazy: the agent and its page stay available while no provider is on the bus. */
+  get closed(): boolean {
+    return this.#closed;
+  }
+
+  /** Bind the bus this runtime talks through, initialize its cache and environment, and build the
+   *  model it will use. A runtime is ready to take a turn when this resolves. */
   async ready(): Promise<void> {
     if (this.#starting === null) this.#starting = this.#start();
     await this.#starting;
@@ -385,6 +390,9 @@ export class AgentRuntime {
     // The numbers a component reads once are handed to it here, so a stored value is in force on the
     // first turn this process runs and not only on the one after a restart.
     await this.applyRuntimeSettings();
+    // The model is built with the settings and provider this runtime just loaded, so the first turn
+    // finds a model already carrying them.
+    await this.#ensureModel();
     // The children a previous run saved are always started again: `restoreAgents` was removed, so the
     // behaviour that used to be the setting's default is the only one left.
     agentLog('info', 'agent.ready', {
@@ -394,7 +402,7 @@ export class AgentRuntime {
     });
   }
 
-  /** Build the model on the first turn: the provider it will use, and the transcript it continues. */
+  /** Build the one model this runtime uses, with the provider and transcript it starts from. */
   async #ensureModel(): Promise<CachedModel> {
     if (this.model !== null) return this.model;
     if (this.#loading === null) {
@@ -892,7 +900,7 @@ export class AgentRuntime {
   async #settingsAnswer(): Promise<Record<string, unknown>> {
     let active = '';
     try {
-      const listed = await this.handleProvider({ action: 'list' });
+      const listed = await providerState(this.scope, this.unitPrefix, 'list', undefined);
       active = typeof listed.active === 'string' ? listed.active : '';
     } catch {
       // A bus without a provider node still has settings.
@@ -1141,8 +1149,7 @@ export class AgentRuntime {
   /** After a turn, a sub-agent with nothing queued may close itself when it has been idle long enough. */
   #armIdleExit(): void {
     this.#touch();
-    if (this.parent === null || this.#closed || this.#step !== null || this.#queue.length > 0)
-      return;
+    if (this.#closed || this.#step !== null || this.#queue.length > 0) return;
     const after = this.options.idleDestroyMs ?? DEFAULT_IDLE_DESTROY_MS;
     if (after <= 0) return;
     this.#idleTimer = setTimeout(() => {
@@ -1374,6 +1381,13 @@ export class AgentRuntime {
 
   /** Stop and close: nothing queued runs, and every caller is answered. */
   async close(): Promise<void> {
+    agentLog('info', 'agent.close', {
+      agent: this.name,
+      parent: this.parent?.name,
+      phase: this.phase(),
+      queued: this.#queue.length,
+      waiting: this.#waiting.length,
+    });
     this.#closed = true;
     this.#touch();
     // A page still drawing a tail has to be told the turn it was watching is over.
@@ -1518,57 +1532,6 @@ export class AgentRuntime {
   }
 
   // providers
-
-  /** The rows this agent may talk through, and the one it settled on - the same shape and the same
-   *  rules for a sub-agent as for the main agent. A child was handed its row when it was created, so
-   *  there is nothing here that reads the parent's choice. */
-  async handleProvider(args: Record<string, unknown>): Promise<Record<string, unknown>> {
-    await this.ready();
-    const action = String(args.action ?? 'list');
-    let rows: string[] = [];
-    try {
-      rows = await this.providerNodes.names();
-    } catch {
-      rows = [];
-    }
-    if (action === 'list') {
-      // No provider node is not an error here: the page asks for the list before one is connected.
-      if (rows.length === 0)
-        return { providers: [], active: '', persistent: this.options.historyRequired ?? true };
-      if (this.#providerName === null && rows.length > 0) {
-        const selected = (await this.#loadActiveProvider()) ?? this.options.providerName ?? null;
-        this.#providerName = ProviderNodes.rowOf(selected, rows) ?? selected ?? (rows[0] as string);
-      }
-      const active = this.#providerName ?? '';
-      return {
-        providers: rows.map((name) => ({ name, active: name === active })),
-        active,
-        persistent: this.options.historyRequired ?? true,
-      };
-    }
-    if (action !== 'select') throw new Error(`unknown provider action "${action}"`);
-    if (rows.length === 0)
-      throw new Error('no provider node is on the bus — connect @node-agent/provider first');
-    if (this.phase() !== 'idle')
-      throw new Error('cannot switch providers while the agent is running');
-    const wanted = String(args.name ?? '');
-    const row = ProviderNodes.rowOf(wanted, rows);
-    if (row === null) {
-      const available = rows.length > 0 ? ` (available: ${rows.join(', ')})` : '';
-      throw new Error(`no provider "${wanted}"${available}`);
-    }
-    this.#providerName = row;
-    const provider = this.#makeProvider(row);
-    this.#provider = provider;
-    this.model?.setProvider(provider);
-    await this.#persistActiveProvider(row);
-    if (this.parent !== null) await this.group.agentsChanged();
-    return {
-      providers: rows.map((name) => ({ name, active: name === row })),
-      active: row,
-      persistent: this.options.historyRequired ?? true,
-    };
-  }
 
   /** The named clock a transcript line carries, for a caller that wants it. */
   static now(): string {

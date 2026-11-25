@@ -7,6 +7,7 @@
     "total": "total",
     "loading": "Loading providers…",
     "activeProvider": "Active provider",
+    "providerRunning": "Cannot switch while the agent is running",
     "noProviders": "No providers available",
     "providersFailed": "Could not load providers",
     "switchFailed": "Could not switch provider: {error}",

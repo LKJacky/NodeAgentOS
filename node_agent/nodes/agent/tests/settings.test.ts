@@ -254,8 +254,11 @@ test('a value outside the range it may have is refused, with the reason', async 
       () => agent.call('settings', { action: 'delete' }),
       /unknown settings action "delete"/,
     );
-    // Nothing was written by any of them.
-    assert.deepEqual(net.unitIds('refused'), []);
+    // None of the refused saves wrote a settings unit; the model's conversation state is not theirs.
+    assert.deepEqual(
+      net.unitIds('refused').filter((unitId) => unitId === 'settings'),
+      [],
+    );
   } finally {
     await agent.stop();
   }

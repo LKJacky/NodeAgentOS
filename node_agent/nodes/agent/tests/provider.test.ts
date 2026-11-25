@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { NodeProvider, ProviderNodes, STREAM_IDLE_MS, streamIdleMs } from '../src/model.ts';
 import { ScriptedProvider } from './scripted_model.ts';
-import type { StreamEvent, ToolCall } from '../src/types.ts';
+import type { ChatReply, ChatRequest, Provider, StreamEvent, ToolCall } from '../src/types.ts';
 import { FakeNet, startAgent, type TestAgent } from './harness.ts';
 
 /** The agent's own provider seam: a fresh stateless proxy on the runtime's bus and hub. */
@@ -52,6 +52,53 @@ test('the provider rows are named after the node that holds them', async () => {
       /no provider "provider.nope"/,
     );
   } finally {
+    await agent.stop();
+  }
+});
+
+/** A provider that starts an answer and then stays inside the round until the test lets it go. */
+class Held implements Provider {
+  readonly #open: Promise<void>;
+  #release!: () => void;
+
+  constructor() {
+    this.#open = new Promise((resolve) => {
+      this.#release = resolve;
+    });
+  }
+
+  release(): void {
+    this.#release();
+  }
+
+  async chat(): Promise<ChatReply> {
+    return { content: '', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+  }
+
+  async *stream(_request: ChatRequest): AsyncGenerator<StreamEvent> {
+    yield { type: 'content', text: 'working' };
+    await this.#open;
+    yield { type: 'end', previous_response_id: null };
+  }
+}
+
+test('a provider cannot be switched while the agent is running', async () => {
+  const held = new Held();
+  const agent = await startAgent({ net: providerNode(), provider: held });
+  try {
+    const turn = agent.call('chat', { msg: { content: 'hold the round open' } });
+    for (let i = 0; i < 100 && agent.runtime.phase() === 'idle'; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 2));
+    }
+    assert.notEqual(agent.runtime.phase(), 'idle', 'the round is running');
+    await assert.rejects(
+      () => agent.call('provider', { action: 'select', name: 'provider.deep' }),
+      /cannot switch providers while the agent is running/,
+    );
+    held.release();
+    await turn;
+  } finally {
+    held.release();
     await agent.stop();
   }
 });

@@ -866,8 +866,8 @@ test('a sub-agent that chose a provider comes back on it, beside a main agent th
   try {
     assert.equal(
       second.runtime.providerName,
-      null,
-      'the main agent reads its row on the first use',
+      'provider.deep',
+      'the main agent builds its model on the row it kept',
     );
     const listed = (await second.call('provider', { action: 'list' })) as ProviderListing;
     assert.equal(listed.active, 'provider.deep', 'the main agent kept its own row');
@@ -890,6 +890,35 @@ test('a sub-agent that chose a provider comes back on it, beside a main agent th
 // other half, and the page calls it the way it calls the list. So the same delete the model can ask
 // for is one an ordinary caller can ask for too, with the runtime - not the page - deciding what
 // "gone" means: the agent is stopped, its units are deleted, its name leaves the family.
+test('a destroy does not start a retired sub-agent just to delete it', async () => {
+  const script = new Script(
+    { call: call('create_agent', { name: 'helper', icon: ICON }) },
+    { text: 'ready' },
+    { text: 'the child speaking' },
+  );
+  const agent = await start(script);
+  try {
+    await agent.call('chat', { msg: { content: 'start a helper' } }, 'alice');
+    await agent.call('chat', { agent: 'helper', msg: { content: 'say something' } }, 'alice');
+    await agent.family.retireAgent('helper');
+    assert.equal(agent.family.started('helper'), undefined, 'the runtime is gone, the name is not');
+    assert.ok(
+      agent.net.unitIds(TENANT).some((unitId) => unitId.startsWith('sub.helper.')),
+      'the retired sub-agent left its units behind',
+    );
+
+    const answer = await agent.call('destroy_agent', { name: 'helper' }, 'alice');
+    assert.match(String(answer), /destroyed agent "helper"/);
+    assert.equal(agent.family.started('helper'), undefined, 'the destroy did not bring it back');
+    assert.deepEqual(
+      agent.net.unitIds(TENANT).filter((unitId) => unitId.startsWith('sub.helper.')),
+      [],
+    );
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('the destroy_agent capability deletes a sub-agent', async () => {
   const script = new Script(
     { call: call('create_agent', { name: 'helper', icon: ICON }) },
@@ -1146,6 +1175,31 @@ test('a Stop cuts the turn and leaves the queued line to run', async () => {
   }
 });
 
+test('an idle main runtime retires and the next turn builds a fresh one', async () => {
+  const script = new Script({ text: 'first' }, { text: 'second' });
+  const agent = await startAgent({
+    net: new FakeNet().withHistory(),
+    provider: script,
+    tenantId: 'idle-main',
+    runtime: { idleDestroyMs: 20 },
+  });
+  try {
+    await agent.call('chat', { msg: { content: 'first turn' } });
+    const first = agent.family.main;
+    assert.equal(first.closed, false);
+    await sleep(100);
+    assert.equal(first.closed, true, 'the idle main runtime closes itself');
+    assert.notEqual(agent.family.main, first, 'the family holds a fresh main runtime');
+    assert.equal(agent.family.main.env, null, 'the fresh runtime is not started until used');
+
+    await agent.call('chat', { msg: { content: 'second turn' } });
+    assert.equal(agent.family.main.closed, false, 'the next turn starts the fresh runtime');
+    assert.equal(script.asked.length, 2, 'both turns reached the provider');
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('an idle sub-agent runtime retires, but its name and transcript stay', async () => {
   const script = new Script(
     { call: call('create_agent', { name: 'helper', icon: ICON }) },
@@ -1167,6 +1221,16 @@ test('an idle sub-agent runtime retires, but its name and transcript stay', asyn
       () => agent.family.agent('helper'),
       /not running yet/,
       'an idle child runtime closes itself',
+    );
+    agent.net.node('provider', 'the shared providers', {
+      providers: () => ({ providers: [{ name: 'fast' }, { name: 'deep' }], persistent: true }),
+    });
+    await agent.call('provider', { action: 'select', name: 'provider.deep', agent: 'helper' });
+    const restarted = await agent.family.ensureAgent('helper');
+    assert.equal(
+      restarted.options.providerName,
+      'provider.deep',
+      'a selection made while the child was stopped is the one its next runtime uses',
     );
     const rows = (await agent.call('agents', {})) as { agents: { name: string }[] };
     assert.ok(
