@@ -22,11 +22,12 @@
         "NODE_AGENT_WEBUI_BIND": "127.0.0.1",
         "NODE_AGENT_WEBUI_PORT": "8790",
         "NODE_AGENT_WEBUI_SECRET": "",
-        "SERVE_PLATFORM_SECRET": "",
-        "NODE_AGENT_NODES": "@node-agent/provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
+        "SERVE_PLATFORM_SECRET": ""
       },
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
     },
     {
       // The branch under worktrees/: its own dist, its own SDK, its own workspaces. Launching this
@@ -48,7 +49,9 @@
         "NODE_AGENT_NODES": "@node-agent/provider,node-agent-webui,node-agent-notes,node-agent-todo,node-agent-timer,node-agent-search,node-agent-introduce"
       },
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
     },
     {
       // A node on its own, against a bus someone else started (the stack above, or docker compose).
@@ -64,7 +67,9 @@
         "SERVE_PLATFORM_SECRET": ""
       },
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
     },
     {
       // The example node: the SDK runner loads the package in this folder and dials the bus.
@@ -72,14 +77,18 @@
       "type": "node",
       "request": "launch",
       "program": "${workspaceFolder}/node_agent/sdk/dist/serve.js",
-      "args": ["${workspaceFolder}/node_example/hello-node"],
+      "args": [
+        "${workspaceFolder}/node_example/hello-node"
+      ],
       "cwd": "${workspaceFolder}/node_example/hello-node",
       "preLaunchTask": "build: latest",
       "env": {
         "NODE_AGENT_BUS_URL": "ws://127.0.0.1:8788",
       },
       "console": "integratedTerminal",
-      "skipFiles": ["<node_internals>/**"]
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
     }
   ]
 }

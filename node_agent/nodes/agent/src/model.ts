@@ -456,6 +456,12 @@ export class CachedModel {
       ];
     }
     this.messages.push(...lines);
+    await this.afterPush(lines);
+  }
+
+  /** Tell watchers about a committed line. A persistent model flushes it to history first, so an
+   *  event never asks a page to read a transcript that does not hold the line yet. */
+  protected async afterPush(lines: readonly Message[]): Promise<void> {
     if (this.#onCommit !== undefined) await this.#onCommit(lines);
   }
 
@@ -660,10 +666,10 @@ export class StatedModel extends CachedModel {
     await this.appendUnclosedToolResults('unexpected exit');
   }
 
-  /** Every line written is a line stored: a reload continues the same conversation. */
-  override async pushMessages(messages: readonly Message[]): Promise<void> {
-    await super.pushMessages(messages);
+  /** Store first, announce second: a reload triggered by the announcement must see the line. */
+  protected override async afterPush(lines: readonly Message[]): Promise<void> {
     await this.persist();
+    await super.afterPush(lines);
   }
 
   /** Write new transcript entries, then atomically advance the conversation state. */

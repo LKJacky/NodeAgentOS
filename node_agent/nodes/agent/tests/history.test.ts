@@ -66,6 +66,33 @@ test('a transcript is written one unit per line and read back after a restart', 
   }
 });
 
+test('a committed line is announced only after the history state holds it', async () => {
+  const net = new FakeNet().withHistory();
+  const tenant = 'announce-order';
+  let stateAtFirstAnnouncement: number | null = null;
+  const agent = await startAgent({
+    net,
+    provider: new ScriptedProvider(),
+    tenantId: tenant,
+    runtime: {
+      onCommit: () => {
+        if (stateAtFirstAnnouncement !== null) return;
+        const state = net.unit('conversation', tenant) as { messages?: number } | undefined;
+        stateAtFirstAnnouncement = state?.messages ?? 0;
+      },
+    },
+  });
+  try {
+    await agent.call('chat', { msg: { content: 'hello' } });
+    assert.ok(
+      (stateAtFirstAnnouncement ?? 0) >= 1,
+      'the page heard about the line only after conversation.messages counted it',
+    );
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('the active window is cached on close and falls back when its tail is stale', async () => {
   const net = new FakeNet().withHistory();
   const tenant = 'window-cache';
