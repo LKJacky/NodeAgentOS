@@ -192,6 +192,7 @@ async function readAgents(
       parent: null,
       state: running('')?.phase() ?? 'idle',
       children: saved.length,
+      ...(PACKAGE_ICON !== undefined ? { icon: PACKAGE_ICON } : {}),
     },
   ];
   for (const agent of saved) {

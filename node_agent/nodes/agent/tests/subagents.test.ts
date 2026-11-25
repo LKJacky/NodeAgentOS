@@ -769,6 +769,27 @@ async function startWithProviders(
   return { net, agent };
 }
 
+test('the main agent row carries the node-agent mark, not a caller icon', async () => {
+  const agent = await startAgent({
+    net: new FakeNet().withHistory(),
+    provider: new Script({ text: 'ok' }),
+    tenantId: TENANT,
+    runtime: { icon: ICON },
+  });
+  try {
+    const answer = (await agent.call('agents', {})) as {
+      agents: { name: string; parent: string | null; icon?: string }[];
+    };
+    const main = answer.agents.find((row) => row.parent === null);
+    assert.ok(main, 'the main agent is listed');
+    assert.match(main.icon ?? '', /node-agent colour mark/, 'the row carries the product mark');
+    assert.match(main.icon ?? '', /viewBox="0 0 256 256"/, 'the row carries the package drawing');
+    assert.notEqual(main.icon, ICON, 'a caller icon does not replace it');
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('a sub-agent is handed the provider its parent is on, and keeps it when the parent moves', async () => {
   const script = new Script(
     { call: call('create_agent', { name: 'helper', icon: ICON }) },
