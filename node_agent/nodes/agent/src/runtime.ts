@@ -307,6 +307,8 @@ export class AgentRuntime {
   #step: { controller: AbortController; tool: ToolCall | null } | null = null;
   #duringStop = false;
   #closed = false;
+  /** The one close in flight, shared by every caller that arrives while it runs. */
+  #closing: Promise<void> | null = null;
   #provider: Provider | null = null;
   #providerName: string | null = null;
   #providerRevision: number | null = null;
@@ -1380,7 +1382,14 @@ export class AgentRuntime {
   }
 
   /** Stop and close: nothing queued runs, and every caller is answered. */
-  async close(): Promise<void> {
+  close(): Promise<void> {
+    // Idle retirement and shutdown can reach the same runtime. One close, and every caller waits
+    // for that one, so the model cache is not written twice and a destroy cannot overtake it.
+    if (this.#closing === null) this.#closing = this.#closeOnce();
+    return this.#closing;
+  }
+
+  async #closeOnce(): Promise<void> {
     agentLog('info', 'agent.close', {
       agent: this.name,
       parent: this.parent?.name,
@@ -1404,9 +1413,11 @@ export class AgentRuntime {
       ask.settle(null);
     }
     this.#asks.clear();
-    if (this.model !== null) {
+    const model = this.model;
+    this.model = null;
+    if (model !== null) {
       try {
-        await this.model.close();
+        await model.close();
       } catch (error) {
         agentLog('warn', 'model.cache.failed', {
           agent: this.name,

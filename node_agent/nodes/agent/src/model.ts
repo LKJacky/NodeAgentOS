@@ -4,7 +4,13 @@
 // active context again from scratch; a turn writes its new lines, then advances the count unit
 // atomically with an expected revision.
 import type { BindingScope, UnitContext } from '@node-agent/sdk';
-import { conversationCache, conversationMessage, conversationState } from './storage.js';
+import {
+  conversationMessage,
+  conversationState,
+  windowMessages,
+  type StoredWindowMessages,
+  type WindowMessagesUnit,
+} from './storage.js';
 import {
   charCount,
   emptyUsage,
@@ -149,6 +155,38 @@ export class WindowMessages {
   wipe(): void {
     this.#items.length = 0;
     this.forgotten = 0;
+  }
+
+  /** The window as it is written to history: the lines it holds and the base it starts at. */
+  toJSON(): StoredWindowMessages {
+    return {
+      total: this.total,
+      forgotten: this.forgotten,
+      messages: this.#items.slice(),
+    };
+  }
+
+  /** Read a window back from its stored form; null when the payload is not a whole window. */
+  static fromStored(value: unknown): WindowMessages | null {
+    if (typeof value !== 'object' || value === null) return null;
+    const { total, forgotten, messages } = value as {
+      total?: unknown;
+      forgotten?: unknown;
+      messages?: unknown;
+    };
+    if (
+      typeof total !== 'number' ||
+      !Number.isSafeInteger(total) ||
+      total < 0 ||
+      typeof forgotten !== 'number' ||
+      !Number.isSafeInteger(forgotten) ||
+      forgotten < 0 ||
+      !Array.isArray(messages) ||
+      forgotten + messages.length !== total
+    ) {
+      return null;
+    }
+    return new WindowMessages(messages as Message[], forgotten);
   }
 }
 
@@ -591,11 +629,14 @@ export class StatedModel extends CachedModel {
   readonly #prefix: string;
   #revision: number | null = null;
   #nextIndex = 0;
+  /** The one window unit this runtime loaded; its revision is what a close writes against. */
+  readonly #window: WindowMessagesUnit;
 
   constructor(provider: Provider, scope: BindingScope, prefix = '', options: ModelOptions = {}) {
     super(provider, options);
     this.#scope = scope;
     this.#prefix = prefix;
+    this.#window = windowMessages(scope, prefix);
   }
 
   static messageUnit(index: number): string {
@@ -623,30 +664,21 @@ export class StatedModel extends CachedModel {
     // place new lines start: clamp it to what history actually holds.
     const forgotten = Math.max(0, Math.min(isCount(state.forgotten) ? state.forgotten : 0, total));
 
-    // One cache unit holds the whole active window. It is trusted only when it was written for this
+    // One window unit holds the whole active window. It is trusted only when it was written for this
     // exact state count and its last line still matches the line the units hold; otherwise the
     // authoritative message units are read as before.
     let lines: Message[] | null = null;
-    const cacheUnit = conversationCache(this.#scope, this.#prefix);
-    await cacheUnit.load();
-    const cached = cacheUnit.revision > 0 ? cacheUnit.meta : null;
-    if (
-      cached !== null &&
-      isCount(cached.total) &&
-      cached.total === total &&
-      isCount(cached.forgotten) &&
-      cached.forgotten <= forgotten &&
-      Array.isArray(cached.messages) &&
-      cached.messages.length === total - cached.forgotten
-    ) {
-      const last = cached.messages.at(-1);
+    await this.#window.load();
+    const stored = this.#window.revision > 0 ? WindowMessages.fromStored(this.#window.meta) : null;
+    if (stored !== null && stored.total === total && stored.forgotten <= forgotten) {
+      const last = stored.at(stored.length - 1);
       let current = true;
       if (last !== undefined) {
         const unit = conversationMessage(this.#scope, this.#prefix, total - 1);
         await unit.load();
         current = unit.revision > 0 && sameMessage(last, unit.meta);
       }
-      if (current) lines = cached.messages.slice(forgotten - cached.forgotten);
+      if (current) lines = stored.slice(forgotten - stored.forgotten, stored.length);
     }
     if (lines === null) {
       lines = [];
@@ -697,16 +729,20 @@ export class StatedModel extends CachedModel {
     this.#nextIndex = this.messages.total;
   }
 
-  /** Write the active window as one cache unit when the runtime closes. */
+  /** Write the active window when the runtime closes. */
   override async close(): Promise<void> {
     if (this.#revision === null) return;
-    const unit = conversationCache(this.#scope, this.#prefix);
-    unit.meta = {
-      total: this.messages.total,
-      forgotten: this.messages.forgotten,
-      messages: this.messages.slice(0, this.messages.length),
-    };
-    await unit.save();
+    // `load()` read this unit once at startup, so its revision is already current. Save the same
+    // object directly; there is no second read to do before writing it back.
+    this.#window.meta = this.messages.toJSON();
+    try {
+      await this.#window.save();
+    } catch (error) {
+      // The window is an optimization. If another writer won the race, its copy is as valid as
+      // ours and the conversation units remain the source of truth; do not turn that into a warning.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/changed concurrently|revision conflict/.test(message)) throw error;
+    }
   }
 
   /** Delete every unit this transcript owns; answers the names that would not go. */
@@ -729,9 +765,8 @@ export class StatedModel extends CachedModel {
       left.push(CONVERSATION_KEY);
     }
     try {
-      const unit = conversationCache(this.#scope, this.#prefix);
-      await unit.load();
-      if (unit.revision > 0) await unit.delete();
+      await this.#window.load();
+      if (this.#window.revision > 0) await this.#window.delete();
     } catch {
       left.push('conversation.cache');
     }

@@ -3,9 +3,31 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { HISTORY_MAX, historyCount, historyFrom, type HistoryWindow } from '../src/history.ts';
+import { WindowMessages } from '../src/model.ts';
 import { ScriptedProvider } from './scripted_model.ts';
 import type { Message } from '../src/types.ts';
 import { FakeNet, startAgent } from './harness.ts';
+
+test('a WindowMessages round-trips its content and refuses a broken window', () => {
+  const window = new WindowMessages(
+    [
+      { role: 'user', content: 'forgotten' },
+      { role: 'assistant', content: 'kept' },
+    ],
+    3,
+  );
+  const stored = JSON.parse(JSON.stringify(window));
+  const back = WindowMessages.fromStored(stored);
+  assert.ok(back !== null);
+  assert.equal(back.total, 5);
+  assert.equal(back.forgotten, 3);
+  assert.deepEqual(back.slice(0, back.length), window.slice(0, window.length));
+  assert.equal(
+    WindowMessages.fromStored({ total: 5, forgotten: 3, messages: [] }),
+    null,
+    'a window whose length does not match its total is not a window',
+  );
+});
 
 test('a window defaults to the newest lines and is clamped to the transcript', () => {
   assert.equal(historyCount(undefined), HISTORY_MAX);
@@ -93,7 +115,7 @@ test('a committed line is announced only after the history state holds it', asyn
   }
 });
 
-test('the active window is cached on close and falls back when its tail is stale', async () => {
+test('the active window is persisted on close and falls back when its tail is stale', async () => {
   const net = new FakeNet().withHistory();
   const tenant = 'window-cache';
   const first = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
@@ -106,12 +128,15 @@ test('the active window is cached on close and falls back when its tail is stale
     await first.stop();
   }
 
+  const cacheRevision = () => net.units.get(`${tenant}/conversation.cache`)?.revision ?? 0;
+  const firstCacheRevision = cacheRevision();
+
   const cache = net.unit('conversation.cache', tenant) as {
     total: number;
     forgotten: number;
     messages: Message[];
   };
-  assert.ok(cache !== undefined, 'closing the model wrote the window cache');
+  assert.ok(cache !== undefined, 'closing the model wrote the window unit');
   assert.ok(cache.messages.length > 0);
   cache.messages[0] = { ...cache.messages[0], content: 'read from the cache' };
   net.putUnit('conversation.cache', cache, tenant);
@@ -126,6 +151,10 @@ test('the active window is cached on close and falls back when its tail is stale
   } finally {
     await second.stop();
   }
+  assert.ok(
+    cacheRevision() > firstCacheRevision,
+    'a restart rewrites the cache instead of conflicting with the copy it loaded',
+  );
 
   const stale = net.unit('conversation.cache', tenant) as {
     total: number;
