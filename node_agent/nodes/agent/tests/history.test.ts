@@ -62,6 +62,27 @@ test('history answers with where the window sits in the transcript', async () =>
   }
 });
 
+test('history ignores forgotten and reads the requested index directly', async () => {
+  const net = new FakeNet().withHistory();
+  const tenant = 'history-forgotten';
+  const agent = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
+  try {
+    await agent.call('chat', { msg: { content: 'hello' } });
+    const state = net.unit('conversation', tenant) as { messages: number };
+    const total = state.messages;
+    net.putUnit('conversation', { ...state, forgotten: 2 }, tenant);
+    const window = (await agent.call('history', { from: 0, count: total })) as HistoryWindow;
+    assert.equal(window.from, 0, 'forgotten does not move the history window');
+    assert.equal(
+      window.messages.length,
+      total,
+      'every stored line from the requested index is read',
+    );
+  } finally {
+    await agent.stop();
+  }
+});
+
 test('a transcript is written one unit per line and read back after a restart', async () => {
   const net = new FakeNet().withHistory();
   const first = await startAgent({ net, provider: new ScriptedProvider(), tenantId: 't1' });

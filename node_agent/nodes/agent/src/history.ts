@@ -1,7 +1,6 @@
 // Reading a transcript without building the agent that wrote it: the units are the source of truth,
 // so `history` on a stored sub-agent does not start it just to answer a page.
 import type { UnitContext } from '@node-agent/sdk';
-import { WindowMessages } from './model.js';
 import { ConversationMessageUnit, ConversationStateUnit, SubagentsUnit } from './storage.js';
 import type { Message } from './types.js';
 
@@ -61,27 +60,17 @@ export async function readHistory(
 ): Promise<HistoryWindow> {
   const stateUnit = new ConversationStateUnit(ctx, `${prefix}conversation`);
   await stateUnit.load();
-  const state = stateUnit.meta;
-  const total = isCount(state.messages) ? state.messages : 0;
-  const forgotten = Math.max(0, Math.min(isCount(state.forgotten) ? state.forgotten : 0, total));
+  const total = isCount(stateUnit.meta.messages) ? stateUnit.meta.messages : 0;
 
-  const lines: Message[] = [];
-  for (let index = forgotten; index < total; index += 1) {
+  const width = historyCount(count);
+  const start = from === undefined ? Math.max(0, total - width) : historyFrom(from, total);
+  const end = Math.min(start + width, total);
+  const messages: Message[] = [];
+  for (let index = start; index < end; index += 1) {
     const unit = new ConversationMessageUnit(ctx, `${prefix}conversation.${index}`);
     await unit.load();
     if (unit.revision === 0) throw new Error(`history is missing message ${index} of ${total}`);
-    lines.push(unit.meta);
+    messages.push(unit.meta);
   }
-
-  const messages = new WindowMessages(lines, forgotten);
-  const width = historyCount(count);
-  const start =
-    from === undefined
-      ? Math.max(forgotten, total - width)
-      : Math.max(forgotten, historyFrom(from, total));
-  return {
-    from: start,
-    total,
-    messages: messages.absoluteSlice(start, Math.min(start + width, total)),
-  };
+  return { from: start, total, messages };
 }
