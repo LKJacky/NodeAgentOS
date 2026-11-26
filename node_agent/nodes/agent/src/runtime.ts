@@ -15,10 +15,8 @@ import type { JsonObject } from '@node-agent/provider/core';
 import { Cache } from './cache.js';
 import {
   activeProviderStorage,
-  listUnits,
   settingsStorage,
   storageAvailable,
-  storedUnit,
   subagentsStorage,
   type StoredAgent,
 } from './storage.js';
@@ -612,36 +610,6 @@ export class AgentRuntime {
    *  started with (a sub-agent may not, and its page has nobody to ask). */
   get allowAskUser(): boolean {
     return this.settings.allowAskUser;
-  }
-
-  /** Delete every unit this agent filed under its own prefix, and answer what would not go. The main
-   *  agent's prefix is empty: its own wipe takes its sub-agents' units with it, which is what closing
-   *  the family means. */
-  async destroySelf(): Promise<string[]> {
-    const left: string[] = [];
-    const listed = async (): Promise<{ unitId: string; revision?: number }[]> => {
-      try {
-        return await listUnits(this.bus(), this.unitPrefix);
-      } catch (error) {
-        left.push(`*: ${error instanceof Error ? error.message : String(error)}`);
-        return [];
-      }
-    };
-    for (const unit of await listed()) {
-      try {
-        const localId = unit.unitId.slice(this.unitPrefix.length);
-        const stored = storedUnit(this.bus(), this.unitPrefix, localId);
-        // `list` already named the revision: delete with it instead of reading the unit back just
-        // to learn a number the list carried.
-        if (typeof unit.revision === 'number') stored.revision = unit.revision;
-        else await stored.load();
-        if (stored.revision > 0) await stored.delete();
-      } catch (error) {
-        left.push(`${unit.unitId}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    for (const unit of await listed()) left.push(`${unit.unitId}: still there after delete`);
-    return left;
   }
 
   #makeNodeProvider(name: string | null): NodeProvider {

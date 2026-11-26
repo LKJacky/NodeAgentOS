@@ -6,7 +6,17 @@ import { agentLog } from './log.js';
 import { agentNameOf } from './names.js';
 import { AgentRuntime, type AgentRow, type RuntimeOptions } from './runtime.js';
 import { StreamHub } from './model.js';
-import { listUnits, storedUnit, subagentsStorage, type StoredAgent } from './storage.js';
+// A destroy can name hundreds of cache units; keep enough parallel work to hide latency without
+// flooding one history node.
+const DELETE_CONCURRENCY = 8;
+
+import {
+  cacheCounter,
+  conversationState,
+  storedUnit,
+  subagentsStorage,
+  type StoredAgent,
+} from './storage.js';
 
 /** Why an icon cannot be a tab drawing, or null when it can: one `<svg>...</svg>`, no script. */
 function iconProblem(icon: unknown): string | null {
@@ -252,13 +262,8 @@ export class AgentFamily {
     if (runtime === undefined && saved === undefined) {
       return `no agent named "${name}" was created here (running: ${[...this.#subagentNames()].join(', ') || 'none'})`;
     }
-    let left: string[];
-    if (runtime !== undefined) {
-      await runtime.close();
-      left = await runtime.destroySelf();
-    } else {
-      left = await this.#deleteUnits(`sub.${name}.`);
-    }
+    if (runtime !== undefined) await runtime.close();
+    const left = await this.#deleteAgentUnits(name);
     this.#agents.delete(name);
     this.#stored.delete(name);
     await this.#saveAgents();
@@ -268,32 +273,94 @@ export class AgentFamily {
     return `destroyed agent "${name}" (its transcript is deleted)`;
   }
 
-  /** Delete every unit under one prefix, for an agent that has no runtime to ask. */
-  async #deleteUnits(prefix: string): Promise<string[]> {
+  /** Delete one agent's units by the names its runtime would have used. No history-wide list. */
+  async #deleteAgentUnits(name: string): Promise<string[]> {
+    const prefix = `sub.${name}.`;
     const left: string[] = [];
-    const listed = async (): Promise<{ unitId: string; revision?: number }[]> => {
+    const state = conversationState(this.scope, prefix);
+    const counter = cacheCounter(this.scope, prefix);
+
+    // The counts are independent of the fixed units, so read them while those are being removed.
+    const readState = (async (): Promise<number> => {
       try {
-        return await listUnits(this.scope, prefix);
+        await state.load();
+        return typeof state.meta.messages === 'number' && Number.isSafeInteger(state.meta.messages)
+          ? state.meta.messages
+          : 0;
       } catch (error) {
-        left.push(`*: ${error instanceof Error ? error.message : String(error)}`);
-        return [];
+        left.push(
+          `${prefix}conversation: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return 0;
+      }
+    })();
+    const readCounter = (async (): Promise<number> => {
+      try {
+        await counter.load();
+        return typeof counter.meta.total === 'number' && Number.isSafeInteger(counter.meta.total)
+          ? counter.meta.total
+          : 0;
+      } catch (error) {
+        left.push(`${prefix}cache: ${error instanceof Error ? error.message : String(error)}`);
+        return 0;
+      }
+    })();
+
+    await this.#removeUnits(
+      prefix,
+      ['agent.settings', 'active_provider', 'subagents', 'conversation.cache'],
+      left,
+    );
+    const [messages, entries] = await Promise.all([readState, readCounter]);
+
+    const units = [
+      ...Array.from({ length: messages }, (_, index) => `conversation.${index}`),
+      ...Array.from({ length: entries }, (_, index) => `cache.${index + 1}`),
+    ];
+    await this.#removeUnits(prefix, units, left);
+
+    // The counters go last: they are what named the message and cache units above.
+    await Promise.all([
+      (async () => {
+        try {
+          if (state.revision > 0) await state.delete();
+        } catch (error) {
+          left.push(
+            `${prefix}conversation: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+      })(),
+      (async () => {
+        try {
+          if (counter.revision > 0) await counter.delete();
+        } catch (error) {
+          left.push(`${prefix}cache: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      })(),
+    ]);
+    return left;
+  }
+
+  /** Remove unit ids in parallel, with a small cap so one destroy cannot flood the history node. */
+  async #removeUnits(prefix: string, unitIds: readonly string[], left: string[]): Promise<void> {
+    let next = 0;
+    const worker = async (): Promise<void> => {
+      while (next < unitIds.length) {
+        const localId = unitIds[next]!;
+        next += 1;
+        try {
+          const unit = storedUnit(this.scope, prefix, localId);
+          await unit.load();
+          if (unit.revision > 0) await unit.delete();
+        } catch (error) {
+          left.push(
+            `${prefix}${localId}: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
       }
     };
-    for (const unit of await listed()) {
-      try {
-        const localId = unit.unitId.slice(prefix.length);
-        const stored = storedUnit(this.scope, prefix, localId);
-        // `list` already named the revision: delete with it instead of reading the unit back just
-        // to learn a number the list carried.
-        if (typeof unit.revision === 'number') stored.revision = unit.revision;
-        else await stored.load();
-        if (stored.revision > 0) await stored.delete();
-      } catch (error) {
-        left.push(`${unit.unitId}: ${error instanceof Error ? error.message : String(error)}`);
-      }
-    }
-    for (const unit of await listed()) left.push(`${unit.unitId}: still there after delete`);
-    return left;
+    const width = Math.min(DELETE_CONCURRENCY, unitIds.length);
+    await Promise.all(Array.from({ length: width }, worker));
   }
 
   /** Close an idle agent; its transcript and its name stay in history. */

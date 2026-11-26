@@ -574,6 +574,10 @@ test('destroying a sub-agent takes its units and its name with it', async () => 
       agent.net.unitIds(TENANT).some((unitId) => unitId.startsWith('sub.helper.')),
       'the sub-agent wrote units',
     );
+    // The destroy constructs these keys from the counter/state; they are not found by a list.
+    agent.net.putUnit('sub.helper.cache', { total: 1 }, TENANT);
+    agent.net.putUnit('sub.helper.cache.1', { text: 'kept', length: 4 }, TENANT);
+    agent.net.putUnit('sub.helper.agent.settings', { version: 1, values: {} }, TENANT);
 
     await agent.call('chat', { msg: { content: 'destroy the helper' } }, 'alice');
 
