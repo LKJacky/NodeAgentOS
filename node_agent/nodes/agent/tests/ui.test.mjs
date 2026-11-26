@@ -1003,6 +1003,16 @@ test('switching agent moves history, status, the feed and what Send posts to', a
     'the shared stream includes the selected agent topic',
   );
   assert.equal(page.agents.children[1]['aria-pressed'], 'true', 'and the button says where we are');
+  assert.equal(
+    page.calls.filter(({ tool, args }) => tool === 'agent.provider' && args.agent === 'helper')
+      .length,
+    1,
+    'the first switch asks the agent for its provider rows once',
+  );
+  assert.ok(
+    !page.calls.some(({ tool }) => tool.endsWith('.providers')),
+    'and does not ask the provider nodes for the same rows again',
+  );
 
   // Sending a message and stopping are the selected agent's, not the main one's.
   page.text.value = 'what are you doing?';

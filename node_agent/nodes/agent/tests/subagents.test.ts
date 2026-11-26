@@ -548,11 +548,14 @@ test('the page switches agents: history, status and stop follow the selection', 
     const status = (await agent.call('status', { agent: 'helper' })) as { state: string };
     assert.equal(status.state, 'idle', 'the sub-agent answers for itself');
     assert.equal(await agent.call('stop', { agent: 'helper' }), 'nothing to stop');
-    await assert.rejects(
-      agent.call('history', { agent: 'nope' }),
-      /no agent named "nope" here \(agents: agent, helper\)/,
-      'an unknown name is refused, and the names are listed',
+    const empty = (await agent.call('history', { agent: 'nope' })) as HistoryWindow;
+    assert.deepEqual(
+      empty,
+      { from: 0, total: 0, messages: [] },
+      'an unknown name reads as an empty transcript, without listing the roster',
     );
+    const unknown = (await agent.call('status', { agent: 'nope' })) as { state: string };
+    assert.equal(unknown.state, 'idle', 'and an unknown name has nothing running');
   } finally {
     await agent.stop();
   }
@@ -596,7 +599,8 @@ test('destroying a sub-agent takes its units and its name with it', async () => 
       agent.net.unitIds(TENANT).includes('conversation'),
       "the main agent's own transcript is untouched",
     );
-    await assert.rejects(agent.call('status', { agent: 'helper' }), /no agent named "helper"/);
+    const gone = (await agent.call('status', { agent: 'helper' })) as { state: string };
+    assert.equal(gone.state, 'idle', 'a destroyed name reads as idle');
   } finally {
     await agent.stop();
   }
@@ -977,7 +981,8 @@ test('the destroy_agent capability deletes a sub-agent', async () => {
       agent.net.unitIds(TENANT).includes('conversation'),
       "the main agent's own transcript is untouched",
     );
-    await assert.rejects(agent.call('status', { agent: 'helper' }), /no agent named "helper"/);
+    const gone = (await agent.call('status', { agent: 'helper' })) as { state: string };
+    assert.equal(gone.state, 'idle', 'a destroyed name reads as idle');
   } finally {
     await agent.stop();
   }

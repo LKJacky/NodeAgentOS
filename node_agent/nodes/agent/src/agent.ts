@@ -15,7 +15,7 @@ import {
 } from '@node-agent/sdk';
 import { CAPABILITY_NAMES, PACKAGE_ICON } from './manifest.js';
 import { AgentFamily } from './family.js';
-import { readHistory, readSubagentNames } from './history.js';
+import { readHistory } from './history.js';
 import { providerState } from './provider.js';
 import { emptyUsage } from './helpers.js';
 import type { AgentRow, AgentRuntime, AgentStatus, RuntimeOptions } from './runtime.js';
@@ -310,13 +310,13 @@ export class AgentNode extends Node {
       chat_no_wait: (args: ToolArgs) => this.#chatNoWait(args),
       history: async (args: ToolArgs) => {
         const target = targetOf(args);
-        return await readHistory(this.ctx, await this.#prefixOf(target), args.from, args.count);
+        return await readHistory(this.ctx, this.#prefixOf(target), args.from, args.count);
       },
       status: async (args: ToolArgs) => {
         const target = targetOf(args);
         const running = this.family.started(target);
         if (running !== undefined) return running.status();
-        return await readStatus(this.ctx, await this.#prefixOf(target));
+        return await readStatus(this.ctx, this.#prefixOf(target));
       },
       // The answer being written right now, as it stands, or `{stream: null}` between rounds. This is
       // the node's own read for its page - `expose: false`, like `ui` - so it is not offered to
@@ -327,7 +327,6 @@ export class AgentNode extends Node {
         const target = targetOf(args);
         const running = this.family.started(target);
         if (running !== undefined) return { stream: running.streamState() };
-        await this.#prefixOf(target);
         return { stream: null };
       },
       stop: async (args: ToolArgs) => this.#stop(args),
@@ -339,14 +338,14 @@ export class AgentNode extends Node {
           if (running !== undefined && running.phase() !== 'idle')
             throw new Error('cannot switch providers while the agent is running');
         }
-        return await providerState(this.ctx, await this.#prefixOf(target), args.action, args.name);
+        return await providerState(this.ctx, this.#prefixOf(target), args.action, args.name);
       },
       // What this agent runs on: the five numbers and the two switches its page may change. The settings of one agent
       // are its own - a sub-agent starts on its parent's and then keeps its own copy - so this is
       // answered by the agent the call names, like every other per-agent read.
       settings: async (args: ToolArgs) => {
         const target = targetOf(args);
-        const prefix = await this.#prefixOf(target);
+        const prefix = this.#prefixOf(target);
         const action = String(args.action ?? 'get');
         if (action !== 'get' && action !== 'update') {
           throw new Error(`unknown settings action "${action}": use get or update`);
@@ -362,7 +361,6 @@ export class AgentNode extends Node {
         const target = targetOf(args);
         const running = this.family.started(target);
         if (running !== undefined) return await running.answer(args);
-        await this.#prefixOf(target);
         throw new Error('no turn is waiting for an answer');
       },
       // The agents this node runs, as `{agents: [...]}`: the main agent first, then the sub-agents
@@ -397,15 +395,10 @@ export class AgentNode extends Node {
     return this.family.main;
   }
 
-  /** The unit prefix one named agent reads and writes, without starting it. */
-  async #prefixOf(target: string): Promise<string> {
+  /** The unit prefix one named agent reads and writes. A name is not checked against the stored
+   *  roster here: reads of an agent nobody started are empty, not an error. */
+  #prefixOf(target: string): string {
     if (target === '' || target === this.ctx.nodeId) return '';
-    const names = await readSubagentNames(this.ctx);
-    if (!names.includes(target)) {
-      throw new Error(
-        `no agent named "${target}" here (agents: ${[this.ctx.nodeId, ...names].join(', ')})`,
-      );
-    }
     return `sub.${target}.`;
   }
 
@@ -444,14 +437,11 @@ export class AgentNode extends Node {
    *  the sub-agents it started keep theirs, the lines queued behind it are turns of their own and run
    *  as they would have, and the runtime itself is left alone - keeping one is the host's business, and
    *  not something a Stop has an opinion about. A sub-agent's stop answers for that agent in the same
-   *  way; a name that is not in this family is refused by `agent()`. */
+   *  way; a name that is not running simply has nothing to stop. */
   async #stop(args: ToolArgs): Promise<string> {
     const target = targetOf(args);
     const running = this.family.started(target);
-    if (running === undefined) {
-      await this.#prefixOf(target);
-      return 'nothing to stop';
-    }
+    if (running === undefined) return 'nothing to stop';
     return await running.stop();
   }
 

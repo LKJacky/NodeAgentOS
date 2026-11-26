@@ -4407,25 +4407,6 @@
           : null;
       }
 
-      // A bus may carry two provider nodes: `local-provider`, this stack's own endpoint, and
-      // `provider`, the shared one. The page lists the rows of both at once and names each with the
-      // node that holds it (`local-provider.fast`), because that full name is what a selection means
-      // and what it sends back - a row belongs to one node, never to "whichever is nearer".
-      const PROVIDER_NODES = ['local-provider', 'provider'];
-
-      /** Every row on either provider node, each named with the node it lives on. A node that is not
-       *  on the bus, or does not answer, simply has no rows here: the other one still lists. */
-      async function providerNames() {
-        const replies = await Promise.all(
-          PROVIDER_NODES.map((node) => call(`${node}.providers`, { action: 'list' })),
-        );
-        return replies.flatMap((reply, at) => {
-          if (!reply.ok) return [];
-          const rows = reply.value?.providers || [];
-          return rows.map(({ name }) => `${PROVIDER_NODES[at]}.${name}`);
-        });
-      }
-
       /** Which of `names` the agent's selection points at: the row itself when it is qualified, else
        *  the first row of that bare name, near node first - the rule the agent applies to a selection
        *  stored before local mode existed. '' when the selection names nothing that is there. */
@@ -4459,14 +4440,15 @@
               : t('usage.activeProvider');
       }
 
-      /** The agent's own answer says which row it uses; the rows themselves come from the provider
-       *  nodes, both of them, so a node the agent has not noticed yet still shows its rows here. */
+      /** The agent's own answer carries the rows and the active one: one read names both, so the
+       *  provider nodes are not asked a second time for the same list. */
       async function loadProviders(page = pages.get(currentAgent)) {
         if (page === undefined || page === null) return;
-        const [reply, names] = await Promise.all([
-          call(`${NODE}.provider`, agentArgs(page, { action: 'list' })),
-          providerNames(),
-        ]);
+        const reply = await call(`${NODE}.provider`, agentArgs(page, { action: 'list' }));
+        const rows = reply.ok && Array.isArray(reply.value?.providers) ? reply.value.providers : [];
+        const names = rows
+          .map((row) => (row && typeof row.name === 'string' ? row.name : ''))
+          .filter((name) => name !== '');
         if (names.length === 0) {
           page.providers = [];
           if (page === pages.get(currentAgent)) {
@@ -4478,7 +4460,7 @@
           return;
         }
         page.providers = names;
-        page.activeProvider = reply.ok ? reply.value?.active || '' : '';
+        page.activeProvider = reply.value?.active || '';
         if (page === pages.get(currentAgent)) withPage(page, () => showProviders(page));
       }
       async function switchProvider() {
