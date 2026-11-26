@@ -444,7 +444,13 @@ async function openPage({
         const held = this.live.get(topic);
         if (held === undefined || !text.startsWith(held.text)) {
           const id = `s${(held?.round ?? 0) + 1}`;
-          this.live.set(topic, { id, round: (held?.round ?? 0) + 1, seq: 0, text: '', reasoning: '' });
+          this.live.set(topic, {
+            id,
+            round: (held?.round ?? 0) + 1,
+            seq: 0,
+            text: '',
+            reasoning: '',
+          });
           return [
             {
               type: 'stream_start',
@@ -834,7 +840,7 @@ test('unselected agents share the event feed and keep receiving their own events
   assert.match(page.feed.url, /topic=agent&topic=agent.helper/);
 
   const before = page.calls.filter(({ tool }) => tool === 'agent.agents').length;
-  page.feed.send(chunk('helper moved'), 'agent.helper');
+  page.feed.send([{ role: 'assistant', content: 'helper moved' }], 'agent.helper');
   await settle(120);
   assert.ok(
     page.calls.filter(({ tool }) => tool === 'agent.agents').length > before,
@@ -898,11 +904,46 @@ test('a feed event refreshes the agent rows', async () => {
   });
   await settle();
   const before = page.calls.filter(({ tool }) => tool === 'agent.agents').length;
-  page.feed.send(chunk('a snapshot'));
+  page.feed.send([{ role: 'assistant', content: 'a snapshot' }]);
   await settle(120);
   assert.ok(
     page.calls.filter(({ tool }) => tool === 'agent.agents').length > before,
     'an event asks the node for the current agent list',
+  );
+});
+
+test('stream frames do not ask for the agent list', async () => {
+  const page = await openPage({
+    agents: [
+      { name: 'agent', topic: 'agent', parent: null, state: 'generating', children: 1 },
+      { name: 'helper', topic: 'agent.helper', parent: 'agent', state: 'idle', children: 0 },
+    ],
+    state: 'generating',
+  });
+  await settle();
+  const before = page.calls.filter(({ tool }) => tool === 'agent.agents').length;
+  page.feed.send({
+    type: 'stream_start',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    role: 'assistant',
+    seq: 0,
+  });
+  page.feed.send({
+    type: 'stream_delta',
+    id: 's1',
+    agent: 'agent',
+    messageId: 'm1',
+    seq: 1,
+    content: 'hi',
+  });
+  page.feed.send({ type: 'stream_end', id: 's1', agent: 'agent' });
+  await settle(150);
+  assert.equal(
+    page.calls.filter(({ tool }) => tool === 'agent.agents').length,
+    before,
+    'a stream does not re-read the roster',
   );
 });
 
@@ -1085,7 +1126,7 @@ test('coming back to an agent paints the window the page already has', async () 
 });
 
 // A turn announces an event per snapshot, and every event asks the node for the agent list again. A
-test('a refresh during a turn keeps the same agent tabs', async () => {
+test('a streaming turn does not re-read the agent tabs', async () => {
   const page = await openPage({
     state: 'generating',
     agents: [
@@ -1095,14 +1136,16 @@ test('a refresh during a turn keeps the same agent tabs', async () => {
   });
   await settle();
   const [mainTab, helperTab] = page.agents.children;
+  const before = page.calls.filter(({ tool }) => tool === 'agent.agents').length;
 
   for (let half = 0; half < 3; half += 1) {
     page.feed.send(chunk(`part ${half}`));
     await settle(120);
   }
-  assert.ok(
-    page.calls.filter(({ tool }) => tool === 'agent.agents').length > 1,
-    'the list was read again while the answer streamed',
+  assert.equal(
+    page.calls.filter(({ tool }) => tool === 'agent.agents').length,
+    before,
+    'a stream does not re-read the roster',
   );
   assert.equal(page.agents.children[0], mainTab, 'the main agent tab is the same button');
   assert.equal(page.agents.children[1], helperTab, 'and so is the sub-agent one');
@@ -1465,7 +1508,7 @@ test('an agent that appears gets a page of its own, unshown', async () => {
 
   agents.push({ name: 'later', topic: 'agent.later', parent: 'agent', state: 'idle', children: 0 });
   // The node announces something - any event is the invitation to read the list again.
-  page.feed.send(chunk('a line'));
+  page.feed.send([{ role: 'assistant', content: 'a line' }]);
   await settle(200);
 
   assert.equal(holder.children.length, 3, 'the new agent page was built when the list named it');
@@ -1734,7 +1777,10 @@ test('a reconnected page joins the stream the node is writing', async () => {
   page.feed.open();
   await settle(220);
 
-  assert.ok(page.calls.some(({ tool }) => tool === 'agent.stream'), 'the page asked for the draft');
+  assert.ok(
+    page.calls.some(({ tool }) => tool === 'agent.stream'),
+    'the page asked for the draft',
+  );
   assert.match(tailOf(logBox), /already written/, 'and drew what the node had written so far');
 
   // The next delta is the one after the adopted seq, so it lands on top.
@@ -1822,7 +1868,8 @@ test('a page nobody is looking at is let go, and reads its window again when the
 
   // Back: the page reads the transcript again, and draws it at its newest line.
   const reads = () =>
-    page.calls.filter(({ tool, args }) => tool === 'agent.history' && args.agent === undefined).length;
+    page.calls.filter(({ tool, args }) => tool === 'agent.history' && args.agent === undefined)
+      .length;
   const before = reads();
   page.agents.children[0].dispatchEvent({ type: 'click' });
   await settle(220);
@@ -1976,7 +2023,11 @@ test('a sub-agent\u2019s panel hides the fields that mean nothing for it', async
     /\.settings-field\[hidden\],[\s\S]{0,40}\.settings-row\[hidden\]\s*\{\s*display:\s*none;/,
     'the stylesheet hides the fields a sub-agent has no use for',
   );
-  assert.equal(page.settings.compressionThreshold.value, '131072', 'the fields it does have are there');
+  assert.equal(
+    page.settings.compressionThreshold.value,
+    '131072',
+    'the fields it does have are there',
+  );
   assert.equal(page.settings.cacheSize.value, '500');
   const asked = page.calls.filter(({ tool }) => tool === 'agent.settings').at(-1);
   assert.equal(asked.args.agent, 'helper', 'the panel asked about the agent on screen');
@@ -2014,7 +2065,6 @@ test('a saved cache size is the node’s, and the page keeps its own cap', async
   assert.equal(page.settings.stored().cacheSize, 2, 'the node holds the new cap');
   assert.equal(groupsOf(logBox).length, 8, 'and the page still holds every line it had');
 });
-
 
 test('a refusal from the node is what the panel shows, and the reader keeps what they typed', async () => {
   const page = await openPage();

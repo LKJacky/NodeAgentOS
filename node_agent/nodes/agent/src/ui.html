@@ -4845,7 +4845,12 @@
         let again = false;
         try {
           const value = JSON.parse(event.data).value;
-          scheduleAgentsRefresh();
+          // The roster changes on create_agent / destroy_agent, not on every token. Stream frames
+          // are the hot path: refreshing here made a streaming turn ask for the agent list ten
+          // times a second, and each answer read the stored roster. The stream branches still draw
+          // their own page; the tab row does not need to be re-read for a delta.
+          const type = typeof value?.type === 'string' ? value.type : '';
+          if (!type.startsWith('stream')) scheduleAgentsRefresh();
           // What the branch answers is whether the window has to be read again. A snapshot draws
           // itself and says no: a reload per token put a `history` read of the whole window between
           // the node and its own answer (and cleared the tail the reader was watching, while each
