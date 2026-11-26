@@ -179,9 +179,8 @@ export class Cache {
       throw new Error('cache size must be a whole number of at least 1');
     }
     this.#maxSize = maxSize;
-    const held = await this.ids();
-    const drop = held.length - maxSize;
-    for (const id of held.slice(0, Math.max(0, drop))) await this.delete(id);
+    const keepFrom = Math.max(1, this.#total - maxSize + 1);
+    for (let id = 1; id < keepFrom; id += 1) await this.delete(id);
   }
 
   /** Attach the bus this cache stores on, or detach it, without losing the counter. */
@@ -194,14 +193,12 @@ export class Cache {
     return this.#scope !== null;
   }
 
-  /** The ids history holds now, oldest first (the newest is last). */
+  /** The ids this cache still keeps, oldest first. The counter and the cap know them: no history
+   *  read is needed to list what `add` and `setMaxSize` have left behind. */
   async ids(): Promise<number[]> {
     if (this.#scope === null) return [];
-    const numbers: number[] = [];
-    for (let id = 1; id <= this.#total; id += 1) {
-      if ((await this.#loadEntry(id)) !== null) numbers.push(id);
-    }
-    return numbers;
+    const first = Math.max(1, this.#total - this.#maxSize + 1);
+    return Array.from({ length: this.#total - first + 1 }, (_, index) => first + index);
   }
 
   /** Read the counter back from history, so a restart does not reuse an id. A missing counter falls
