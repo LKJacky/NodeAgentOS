@@ -631,7 +631,10 @@ export class AgentRuntime {
       try {
         const localId = unit.unitId.slice(this.unitPrefix.length);
         const stored = storedUnit(this.bus(), this.unitPrefix, localId);
-        await stored.load();
+        // `list` already named the revision: delete with it instead of reading the unit back just
+        // to learn a number the list carried.
+        if (typeof unit.revision === 'number') stored.revision = unit.revision;
+        else await stored.load();
         if (stored.revision > 0) await stored.delete();
       } catch (error) {
         left.push(`${unit.unitId}: ${error instanceof Error ? error.message : String(error)}`);

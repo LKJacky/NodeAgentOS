@@ -115,15 +115,12 @@ test('a committed line is announced only after the history state holds it', asyn
   }
 });
 
-test('the active window is persisted on close and falls back when its tail is stale', async () => {
+test('the active window is persisted on close and trusted by total and forgotten', async () => {
   const net = new FakeNet().withHistory();
   const tenant = 'window-cache';
   const first = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
-  let originalFirst = '';
   try {
     await first.call('chat', { msg: { content: 'hello' } });
-    const window = (await first.call('history', {})) as HistoryWindow;
-    originalFirst = String(window.messages[0]?.content);
   } finally {
     await first.stop();
   }
@@ -146,7 +143,7 @@ test('the active window is persisted on close and falls back when its tail is st
     assert.equal(
       second.runtime.model?.messages.at(0)?.content,
       'read from the cache',
-      'a cache whose last line matches the units is read as one unit',
+      'a window whose total and forgotten match is read as one unit',
     );
   } finally {
     await second.stop();
@@ -169,10 +166,11 @@ test('the active window is persisted on close and falls back when its tail is st
 
   const third = await startAgent({ net, provider: new ScriptedProvider(), tenantId: tenant });
   try {
+    const messages = third.runtime.model?.messages;
     assert.equal(
-      third.runtime.model?.messages.at(0)?.content,
-      originalFirst,
-      'a stale tail sends the load back to the message units',
+      messages?.at((messages?.length ?? 0) - 1)?.content,
+      'not what the units hold',
+      'a matching total and forgotten is trusted without reading the tail',
     );
   } finally {
     await third.stop();

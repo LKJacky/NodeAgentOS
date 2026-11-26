@@ -7,7 +7,10 @@ import type { BindingScope, UnitContext } from '@node-agent/sdk';
 import {
   conversationMessage,
   conversationState,
+  listUnits,
+  storedUnit,
   windowMessages,
+  type ConversationStateUnit,
   type StoredWindowMessages,
   type WindowMessagesUnit,
 } from './storage.js';
@@ -620,22 +623,20 @@ function isCount(value: unknown): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
 }
 
-function sameMessage(left: unknown, right: unknown): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
-}
-
 export class StatedModel extends CachedModel {
   readonly #scope: BindingScope;
   readonly #prefix: string;
-  #revision: number | null = null;
+  #loaded = false;
   #nextIndex = 0;
-  /** The one window unit this runtime loaded; its revision is what a close writes against. */
+  /** The two units this runtime keeps open: its state and the window beside it. */
+  readonly #state: ConversationStateUnit;
   readonly #window: WindowMessagesUnit;
 
   constructor(provider: Provider, scope: BindingScope, prefix = '', options: ModelOptions = {}) {
     super(provider, options);
     this.#scope = scope;
     this.#prefix = prefix;
+    this.#state = conversationState(scope, prefix);
     this.#window = windowMessages(scope, prefix);
   }
 
@@ -644,41 +645,34 @@ export class StatedModel extends CachedModel {
   }
 
   get revision(): number | null {
-    return this.#revision;
+    return this.#loaded ? this.#state.revision : null;
   }
 
   /** Read the transcript back: the count first, then the lines it names. */
   async load(): Promise<void> {
-    const stateUnit = conversationState(this.#scope, this.#prefix);
-    await stateUnit.load();
-    if (stateUnit.revision === 0) {
-      stateUnit.meta = {
+    // Both units stay in memory for the lifetime of this model: a save writes the revision this
+    // load saw, so a turn never has to read the state back before advancing it.
+    await this.#state.load();
+    if (this.#state.revision === 0) {
+      this.#state.meta = {
         messages: 0,
         usage: this.usage as unknown as Record<string, unknown>,
       };
-      await stateUnit.save();
+      await this.#state.save();
     }
-    const state = stateUnit.meta;
+    const state = this.#state.meta;
     const total = isCount(state.messages) ? state.messages : 0;
     // A forgotten count past the end of the transcript (a half-written state) must not become the
     // place new lines start: clamp it to what history actually holds.
     const forgotten = Math.max(0, Math.min(isCount(state.forgotten) ? state.forgotten : 0, total));
 
-    // One window unit holds the whole active window. It is trusted only when it was written for this
-    // exact state count and its last line still matches the line the units hold; otherwise the
-    // authoritative message units are read as before.
+    // One window unit holds the whole active window. The state count and base are what tell whether
+    // it still names this transcript; the per-message units are the fallback when it does not.
     let lines: Message[] | null = null;
     await this.#window.load();
     const stored = this.#window.revision > 0 ? WindowMessages.fromStored(this.#window.meta) : null;
     if (stored !== null && stored.total === total && stored.forgotten <= forgotten) {
-      const last = stored.at(stored.length - 1);
-      let current = true;
-      if (last !== undefined) {
-        const unit = conversationMessage(this.#scope, this.#prefix, total - 1);
-        await unit.load();
-        current = unit.revision > 0 && sameMessage(last, unit.meta);
-      }
-      if (current) lines = stored.slice(forgotten - stored.forgotten, stored.length);
+      lines = stored.slice(forgotten - stored.forgotten, stored.length);
     }
     if (lines === null) {
       lines = [];
@@ -693,7 +687,7 @@ export class StatedModel extends CachedModel {
     if (typeof state.usage === 'object' && state.usage !== null) {
       Object.assign(this.usage, state.usage as Partial<UsageSummary>);
     }
-    this.#revision = stateUnit.revision;
+    this.#loaded = true;
     this.#nextIndex = this.messages.total;
     await this.appendUnclosedToolResults('unexpected exit');
   }
@@ -706,7 +700,7 @@ export class StatedModel extends CachedModel {
 
   /** Write new transcript entries, then atomically advance the conversation state. */
   async persist(): Promise<void> {
-    if (this.#revision === null) return;
+    if (!this.#loaded) return;
     for (let index = this.#nextIndex; index < this.messages.total; index += 1) {
       const line = this.messages.absolute(index);
       if (line === undefined) continue;
@@ -714,24 +708,18 @@ export class StatedModel extends CachedModel {
       unit.meta = line;
       await unit.save();
     }
-    const stateUnit = conversationState(this.#scope, this.#prefix);
-    await stateUnit.load();
-    if (stateUnit.revision !== this.#revision) {
-      throw new Error('the conversation changed concurrently');
-    }
-    stateUnit.meta = {
+    this.#state.meta = {
       messages: this.messages.total,
       usage: this.usage as unknown as Record<string, unknown>,
       forgotten: this.messages.forgotten,
     };
-    await stateUnit.save();
-    this.#revision = stateUnit.revision;
+    await this.#state.save();
     this.#nextIndex = this.messages.total;
   }
 
   /** Write the active window when the runtime closes. */
   override async close(): Promise<void> {
-    if (this.#revision === null) return;
+    if (!this.#loaded) return;
     // `load()` read this unit once at startup, so its revision is already current. Save the same
     // object directly; there is no second read to do before writing it back.
     this.#window.meta = this.messages.toJSON();
@@ -748,29 +736,25 @@ export class StatedModel extends CachedModel {
   /** Delete every unit this transcript owns; answers the names that would not go. */
   async wipeHistory(): Promise<string[]> {
     const left: string[] = [];
-    for (let index = 0; index < this.messages.total; index += 1) {
-      try {
-        const unit = conversationMessage(this.#scope, this.#prefix, index);
-        await unit.load();
-        if (unit.revision > 0) await unit.delete();
-      } catch {
-        left.push(StatedModel.messageUnit(index));
+    try {
+      const units = await listUnits(this.#scope, this.#prefix);
+      for (const unit of units) {
+        const localId = unit.unitId.slice(this.#prefix.length);
+        if (localId !== CONVERSATION_KEY && !localId.startsWith(`${CONVERSATION_KEY}.`)) continue;
+        try {
+          const stored = storedUnit(this.#scope, this.#prefix, localId);
+          // `list` carries the revision; do not read every line back just to delete it.
+          if (typeof unit.revision === 'number') stored.revision = unit.revision;
+          else await stored.load();
+          if (stored.revision > 0) await stored.delete();
+        } catch {
+          left.push(unit.unitId);
+        }
       }
+    } catch (error) {
+      left.push(`*: ${error instanceof Error ? error.message : String(error)}`);
     }
-    try {
-      const unit = conversationState(this.#scope, this.#prefix);
-      await unit.load();
-      if (unit.revision > 0) await unit.delete();
-    } catch {
-      left.push(CONVERSATION_KEY);
-    }
-    try {
-      await this.#window.load();
-      if (this.#window.revision > 0) await this.#window.delete();
-    } catch {
-      left.push('conversation.cache');
-    }
-    this.#revision = null;
+    this.#loaded = false;
     this.#nextIndex = 0;
     this.messages = new WindowMessages();
     return left;

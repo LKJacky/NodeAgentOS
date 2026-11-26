@@ -271,7 +271,7 @@ export class AgentFamily {
   /** Delete every unit under one prefix, for an agent that has no runtime to ask. */
   async #deleteUnits(prefix: string): Promise<string[]> {
     const left: string[] = [];
-    const listed = async (): Promise<{ unitId: string }[]> => {
+    const listed = async (): Promise<{ unitId: string; revision?: number }[]> => {
       try {
         return await listUnits(this.scope, prefix);
       } catch (error) {
@@ -283,7 +283,10 @@ export class AgentFamily {
       try {
         const localId = unit.unitId.slice(prefix.length);
         const stored = storedUnit(this.scope, prefix, localId);
-        await stored.load();
+        // `list` already named the revision: delete with it instead of reading the unit back just
+        // to learn a number the list carried.
+        if (typeof unit.revision === 'number') stored.revision = unit.revision;
+        else await stored.load();
         if (stored.revision > 0) await stored.delete();
       } catch (error) {
         left.push(`${unit.unitId}: ${error instanceof Error ? error.message : String(error)}`);
