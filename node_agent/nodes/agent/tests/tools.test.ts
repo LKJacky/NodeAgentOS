@@ -25,24 +25,40 @@ test('read_all_tools is one of the tools the model is offered', () => {
   assert.ok(TOOLS.some((tool) => tool.function.name === 'read_all_tools'));
 });
 
-test('read_all_tools returns every offered definition as JSON', async () => {
-  const answer = await env().execute(call);
-  const defs = JSON.parse(answer) as { function: { name: string } }[];
-  assert.ok(Array.isArray(defs));
-  const names = defs.map((tool) => tool.function.name);
-  assert.ok(names.includes('read_all_tools'));
-  assert.ok(names.includes('whoami'));
-  assert.ok(names.includes('ask_user'));
+test('read_all_tools names every offered tool first, then gives the full definitions', async () => {
+  const agent = env();
+  const answer = await agent.execute(call);
+  const [index, details] = answer.split('\nFULL TOOL DEFINITIONS\n');
+  assert.ok(index !== undefined && details !== undefined, 'the index comes before the details');
+  const names = [...index.matchAll(/^\d+\. ([a-z_]+)\(/gm)].map((match) => match[1]);
+  assert.deepEqual(
+    names,
+    agent.tools.map((tool) => tool.function.name),
+    'the prefix names every tool in the order it is offered',
+  );
+  assert.match(index, /^TOOLS \(\d+\)/);
+  assert.match(
+    index,
+    /run_on_node\(node: string, tool_name: string, tool_args: object\)/,
+    'every argument is listed with its type',
+  );
+  assert.match(
+    index,
+    /ask_user\(title: string, content\?: string, selections\?: array<string>, input\?: string, timeout_seconds\?: number, default\?: string\)/,
+    'optional arguments carry a question mark',
+  );
+  for (const line of index.split('\n').slice(1)) {
+    const description = line.split(' — ')[1] ?? '';
+    assert.ok([...description].length <= 51, `summary stays short: ${line}`);
+  }
+  assert.ok(index.length < 4096, 'the whole index fits well inside the default input limit');
+  assert.match(details, /"name": "whoami"/, 'the full definitions follow the index');
 });
 
 test('allowSearchCache off hides search_cache and refuses it if called', async () => {
   const envWithNoSearch = env({ allowSearchCache: false });
-  const defs = JSON.parse(envWithNoSearch.readAllTools()) as { function: { name: string } }[];
-  assert.equal(
-    defs.some((tool) => tool.function.name === 'search_cache'),
-    false,
-    'search_cache is not offered',
-  );
+  const toolsText = envWithNoSearch.readAllTools();
+  assert.doesNotMatch(toolsText, /search_cache/);
   const answer = await envWithNoSearch.execute({
     id: 'call_search',
     type: 'function',

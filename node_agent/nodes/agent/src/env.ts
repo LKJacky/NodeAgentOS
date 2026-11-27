@@ -8,6 +8,56 @@ import { agentNameOf } from './names.js';
 import { ASK_USER_TOOL, SPAWN_TOOLS, TOOLS } from './tools.js';
 import type { ToolCall, ToolSpec } from './types.js';
 
+/** How much of a tool description the compact index keeps: enough to choose a tool, short enough
+ *  that every tool is named before the turn's input limit trims the answer. */
+const BRIEF_CHARS = 50;
+
+/** One line of prose, with the wrapping the source uses collapsed away. */
+function oneLine(text: string): string {
+  return text.replace(/\s+/g, ' ').trim();
+}
+
+/** The opening of a description, cut at a word when it is too long for the index. */
+function brief(text: string, limit = BRIEF_CHARS): string {
+  const line = oneLine(text);
+  if (line.length <= limit) return line;
+  const cut = line.slice(0, limit);
+  const space = cut.lastIndexOf(' ');
+  return `${(space > limit * 0.6 ? cut.slice(0, space) : cut).trimEnd()}…`;
+}
+
+/** One JSON-Schema type, in the short form the index uses. */
+function parameterType(schema: unknown): string {
+  if (schema === null || typeof schema !== 'object' || Array.isArray(schema)) return 'unknown';
+  const shape = schema as { type?: unknown; items?: unknown; enum?: unknown };
+  if (typeof shape.type === 'string' && shape.type !== '') {
+    if (shape.type !== 'array') return shape.type;
+    return `array<${parameterType(shape.items)}>`;
+  }
+  if (Array.isArray(shape.enum) && shape.enum.length > 0) {
+    return shape.enum.every((value) => typeof value === 'string') ? 'string' : 'unknown';
+  }
+  return 'unknown';
+}
+
+/** Every argument a tool takes: `name: type` when required, `name?: type` when optional. */
+function parameterList(tool: ToolSpec): string {
+  const schema = tool.function.parameters as {
+    properties?: Record<string, unknown>;
+    required?: unknown;
+  };
+  const properties = schema.properties;
+  if (properties === undefined || properties === null || Array.isArray(properties)) return '';
+  const required = new Set(
+    Array.isArray(schema.required)
+      ? schema.required.filter((name): name is string => typeof name === 'string')
+      : [],
+  );
+  return Object.entries(properties)
+    .map(([name, value]) => `${name}${required.has(name) ? '' : '?'}: ${parameterType(value)}`)
+    .join(', ');
+}
+
 /** The agent a call names in its `agent` argument, or '' when it names none. */
 function agentNamed(args: Record<string, unknown>): string {
   return typeof args.agent === 'string' ? agentNameOf(args.agent.trim()) : '';
@@ -233,9 +283,26 @@ export class AgentBusEnv {
     return `no such tool: ${name}`;
   }
 
-  /** Every tool definition this agent currently offers, as JSON. */
+  /** Every tool this agent currently offers: first a compact index that names each one, then the
+   *  full definitions. The index comes first because the turn's input limit trims the tail: a model
+   *  that receives only the prefix must still learn that every tool exists. */
   readAllTools(): string {
-    return JSON.stringify(this.tools, null, 2);
+    const tools = this.tools;
+    const index = tools.map((tool, position) => {
+      const name = tool.function.name;
+      const args = parameterList(tool);
+      return `${position + 1}. ${name}(${args}) — ${brief(tool.function.description)}`;
+    });
+    const details = tools
+      .map((tool) => `--- ${tool.function.name} ---\n${JSON.stringify(tool, null, 2)}`)
+      .join('\n\n');
+    return [
+      `TOOLS (${tools.length}) — compact index; full definitions follow`,
+      ...index,
+      '',
+      'FULL TOOL DEFINITIONS',
+      details,
+    ].join('\n');
   }
 
   /** The agent this turn belongs to: the name a call's `agent` argument takes, and the one a timer

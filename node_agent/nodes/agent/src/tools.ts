@@ -4,73 +4,7 @@
 // about what happens to be on it.
 import type { ToolSpec } from './types.js';
 
-export const TOOLS: ToolSpec[] = [
-  {
-    type: 'function',
-    function: {
-      name: 'read_all_tools',
-      description:
-        'Return the definitions of every tool this agent can use, including tools omitted from the ' +
-        'current request after context was forgotten. Call this when you need to recover a tool name ' +
-        'or schema.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'whoami',
-      description:
-        'Say which agent you are: the name this agent answers to. Calls that name an agent take it - ' +
-        "a timer's `agent` argument and `run_on_node`'s `agent` alike - and a sub-agent's name is its " +
-        'own, so call this rather than guessing what to put there.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_nodes',
-      description:
-        'List the nodes on the bus. Call this first, then list_node_tools to see what one can do.',
-      parameters: { type: 'object', properties: {} },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'list_node_tools',
-      description:
-        'List the capabilities one node offers: their names, descriptions and argument schemas.',
-      parameters: {
-        type: 'object',
-        properties: {
-          node: { type: 'string', description: 'node name, as list_nodes gave it' },
-        },
-        required: ['node'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'run_on_node',
-      description:
-        'Call one capability on one node; fill tool_args from the schema list_node_tools showed.',
-      parameters: {
-        type: 'object',
-        properties: {
-          node: { type: 'string', description: 'node name, as list_nodes gave it' },
-          tool_name: {
-            type: 'string',
-            description: "the capability's local name on that node, e.g. exec",
-          },
-          tool_args: { type: 'object', description: 'the arguments to pass to that capability' },
-        },
-        required: ['node', 'tool_name', 'tool_args'],
-      },
-    },
-  },
+export const CACHE_TOOLS: ToolSpec[] = [
   {
     type: 'function',
     function: {
@@ -123,6 +57,53 @@ export const TOOLS: ToolSpec[] = [
   },
 ];
 
+export const NODE_TOOLS: ToolSpec[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'list_nodes',
+      description:
+        'List the nodes on the bus. Call this first, then list_node_tools to see what one can do.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'list_node_tools',
+      description:
+        'List the capabilities one node offers: their names, descriptions and argument schemas.',
+      parameters: {
+        type: 'object',
+        properties: {
+          node: { type: 'string', description: 'node name, as list_nodes gave it' },
+        },
+        required: ['node'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'run_on_node',
+      description:
+        'Call one capability on one node; fill tool_args from the schema list_node_tools showed.',
+      parameters: {
+        type: 'object',
+        properties: {
+          node: { type: 'string', description: 'node name, as list_nodes gave it' },
+          tool_name: {
+            type: 'string',
+            description: "the capability's local name on that node, e.g. exec",
+          },
+          tool_args: { type: 'object', description: 'the arguments to pass to that capability' },
+        },
+        required: ['node', 'tool_name', 'tool_args'],
+      },
+    },
+  },
+];
+
 /** The one tool whose result comes from a person. */
 export const ASK_USER_TOOL: ToolSpec = {
   type: 'function',
@@ -130,7 +111,7 @@ export const ASK_USER_TOOL: ToolSpec = {
     name: 'ask_user',
     description:
       "Ask the user a question and wait for their answer, which comes back as this tool's result. Use " +
-      'it when the choice is the user\u2019s to make and a guess would be worse than asking, e.g. which ' +
+      "it when the choice is the user's to make and a guess would be worse than asking, e.g. which " +
       'option, which file, whether to go on. Keep it short and answerable.',
     parameters: {
       type: 'object',
@@ -170,14 +151,6 @@ export const ASK_USER_TOOL: ToolSpec = {
       required: ['title'],
     },
   },
-};
-
-/** The system line. It deliberately says nothing about which tools exist — their descriptions carry
- *  the order to call them in. */
-export const SYSTEM = {
-  role: 'system' as const,
-  content:
-    'You are the agent in this demo. When the machine has to be touched, call a tool, then answer the user.',
 };
 
 /** The pair a root agent uses to delegate: a sub-agent has its own transcript and round budget. */
@@ -222,6 +195,35 @@ export const SPAWN_TOOLS: ToolSpec[] = [
         properties: { name: { type: 'string', description: 'the agent to stop' } },
         required: ['name'],
       },
+    },
+  },
+];
+
+// order matters
+
+export const TOOLS: ToolSpec[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'read_all_tools',
+      description:
+        'Return the definitions of every tool this agent can use, including tools omitted from the ' +
+        'current request after context was forgotten. Call this when you need to recover a tool name ' +
+        'or schema.',
+      parameters: { type: 'object', properties: {} },
+    },
+  },
+  ...CACHE_TOOLS,
+  ...NODE_TOOLS,
+  {
+    type: 'function',
+    function: {
+      name: 'whoami',
+      description:
+        'Say which agent you are: the name this agent answers to. Calls that name an agent take it - ' +
+        "a timer's `agent` argument and `run_on_node`'s `agent` alike - and a sub-agent's name is its " +
+        'own, so call this rather than guessing what to put there.',
+      parameters: { type: 'object', properties: {} },
     },
   },
 ];

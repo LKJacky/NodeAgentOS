@@ -53,7 +53,7 @@ export {
   type AgentSettings,
   type SettingsPatch,
 } from './settings.js';
-export { ASK_USER_TOOL, SYSTEM, TOOLS } from './tools.js';
+export { ASK_USER_TOOL, TOOLS } from './tools.js';
 export {
   ActiveProviderUnit,
   CacheCounterUnit,
