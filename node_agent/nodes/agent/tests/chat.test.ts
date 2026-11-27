@@ -434,10 +434,10 @@ test('usage adds up the reported counts and counts every call', async () => {
     assert.equal(status.usage.model_calls, 1);
     assert.equal(status.usage.reported_calls, 1);
     assert.equal(status.usage.completion_tokens, 5);
-    // The first round measures the transcript it is about to send (`prompt_tokens: 10`), so the
-    // reported 20 arrive as 10 new input tokens; 10 + 5 is what the turn cost.
-    assert.equal(status.usage.prompt_tokens, 10);
-    assert.equal(status.usage.total_tokens, 15);
+    // A fresh agent has no history to measure, so the first turn sends its one user line directly:
+    // the full 20 prompt tokens are new, and 20 + 5 is what the turn cost.
+    assert.equal(status.usage.prompt_tokens, 20);
+    assert.equal(status.usage.total_tokens, 25);
   } finally {
     await agent.stop();
   }

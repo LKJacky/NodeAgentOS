@@ -353,7 +353,7 @@ export class CachedModel {
     tools: readonly ToolSpec[],
     options: { signal?: AbortSignal } = {},
   ): Promise<RoundResult> {
-    if (this.cachedNumTokens === 0 && this.messages.length > 0) {
+    if (this.cachedNumTokens === 0 && this.messages.length > 0 && this.usage.model_calls > 0) {
       await this.recomputeCachedNumTokens(tools);
     }
     const started = Date.now();

@@ -74,7 +74,13 @@ class FakeCore {
   ): Promise<ChatOutput> {
     this.asked.push({ messages, tools, limit, previous });
     if (this.plan.error !== undefined) throw this.plan.error;
-    return this.plan.answer ?? { message: { content: 'measured' }, usage: null, previous_response_id: null };
+    return (
+      this.plan.answer ?? {
+        message: { content: 'measured' },
+        usage: null,
+        previous_response_id: null,
+      }
+    );
   }
 
   async *chatStream(
@@ -99,7 +105,10 @@ class FakeCore {
 
 /** The builder a test passes in place of the provider package's own: it records the row it was
  *  handed and answers with the script, so nothing is dialled for real. */
-function recordingBuilder(core: FakeCore): { build: CoreBuilder; rows: { config: JsonObject; name: string }[] } {
+function recordingBuilder(core: FakeCore): {
+  build: CoreBuilder;
+  rows: { config: JsonObject; name: string }[];
+} {
   const rows: { config: JsonObject; name: string }[] = [];
   const build: CoreBuilder = (config, _fetcher, name) => {
     rows.push({ config, name });
@@ -110,7 +119,10 @@ function recordingBuilder(core: FakeCore): { build: CoreBuilder; rows: { config:
 }
 
 /** The selection a run of `chat` made: every call whose capability is a model call. */
-function modelCalls(calls: readonly { to: string; payload: { cap: string } }[], node: string): string[] {
+function modelCalls(
+  calls: readonly { to: string; payload: { cap: string } }[],
+  node: string,
+): string[] {
   return calls
     .filter((call) => call.to === node)
     .map((call) => call.payload.cap)
@@ -118,7 +130,10 @@ function modelCalls(calls: readonly { to: string; payload: { cap: string } }[], 
 }
 
 /** Every row one node was asked for, by name. */
-function rowCalls(calls: readonly { to: string; payload: { cap: string; args: { name?: unknown } } }[], node: string): string[] {
+function rowCalls(
+  calls: readonly { to: string; payload: { cap: string; args: { name?: unknown } } }[],
+  node: string,
+): string[] {
   return calls
     .filter((call) => call.to === node && call.payload.cap === 'row')
     .map((call) => String(call.payload.args.name));
@@ -178,7 +193,11 @@ test('a provider row is dialled in this process, and the node is never asked to 
     // Two requests, two wires: the round measures the transcript with `chat` and then streams the
     // answer, exactly as the bus path builds a provider per call.
     assert.ok(rows.length >= 1);
-    assert.deepEqual([...new Set(rows.map((row) => row.name))], ['fast'], 'every wire is the selected row');
+    assert.deepEqual(
+      [...new Set(rows.map((row) => row.name))],
+      ['fast'],
+      'every wire is the selected row',
+    );
     assert.equal(rows[0]?.config['api_key'], 'sk-test', 'with the credentials the store holds');
 
     // What still goes over the bus: the directory (`providers`), and the one row the agent dials
@@ -210,8 +229,9 @@ test('a local-provider row still goes over the bus, and the core is never built 
   const asked: string[] = [];
   net.node('local-provider', 'the local endpoint', {
     providers: () => ({ providers: [{ name: 'fast' }] }),
-    // The measurement call a round makes before it streams still goes to the node: only the model
-    // calls that produce the answer are split, and this row's are all the node's.
+    // A fresh agent's first turn has no history to measure, so it streams directly. The stream and
+    // its start still go to the node; this `chat` handler is here to prove the measurement is not
+    // made on that first turn.
     chat: () => ({
       message: { content: '' },
       usage: { prompt_tokens: 3, completion_tokens: 0, total_tokens: 3 },
@@ -242,8 +262,8 @@ test('a local-provider row still goes over the bus, and the core is never built 
     assert.deepEqual(asked, ['start_stream', 'stream_ready']);
     assert.deepEqual(
       modelCalls(agent.session.calls, 'local-provider'),
-      ['chat', 'start_stream', 'stream_ready'],
-      'the measurement, the stream and its start all went to the node',
+      ['start_stream', 'stream_ready'],
+      'the first-turn measurement is skipped; the stream and its start went to the node',
     );
     assert.deepEqual(modelCalls(agent.session.calls, 'provider'), []);
     assert.deepEqual(rows, [], 'the provider core is not built for a local-provider row');
@@ -273,7 +293,11 @@ test('a direct failure is the provider own sentence, and never a quiet fallback 
       () => agent.call('chat', { msg: { content: 'hi' } }),
       /provider "fast" cannot reach the model endpoint example\.test/,
     );
-    assert.deepEqual(modelCalls(agent.session.calls, 'provider'), [], 'a failed direct call is not retried on the bus');
+    assert.deepEqual(
+      modelCalls(agent.session.calls, 'provider'),
+      [],
+      'a failed direct call is not retried on the bus',
+    );
     assert.equal(((await agent.call('status', {})) as { state: string }).state, 'idle');
   } finally {
     await agent.stop();
@@ -366,7 +390,11 @@ test('a direct stream maps every chunk the way the bus path maps an event', asyn
       { delta: { reasoning_content: 'think ' } },
       { delta: { content: 'hel' } },
       { delta: { content: 'lo' } },
-      { delta: { tool_calls: [{ index: 0, id: 'c1', function: { name: 'list_nodes', arguments: '{' } }] } },
+      {
+        delta: {
+          tool_calls: [{ index: 0, id: 'c1', function: { name: 'list_nodes', arguments: '{' } }],
+        },
+      },
       { delta: { tool_calls: [{ index: 0, function: { arguments: '}' } }] } },
       { delta: {}, usage: USAGE },
       { delta: {}, previous_response_id: 'resp-1' },
@@ -392,7 +420,10 @@ test('a direct stream maps every chunk the way the bus path maps an event', asyn
 });
 
 test('a direct stream that is cancelled ends on an abort, not on a provider failure', async () => {
-  const { provider, core } = direct({ deltas: [{ delta: { content: 'first' } }], stallAfterFirst: true });
+  const { provider, core } = direct({
+    deltas: [{ delta: { content: 'first' } }],
+    stallAfterFirst: true,
+  });
   const stop = new AbortController();
   const reading = drain(provider, { ...REQUEST, signal: stop.signal });
   await new Promise((resolve) => setTimeout(resolve, 20));
@@ -449,7 +480,9 @@ test('a direct row is served by the provider core itself, over the wire it names
         id: 'chatcmpl-1',
         object: 'chat.completion.chunk',
         model: 'gpt-test',
-        choices: [{ index: 0, delta: { role: 'assistant', content: 'from ' }, finish_reason: null }],
+        choices: [
+          { index: 0, delta: { role: 'assistant', content: 'from ' }, finish_reason: null },
+        ],
       });
       send({
         id: 'chatcmpl-1',
